@@ -1,10 +1,11 @@
 # Demonstrating why we might suspect no
 #  external heating to create a cocoon 
 # structure in the GD-1 stream.
+# *** NOTE: this will be replaced with an updated simulation grid (more streams, better dynamical ages)
 # %%
 ################ import packages
 import sys
-script_path = "/n/home02/amphillips/stream_velocity_structures/scripts" # for cannon
+script_path = "/n/home02/amphillips/p27_nbody/scripts" # for cannon
 
 import petar
 import numpy as np
@@ -36,13 +37,14 @@ plt.style.use(script_path+'/vedant.mplstyle')
 # %config InlineBackend.figure_format='retina'
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
+from matplotlib.colors import LinearSegmentedColormap
 
 from tqdm import tqdm
 
 sys.path.append(script_path)
 from streamframe import StreamFrame
 import PETAR_ANALYSIS_FUNCTIONS as paf
-from get_escapers import rms, make_key, dedupe_true_copies
+# from get_escapers import rms, make_key, dedupe_true_copies
 
 # first import... very beefy...
 from sklearn.mixture import GaussianMixture
@@ -50,31 +52,28 @@ from pygaia.errors.astrometric import parallax_uncertainty, proper_motion_uncert
 
 # %%
 ### import functions from the desi comparison script:
-sys.path.append('/n/home02/amphillips/stream_velocity_structures/cocoons')
+sys.path.append('/n/home02/amphillips/p27_nbody/old')
 # from DESI_comparison import get_gaia_photometry, get_z_photometry, unpack_data_dict, prepare_nbody_data
 import DESI_comparison as dc
 
 # %%
-# importing functions from 'DESI_comparison.py' for photometry,
-# preparing N-body data in GD-1 coordinate frame. 
-
 # %%
 print("doing setup for petar data...")
 paths = paf.define_paths()
 tdis_vals, t_peri_vals, t_apo_vals = paf.get_tdis_tplot(paths) ### later. 
 
 apocenters = paf.define_apocenters()
-init_displacements = paf.define_init_displacements()
-escaperdict_path = "/n/home02/amphillips/stream_velocity_structures/data/"
+init_displacements = paf.define_init_displacements() 
 
 rvir0_values = np.array([0.75,0.75, 1.5,1.5,3.,3.,6.,6.,]*3)
 # %%
 def stream_plot(phi1_, phi2, vr, vphi1, vphi2, memprobs=None,
-                phi1_lim = 100, phi2_lim = 2, vr_lim = 6, vphi1_lim = 20, vphi2_lim = 30
-                ):
+                phi1_lim = 100, phi2_lim = 2, vr_lim = 6, vphi1_lim = 20, vphi2_lim = 30,
+                colors = ["#87CBAC", "#156064",], all_panels=True):
     """
     !!! apply any outlier clips before this ! ! ! 
     """
+    cmap = LinearSegmentedColormap.from_list('cmap', colors)
     if memprobs is not None:
         probs=memprobs  
         ts_flag = probs>0.5 
@@ -89,44 +88,55 @@ def stream_plot(phi1_, phi2, vr, vphi1, vphi2, memprobs=None,
     vr_bins = np.linspace(-vr_lim, vr_lim, 50)
     vphi1_bins = np.linspace(-vphi1_lim, vphi1_lim, 50)
     vphi2_bins = np.linspace(-vphi2_lim, vphi2_lim, 50)
-    fig, axs = plt.subplots(4,2,width_ratios=[2,1], figsize=[12,14])
 
-    axs[0,0].scatter(phi1_[ordering][::-1], phi2[ordering][::-1], c=probs[ordering][::-1], cmap='coolwarm', s=1, rasterized=True)
+    if all_panels==True:
+        fig, axs = plt.subplots(4,2,width_ratios=[2,1], figsize=[12,14])
+        axs[0,1].set_ylabel(r'$\phi_2~[\degree]$')
+        axs[1,1].set_ylabel(r'$v_r~\rm[km~s^{-1}]$')
+        axs[2,1].set_ylabel(r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$')
+        axs[3,1].set_ylabel(r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$')
+
+
+    if all_panels==False:
+        fig, axs = plt.subplots(2,2, width_ratios=[2,1], figsize=[10,6])
+        plt.subplots_adjust(wspace=0.03, hspace=0.03)
+        axs[1,0].set_xlabel(r'$\phi_1~[\rm \degree]$')
+        axs[1,1].set_xlabel("PDF")
+
+
+    axs[0,0].scatter(phi1_[ordering][::-1], phi2[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=2 if all_panels==False else 1, rasterized=True)
     axs[0,0].set_ylim(-phi2_lim, phi2_lim)
     axs[0,0].set_xlim(-phi1_lim, phi1_lim)
-    axs[0,1].hist(phi2[ts_flag], bins=phi2_bins, density=True, histtype='step', color='red', orientation='horizontal');
-    axs[0,1].hist(phi2[~ts_flag], bins=phi2_bins, density=True, histtype='step', color='blue', orientation='horizontal');
+    axs[0,1].hist(phi2[ts_flag], bins=phi2_bins, density=True, histtype='step', color=colors[1], orientation='horizontal', lw=2);
+    axs[0,1].hist(phi2[~ts_flag], bins=phi2_bins, density=True, histtype='step', color=colors[0], orientation='horizontal', lw=2);
     axs[0,0].set_ylabel(r'$\phi_2~[\degree]$')
-    axs[0,1].set_ylabel(r'$\phi_2~[\degree]$')
 
 
-    axs[1,0].scatter(phi1_[ordering][::-1], vr[ordering][::-1], c=probs[ordering][::-1], cmap='coolwarm', s=1, rasterized=True)
+    axs[1,0].scatter(phi1_[ordering][::-1], vr[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=2 if all_panels==False else 1, rasterized=True)
     axs[1,0].set_ylim(-vr_lim, vr_lim)
     axs[1,0].set_xlim(-phi1_lim, phi1_lim)
     axs[1,0].set_ylabel(r'$v_r~\rm[km~s^{-1}]$')
 
-    axs[1,1].hist(vr[ts_flag], bins=vr_bins, density=True, histtype='step', color='red', orientation='horizontal');
-    axs[1,1].hist(vr[~ts_flag], bins=vr_bins, density=True, histtype='step', color='blue', orientation='horizontal');
-    axs[1,1].set_ylabel(r'$v_r~\rm[km~s^{-1}]$')
+    axs[1,1].hist(vr[ts_flag], bins=vr_bins, density=True, histtype='step', color=colors[1], orientation='horizontal', lw=2);
+    axs[1,1].hist(vr[~ts_flag], bins=vr_bins, density=True, histtype='step', color=colors[0], orientation='horizontal', lw=2);
 
-    axs[2,0].scatter(phi1_[ordering][::-1], vphi1[ordering][::-1], c=probs[ordering][::-1], cmap='coolwarm', s=1, rasterized=True)
-    axs[2,0].set_ylim(-vphi1_lim, vphi1_lim)
-    axs[2,0].set_xlim(-phi1_lim, phi1_lim)
-    axs[2,1].hist(vphi1[ts_flag], bins=vphi1_bins, density=True, histtype='step', color='red', orientation='horizontal');
-    axs[2,1].hist(vphi1[~ts_flag], bins=vphi1_bins, density=True, histtype='step', color='blue', orientation='horizontal');
-    axs[2,0].set_ylabel(r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$')
-    axs[2,1].set_ylabel(r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$')
+    if all_panels==True:
+        axs[2,0].scatter(phi1_[ordering][::-1], vphi1[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=1, rasterized=True)
+        axs[2,0].set_ylim(-vphi1_lim, vphi1_lim)
+        axs[2,0].set_xlim(-phi1_lim, phi1_lim)
+        axs[2,1].hist(vphi1[ts_flag], bins=vphi1_bins, density=True, histtype='step', color=colors[1], orientation='horizontal');
+        axs[2,1].hist(vphi1[~ts_flag], bins=vphi1_bins, density=True, histtype='step', color=colors[0], orientation='horizontal');
+        axs[2,0].set_ylabel(r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$')
 
-    axs[3,0].scatter(phi1_[ordering][::-1], vphi2[ordering][::-1], c=probs[ordering][::-1], cmap='coolwarm', s=1, rasterized=True)
-    axs[3,0].set_ylim(-vphi2_lim, vphi2_lim)
-    axs[3,0].set_xlim(-phi1_lim, phi1_lim)
-    axs[3,1].hist(vphi2[ts_flag], bins=vphi2_bins, density=True, histtype='step', color='red', orientation='horizontal');
-    axs[3,1].hist(vphi2[~ts_flag], bins=vphi2_bins, density=True, histtype='step', color='blue', orientation='horizontal');
-    axs[3,0].set_ylabel(r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$')
-    axs[3,1].set_ylabel(r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$')
+        axs[3,0].scatter(phi1_[ordering][::-1], vphi2[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=1, rasterized=True)
+        axs[3,0].set_ylim(-vphi2_lim, vphi2_lim)
+        axs[3,0].set_xlim(-phi1_lim, phi1_lim)
+        axs[3,1].hist(vphi2[ts_flag], bins=vphi2_bins, density=True, histtype='step', color=colors[1], orientation='horizontal');
+        axs[3,1].hist(vphi2[~ts_flag], bins=vphi2_bins, density=True, histtype='step', color=colors[0], orientation='horizontal');
+        axs[3,0].set_ylabel(r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$')
 
-    axs[3,0].set_xlabel(r'$\phi_1~[\rm \degree]$')
-    axs[3,1].set_xlabel("PDF")
+        axs[3,0].set_xlabel(r'$\phi_1~[\rm \degree]$')
+        axs[3,1].set_xlabel("PDF")
     
 
     return fig, axs
@@ -206,6 +216,7 @@ for j, n in tqdm(enumerate(n_list)):
     ts_selection = ~cocoon_selection
     cocoon, stream = np.zeros(len(phi2_cm)), np.ones(len(phi2_cm))
     memberships = np.where(cocoon_selection, cocoon, stream)
+    # memberships = np.where(ts_selection, cocoon, stream)
 
     ########### COMMENT BELOW IF I ACTUALLY WANT TO RUN THE FULL GRID SUMMARY ! 
     if n==8:
@@ -216,22 +227,29 @@ for j, n in tqdm(enumerate(n_list)):
                             vr_lim=3*vr_line,
                             vphi1_lim = 2*vphi1_line,
                             vphi2_lim = 2*vphi2_line,
-                            phi1_lim=150) #<--check my work. )
+                            phi1_lim=150,
+                            all_panels=False) #<--check my work. )
         for ax in axs[:,0]:
-            ax.set_xlim(-175, 75)
+            ax.set_xlim(-150, 75)
        
-
+        axs[0,0].set_xticklabels([])
+        axs[0,1].set_yticklabels([])
+        axs[0,1].set_xticklabels([])
+        axs[1,1].set_yticklabels([])
         axs[0,0].axhline(-phi2_line,c='k', lw=1, ls='--')
         axs[0,0].axhline(phi2_line,c='k', lw=1, ls='--')
         axs[1,0].axhline(-vr_line,c='k', lw=1, ls='--')
         axs[1,0].axhline(vr_line,c='k', lw=1, ls='--')
-        axs[2,0].axhline(-vphi1_line,c='k', lw=1, ls='--')
-        axs[2,0].axhline(vphi1_line,c='k', lw=1, ls='--')
-        axs[3,0].axhline(-vphi2_line,c='k', lw=1, ls='--')
-        axs[3,0].axhline(vphi2_line,c='k', lw=1, ls='--')
 
-        plt.subplots_adjust(wspace=0.3)
-        plt.savefig("fig/example_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
+        # axs[2,0].axhline(-vphi1_line,c='k', lw=1, ls='--')
+        # axs[2,0].axhline(vphi1_line,c='k', lw=1, ls='--')
+        # axs[3,0].axhline(-vphi2_line,c='k', lw=1, ls='--')
+        # axs[3,0].axhline(vphi2_line,c='k', lw=1, ls='--')
+
+
+        # plt.subplots_adjust(wspace=0.3)
+        # plt.savefig("fig/example_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
+        plt.savefig("plots/example_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
         break
 
 
@@ -341,12 +359,12 @@ def make_summary_plot(cocoon_fractions,
 fig, axs = make_summary_plot(cocoon_fractions_cm,
                             sigphi2s_ts_cm, sigphi2s_c_cm,
                              sigvrs_ts_cm, sigvrs_c_cm)
-fig.suptitle("``system'' data")
-plt.savefig("fig/summary_noiseless_CM.pdf", dpi=300, bbox_inches='tight')
+# fig.suptitle("``system'' data")
+# plt.savefig("fig/summary_noiseless_CM.pdf", dpi=300, bbox_inches='tight')
 
-fig, axs = make_summary_plot(cocoon_fractions_lum,
-                             sigphi2s_ts_lum, sigphi2s_c_lum,
-                             sigvrs_ts_lum, sigvrs_c_lum)
-fig.suptitle("single epoch with binaries")
-plt.savefig("fig/summary_noiseless_lum.pdf", dpi=300, bbox_inches='tight')
+# fig, axs = make_summary_plot(cocoon_fractions_lum,
+#                              sigphi2s_ts_lum, sigphi2s_c_lum,
+#                              sigvrs_ts_lum, sigvrs_c_lum)
+# fig.suptitle("single epoch with binaries")
+# plt.savefig("fig/summary_noiseless_lum.pdf", dpi=300, bbox_inches='tight')
 # %%
