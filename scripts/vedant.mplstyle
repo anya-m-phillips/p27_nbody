@@ -1,0 +1,44 @@
+font.family : serif
+font.size : 22
+font.serif : cmr10
+mathtext.fontset : cm
+axes.titlesize : 22
+axes.formatter.use_mathtext : True
+xtick.labelsize : 20
+ytick.labelsize : 20
+axes.labelsize : 22
+axes.unicode_minus : False
+axes.linewidth : 1.5
+xtick.top : True
+xtick.minor.visible : True
+xtick.major.top : True
+xtick.minor.top : True
+xtick.direction : in
+xtick.major.size : 10
+xtick.minor.size : 5
+xtick.major.pad: 6
+xtick.minor.pad: 6
+legend.fontsize : 18
+legend.edgecolor : w
+legend.framealpha : 0
+ytick.right : True
+ytick.minor.visible : True
+ytick.major.right : True
+ytick.minor.right : True
+ytick.direction : in
+ytick.major.size : 10
+ytick.minor.size : 5
+ytick.major.pad: 6
+ytick.minor.pad: 6
+figure.figsize : 7,7
+figure.facecolor : 'w'
+image.aspect : auto
+image.cmap : magma
+savefig.format : pdf
+savefig.bbox : tight
+savefig.dpi : 300
+savefig.transparent : False
+errorbar.capsize : 0
+lines.markersize : 5
+lines.linewidth : 3
+hist.bins : auto
