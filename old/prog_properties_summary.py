@@ -69,7 +69,9 @@ rvir0_values = np.array([0.75,0.75, 1.5,1.5,3.,3.,6.,6.,]*3)
 # %%
 def stream_plot(phi1_, phi2, vr, vphi1, vphi2, memprobs=None,
                 phi1_lim = 100, phi2_lim = 2, vr_lim = 6, vphi1_lim = 20, vphi2_lim = 30,
-                colors = ["#87CBAC", "#156064",], all_panels=True):
+                # colors = ["#87CBAC", "#156064",], 
+                colors = ["#8DCB87", "#156064"],
+                all_panels=True):
     """
     !!! apply any outlier clips before this ! ! ! 
     """
@@ -104,7 +106,7 @@ def stream_plot(phi1_, phi2, vr, vphi1, vphi2, memprobs=None,
         axs[1,1].set_xlabel("PDF")
 
 
-    axs[0,0].scatter(phi1_[ordering][::-1], phi2[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=2 if all_panels==False else 1, rasterized=True)
+    axs[0,0].scatter(phi1_[ordering][::-1], phi2[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=4 if all_panels==False else 1, rasterized=True)
     axs[0,0].set_ylim(-phi2_lim, phi2_lim)
     axs[0,0].set_xlim(-phi1_lim, phi1_lim)
     axs[0,1].hist(phi2[ts_flag], bins=phi2_bins, density=True, histtype='step', color=colors[1], orientation='horizontal', lw=2);
@@ -112,7 +114,7 @@ def stream_plot(phi1_, phi2, vr, vphi1, vphi2, memprobs=None,
     axs[0,0].set_ylabel(r'$\phi_2~[\degree]$')
 
 
-    axs[1,0].scatter(phi1_[ordering][::-1], vr[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=2 if all_panels==False else 1, rasterized=True)
+    axs[1,0].scatter(phi1_[ordering][::-1], vr[ordering][::-1], c=probs[ordering][::-1], cmap=cmap, s=4 if all_panels==False else 1, rasterized=True)
     axs[1,0].set_ylim(-vr_lim, vr_lim)
     axs[1,0].set_xlim(-phi1_lim, phi1_lim)
     axs[1,0].set_ylabel(r'$v_r~\rm[km~s^{-1}]$')
@@ -168,9 +170,15 @@ def poly_straightening(nbody_coords, nbody_for_straightening):
 #                 THE LOOP IS HERE                                   #
 #--------------------------------------------------------------------#
 
-phi2_line, vr_line, vphi1_line, vphi2_line = [1.5,2.5,0.15,0.1] # GD1
+phi2_line_GD1, vr_line_GD1, vphi1_line_GD1, vphi2_line_GD1 = [1.5,2.5,0.15,0.1] # GD1
+
+
+phi2_line_pal5, vr_line_pal5, vphi1_line_pal5, vphi2_line_pal5 = [2.5,6,0.15,0.1] # pa5
 
 n_list = np.arange(8, 16, 1)
+# n_list = [8,16, 10,18, 12,20, 14,22]
+gd1_n = [8,9,10,11,12,13,14,15]
+pal5_n = [16,17,18,19,20,21,22,23]
 
 ### lists to store stream widths and cocoon fraction/dispersions
 cocoon_fractions_cm = []
@@ -181,7 +189,15 @@ cocoon_fractions_lum = []
 sigvrs_ts_lum, sigphi2s_ts_lum = [],[]
 sigvrs_c_lum, sigphi2s_c_lum = [],[]
 
+
+# n_list=[16]
 for j, n in tqdm(enumerate(n_list)):
+    if n in gd1_n:
+        phi2_line, vr_line, vphi1_line, vphi2_line = phi2_line_GD1, vr_line_GD1, vphi1_line_GD1, vphi2_line_GD1
+    if n in pal5_n:
+        phi2_line, vr_line, vphi1_line, vphi2_line = phi2_line_pal5, vr_line_pal5, vphi1_line_pal5, vphi2_line_pal5
+
+
     core, data_dict, CMdict, lumdict, inMW, trim = dc.prepare_nbody_data(n, include_photometry=False)
     nbody_coords_cm, _, _ = dc.get_GD1_coords_nbody(data_dict, lumdict, subdict=CMdict, inMW=inMW, trim=trim, core=core, i=10000)
     nbody_coords_lum, _, _ = dc.get_GD1_coords_nbody(data_dict, lumdict, subdict=lumdict, inMW=inMW, trim=trim, core=core, i=10000)
@@ -219,38 +235,44 @@ for j, n in tqdm(enumerate(n_list)):
     # memberships = np.where(ts_selection, cocoon, stream)
 
     ########### COMMENT BELOW IF I ACTUALLY WANT TO RUN THE FULL GRID SUMMARY ! 
-    if n==8:
-        ### plot options. 
-        fig, axs = stream_plot(phi1_cm[oc_cm], phi2_cm, v_gsr_cm, pm_phi1_cm, pm_phi2_cm,
-                            memprobs=memberships,
-                            phi2_lim = 2*phi2_line,
-                            vr_lim=3*vr_line,
-                            vphi1_lim = 2*vphi1_line,
-                            vphi2_lim = 2*vphi2_line,
-                            phi1_lim=150,
-                            all_panels=False) #<--check my work. )
-        for ax in axs[:,0]:
-            ax.set_xlim(-150, 75)
+    # if n==8:
+    #     ### plot options. 
+    #     fig, axs = stream_plot(phi1_cm[oc_cm], phi2_cm, v_gsr_cm, pm_phi1_cm, pm_phi2_cm,
+    #                         memprobs=memberships,
+    #                         phi2_lim = 2*phi2_line,
+    #                         vr_lim=3*vr_line,
+    #                         vphi1_lim = 2*vphi1_line,
+    #                         vphi2_lim = 2*vphi2_line,
+    #                         # phi1_lim=150,
+    #                         all_panels=True) 
+        
+    #     if n in gd1_n:
+    #         for ax in axs[:,0]:
+    #             ax.set_xlim(-150, 75)
+    #     if n in pal5_n:
+    #         for ax in axs[:,0]:
+    #             ax.set_xlim(0,)
        
-        axs[0,0].set_xticklabels([])
-        axs[0,1].set_yticklabels([])
-        axs[0,1].set_xticklabels([])
-        axs[1,1].set_yticklabels([])
-        axs[0,0].axhline(-phi2_line,c='k', lw=1, ls='--')
-        axs[0,0].axhline(phi2_line,c='k', lw=1, ls='--')
-        axs[1,0].axhline(-vr_line,c='k', lw=1, ls='--')
-        axs[1,0].axhline(vr_line,c='k', lw=1, ls='--')
 
-        # axs[2,0].axhline(-vphi1_line,c='k', lw=1, ls='--')
-        # axs[2,0].axhline(vphi1_line,c='k', lw=1, ls='--')
-        # axs[3,0].axhline(-vphi2_line,c='k', lw=1, ls='--')
-        # axs[3,0].axhline(vphi2_line,c='k', lw=1, ls='--')
+    #     axs[0,0].set_xticklabels([])
+    #     axs[0,1].set_yticklabels([])
+    #     axs[0,1].set_xticklabels([])
+    #     axs[1,1].set_yticklabels([])
+    #     axs[0,0].axhline(-phi2_line,c='k', lw=1, ls='--')
+    #     axs[0,0].axhline(phi2_line,c='k', lw=1, ls='--')
+    #     axs[1,0].axhline(-vr_line,c='k', lw=1, ls='--')
+    #     axs[1,0].axhline(vr_line,c='k', lw=1, ls='--')
+
+    #     # axs[2,0].axhline(-vphi1_line,c='k', lw=1, ls='--')
+    #     # axs[2,0].axhline(vphi1_line,c='k', lw=1, ls='--')
+    #     # axs[3,0].axhline(-vphi2_line,c='k', lw=1, ls='--')
+    #     # axs[3,0].axhline(vphi2_line,c='k', lw=1, ls='--')
 
 
-        # plt.subplots_adjust(wspace=0.3)
-        # plt.savefig("fig/example_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
-        plt.savefig("plots/example_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
-        break
+    #     # plt.subplots_adjust(wspace=0.3)
+    #     # plt.savefig("fig/example_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
+    #     # plt.savefig("plots/example_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
+    #     break
 
 
     cocoon_fraction = len(phi2_cm[cocoon_selection])/len(phi2_cm)
@@ -297,7 +319,10 @@ cocoon_fractions_lum = np.array(cocoon_fractions_lum)
 # %%
 def make_summary_plot(cocoon_fractions,
                      sigphi2s_ts, sigphi2s_c,
-                      sigvrs_ts, sigvrs_c):
+                      sigvrs_ts, sigvrs_c,
+                      add_legend=True,
+                      add_hiOB=True,
+                      add_ts=True):
     #### plotting the summarized result here. 
     rvir0_list = np.array([0.75,0.75, 1.5,1.5, 3,3, 6,6])
 
@@ -310,40 +335,50 @@ def make_summary_plot(cocoon_fractions,
     cc = "#729B79"
     ss=70
 
-
-
     fig, axs = plt.subplots(1, 3, figsize=[16, 4.5])
     plt.subplots_adjust(wspace=0.3)
 
     ax=axs[0]
     ii=lm_index
     ax.scatter(rvir0_list[ii], cocoon_fractions[ii], c='k', marker = markers[ii][0], s=ss, edgecolor='k')
-    ii=~lm_index
-    ax.scatter(rvir0_list[ii], cocoon_fractions[ii], c='k', marker = markers[ii][0], s=ss, edgecolor='k')
+    
+    if add_hiOB==True:
+        ii=~lm_index
+        ax.scatter(rvir0_list[ii], cocoon_fractions[ii], c='k', marker = markers[ii][0], s=ss, edgecolor='k')
+    
     ax.set_ylabel(r'$f_{\rm cocoon}$')
 
     ax = axs[1]
     ii=lm_index
-    ax.scatter(rvir0_list[ii], sigphi2s_ts[ii], label='thin stream', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
+    if add_ts==True:
+        ax.scatter(rvir0_list[ii], sigphi2s_ts[ii], label='thin stream', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
     ax.scatter(rvir0_list[ii], sigphi2s_c[ii], label='cocoon', c='k', marker = markers[ii][0], s=ss, edgecolor='k')
-    ii=~lm_index
-    ax.scatter(rvir0_list[ii], sigphi2s_ts[ii], label='thin stream', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
-    ax.scatter(rvir0_list[ii], sigphi2s_c[ii], label='cocoon', c='k', marker = markers[ii][0], s=ss, edgecolor='k')
+    if add_hiOB==True:
+        ii=~lm_index
+        if add_ts==True:
+            ax.scatter(rvir0_list[ii], sigphi2s_ts[ii], label='thin stream', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
+        ax.scatter(rvir0_list[ii], sigphi2s_c[ii], label='cocoon', c='k', marker = markers[ii][0], s=ss, edgecolor='k')
     ax.set_ylabel(r'$\sigma_{\phi_2}~[\degree]$')
 
 
     ax = axs[2]
     ii=lm_index
-    ax.scatter(rvir0_list[ii], sigvrs_ts[ii], label='thin stream, lo-OB', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
+    if add_ts==True:
+        ax.scatter(rvir0_list[ii], sigvrs_ts[ii], label='thin stream, lo-OB', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
     ax.scatter(rvir0_list[ii], sigvrs_c[ii], label='cocoon, lo-OB', c='k', marker = markers[ii][0], s=ss, edgecolor='k')
 
-    ii=~lm_index
-    ax.scatter(rvir0_list[ii], sigvrs_ts[ii], label='thin stream, hi-OB', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
-    ax.scatter(rvir0_list[ii], sigvrs_c[ii], label='cocoon, hi-OB', c='k', marker = markers[ii][0], s=ss, edgecolor='k')
+    if add_hiOB==True:
+        ii=~lm_index
+        if add_ts==True:
+            ax.scatter(rvir0_list[ii], sigvrs_ts[ii], label='thin stream, hi-OB', c=cc, marker=markers[ii][0], s=ss, edgecolor='k')
+        
+        ax.scatter(rvir0_list[ii], sigvrs_c[ii], label='cocoon, hi-OB', c='k', marker = markers[ii][0], s=ss, edgecolor='k')
 
     ax.set_ylabel(r'$\sigma_{v_r}~[\rm km~s^{-1}]$')
 
-    ax.legend(loc='upper left', bbox_to_anchor=[1,1])
+
+    if add_legend==True:
+        ax.legend(loc='upper left', bbox_to_anchor=[1,1])
 
     for ax in axs:
         ax.set_ylim(bottom=0)
@@ -357,8 +392,18 @@ def make_summary_plot(cocoon_fractions,
 # %%
 #### no binaries:
 fig, axs = make_summary_plot(cocoon_fractions_cm,
-                            sigphi2s_ts_cm, sigphi2s_c_cm,
-                             sigvrs_ts_cm, sigvrs_c_cm)
+                             sigphi2s_ts_cm, 
+                             sigphi2s_c_cm,
+                             sigvrs_ts_cm, 
+                             sigvrs_c_cm,
+                             add_hiOB=False,add_legend=False, add_ts=False)
+
+axs[0].set_ylim(0, 0.07)
+axs[1].set_ylim(0, 2.9)
+axs[2].set_ylim(0, 9)
+
+plt.savefig('plots/prog_properties_cocoon_fraction.pdf', dpi=300, bbox_inches='tight')
+
 # fig.suptitle("``system'' data")
 # plt.savefig("fig/summary_noiseless_CM.pdf", dpi=300, bbox_inches='tight')
 
