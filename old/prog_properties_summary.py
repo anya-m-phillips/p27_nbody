@@ -402,7 +402,7 @@ axs[0].set_ylim(0, 0.07)
 axs[1].set_ylim(0, 2.9)
 axs[2].set_ylim(0, 9)
 
-plt.savefig('plots/prog_properties_cocoon_fraction.pdf', dpi=300, bbox_inches='tight')
+# plt.savefig('plots/prog_properties_cocoon_fraction.pdf', dpi=300, bbox_inches='tight')
 
 # fig.suptitle("``system'' data")
 # plt.savefig("fig/summary_noiseless_CM.pdf", dpi=300, bbox_inches='tight')

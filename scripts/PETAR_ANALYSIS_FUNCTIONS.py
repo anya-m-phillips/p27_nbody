@@ -2003,15 +2003,17 @@ def intrinsic_stream_data_v2(n, i, core, path, apo, use_core=True, init_displace
         subdict['inMW'] = inMW
         subdict['trim'] = trim
         sc, interp_orbit, orbit_coords, orbit_w, itr = straighten_stream_orbit_interp(
-            coords, ['phi2','r','vr'], core, i, 
+            coords, ['phi2','r','vr', 'pm_phi1','pm_phi2'], core, i, 
             trim_criteria = [inMW, trim], Dt_start=240,
             return_orbit_chunk=True, use_core=use_core, init_displacement=init_displacement, file_index=file_index
         )
-        phi2_straight, r_straight, vr_straight = sc 
+        phi2_straight, r_straight, vr_straight, pm_phi1_straight, pm_phi2_straight = sc 
 
         subdict['phi2_straight'] = phi2_straight
         subdict['r_straight'] = r_straight
         subdict['vr_straight'] = vr_straight
+        subdict['pm_phi1_straight'] = pm_phi1_straight
+        subdict['pm_phi2_straight'] = pm_phi2_straight
 
         ##### add the data from this iteration to the giant dictionary. 
         data_dict[binary_treatment]=subdict
