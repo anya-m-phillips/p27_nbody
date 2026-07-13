@@ -484,9 +484,11 @@ def make_summary_plot(cocoon_fractions,
     rvir0=[0.75, 1.5, 3.0, 6.0]
     ss=75
 
-    fig, axs = plt.subplots(3,1, figsize=[4.5,13.5], sharex=True)
-    plt.subplots_adjust(wspace=0.03, hspace=0.03)
+    # fig, axs = plt.subplots(3,1, figsize=[4.5,13.5], sharex=True)
+    fig, axs = plt.subplots(1,3, figsize=[16,4.5], sharex=True)
 
+    # plt.subplots_adjust(wspace=0.03, hspace=0.03)
+    plt.subplots_adjust(wspace=0.3)
 
     selections = [select_circ, select_gd1, select_pal5]
     for kk, ii in enumerate(selections):
@@ -510,13 +512,23 @@ def make_summary_plot(cocoon_fractions,
 
         ax.set_ylabel(r'$\sigma_{v_r}~[\rm km~s^{-1}]$')
 
-    axs[-1].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
-    axs[-1].set_xticks([0.75, 1.5, 3., 6.])
+    # axs[-1].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+    # axs[-1].set_xticks([0.75, 1.5, 3., 6.])
+
+    # for ax in axs:
+    #     ax.set_ylim(bottom=0)
+    #     ax.minorticks_off()
+    #     # ax.set_xtick_labels([])
+    #     # ax.set_xticklabels(["0.75", "1.5", "3", "6"], fontsize=15)
+    #     ax.tick_params(labelsize=15)
+
+
 
     for ax in axs:
         ax.set_ylim(bottom=0)
         ax.minorticks_off()
-        # ax.set_xtick_labels([])
+        ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+        ax.set_xticks([0.75, 1.5, 3., 6.])
         # ax.set_xticklabels(["0.75", "1.5", "3", "6"], fontsize=15)
         ax.tick_params(labelsize=15)
 
@@ -527,7 +539,7 @@ fig, axs = make_summary_plot(cocoon_fractions_cm,
                              sigvrs_c_cm)
 axs[0].legend(loc='upper right', framealpha=0.5)
 axs[-1].set_ylim(0, 36)
-plt.savefig('plots/prog_properties_cocoon_fraction.pdf')
+plt.savefig('plots/prog_properties_cocoon_fraction_ha.pdf')
 # axs[0].set_ylim(0, 0.07)
 # axs[1].set_ylim(0, 2.9)
 # axs[2].set_ylim(0, 9)
