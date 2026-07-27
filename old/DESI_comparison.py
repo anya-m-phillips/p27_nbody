@@ -238,7 +238,9 @@ def prepare_nbody_data(n, include_photometry=True, i=10000):
     else:
         file_index=None
 
-    data_dict = paf.intrinsic_stream_data_v2(n, i, core, path, apo, use_core=False, init_displacement=init_displacement,
+    data_dict = paf.intrinsic_stream_data_v2(n, i, core, path, apo, 
+                                             use_core=False, 
+                                             init_displacement=init_displacement,
                                             file_index=file_index)
 
     CMdict = data_dict['CoM']
