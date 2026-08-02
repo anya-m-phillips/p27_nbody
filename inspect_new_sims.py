@@ -149,44 +149,96 @@ def rotation_matrix(a,b,c):
 # %%
 lm_colors, hm_colors, simcolors = paf.define_simcolors()
 # cc = simcolors[3:]
-reordered_colors = lm_colors+hm_colors
-cc = reordered_colors[1:]
+# reordered_colors = lm_colors+hm_colors
+# cc = reordered_colors[1:]
+
+reordered_colors = hm_colors + lm_colors[::-1]
+cc = reordered_colors[:-1]
 ### generate a rotation matrix here, so that I can view the streams from another angle!
 
-# theta_list = np.arange(0, 361, 1)*u.degree.to(u.radian)
-# it = 0
-# for theta in tqdm(theta_list):
-theta = 10*u.degree.to(u.radian)
-phi =  10*u.degree.to(u.radian)
-R = rotation_matrix(a=phi, b=0, c=theta)
+theta_list = np.arange(0, 361, 1)*u.degree.to(u.radian)
+it = 0
+for theta in tqdm(theta_list):
+# theta = 180*u.degree.to(u.radian)
+    phi =  5*u.degree.to(u.radian)
+    R = rotation_matrix(a=phi, b=0, c=theta)
 
-fig, ax = plt.subplots()
-for ii, data_dict in enumerate(dicts):
+    fig, ax = plt.subplots()
 
-    x, y, z = data_dict['CoM']['pos'].T.to(u.kpc)
-    pos = data_dict['CoM']['pos'].to(u.kpc)
+    e0,e1,e2 = np.array([]), np.array([]), np.array([])
+    n_sim = np.array([])
 
-    rotated_pos = (R@pos.T).T
-    ax.scatter(rotated_pos[:,0], rotated_pos[:,2], 
-            c=cc[ii], 
-            rasterized=True, 
+    for ii, data_dict in enumerate(dicts):
+
+        x, y, z = data_dict['CoM']['pos'].T.to(u.kpc)
+        pos = data_dict['CoM']['pos'].to(u.kpc)
+
+        rotated_pos = (R@pos.T).T
+
+        e0_, e1_, e2_ = rotated_pos.T
+        e0 = np.append(e0, e0_.to(u.kpc).value)
+        e1 = np.append(e1, e1_.to(u.kpc).value)
+        e2 = np.append(e2, e2_.to(u.kpc).value)
+        n_sim = np.append(n_sim, 
+                        np.array([ii]*len(e0_)))
+        # xformed_pos = np.append(xformed_pos, rotated_pos.to(u.kpc).value)
+
+        # ax.scatter(rotated_pos[:,0], rotated_pos[:,2], 
+        #         c=cc[ii], 
+        #         rasterized=True, 
+        #         s=1)
+        
+    reordered = np.argsort(e1)[::-1]
+    # cmap = LinearSegmentedColormap.from_list('cmap', cc)
+    n_orbits = len(orbits)
+    cmap = mcolors.ListedColormap(cc[:n_orbits])
+    # discrete norm: one color band per orbit, boundaries on the half-integers
+    bounds = np.arange(n_orbits + 1) - 0.5   # [-0.5, 0.5, ..., n_orbits-0.5]
+    norm = mcolors.BoundaryNorm(bounds, cmap.N)
+    ob = ax.scatter(e0[reordered], e2[reordered],
+            c=n_sim[reordered],
+            cmap=cmap,
+            norm=norm,
             s=1)
-    
-pos_earth = np.array([8,0,0])
-rotated_pos_earth = np.dot(R, pos_earth)
-ax.scatter(rotated_pos_earth[0], rotated_pos_earth[2], c='k', marker='*', s=100)
-ax.set_xlim(-40,40)
-ax.set_ylim(-40,40)
-ax.set_yticks([])
-ax.set_yticklabels([])
-ax.set_xticks([])
-ax.set_xticklabels([])
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes('right','5%',pad=0.05)
+    cbar = fig.colorbar(ob, cax=cax, ticks=np.arange(n_orbits))
+    cbar.ax.set_yticklabels(orbits)   # bottom -> top follows the orbits list order
 
-    # dir='/n/netscratch/conroy_lab/Lab/amphillips/movies/grid_rotation/'
-    # filename = f"frame_{it:05d}.png"
-    # plt.savefig(dir+filename)
-    # plt.close()
-    # it+=1
+
+    r_earth = 8
+    pos_earth = np.array([r_earth,0,0])
+    theta_rng = np.linspace(0, 2*np.pi, 50)
+    x,y,z = r_earth*np.cos(theta_rng), r_earth*np.sin(theta_rng), np.zeros(len(theta_rng))
+    disk = np.array([x,y,z]).T
+
+    rotated_disk = (R@disk.T).T
+    ax.plot(rotated_disk[:,0], rotated_disk[:,2], zorder=0,
+            color='k', lw=1)
+
+    rotated_pos_earth = np.dot(R, pos_earth)
+    ax.scatter(rotated_pos_earth[0], rotated_pos_earth[2],
+                c='gold', marker='o', lw=1,
+                edgecolor='k', s=50,
+                zorder=0)
+
+
+
+
+    ax.set_xlim(-40,40)
+    ax.set_ylim(-40,40)
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+    ax.set_xticks([])
+    ax.set_xticklabels([])
+
+    dir='/n/netscratch/conroy_lab/Lab/amphillips/movies/grid_rotation/'
+    filename = f"frame_{it:05d}.png"
+    plt.savefig(dir+filename)
+    plt.close()
+    it+=1
+# %%
+
 # %%
 # and do we have streamframes for everyone???
 # - [x] GD1 (koposov; in gala)
