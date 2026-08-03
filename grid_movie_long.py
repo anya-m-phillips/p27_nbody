@@ -116,7 +116,7 @@ cc = reordered_colors[:-1]
 theta_list = np.arange(0, 361, 1)*u.degree.to(u.radian)
 # it = 0
 
-i_list = np.arange(2360, -10, -10) # <-- set by the youngest stream, AAU for now
+i_list = np.arange(3950, -10, -10) # <-- set by the youngest stream, AAU for now
 #%%
 # print(len(i_list))
 #%%
@@ -151,6 +151,8 @@ if __name__=="__main__":
 
         loading_time = int(age-i)
 
+        if loading_time<0: #<-- don't load sims that haven't started yet!
+            continue
         # print(orbit, age)
         # print("loading at", loading_time)
 
@@ -202,7 +204,9 @@ if __name__=="__main__":
     ax.set_xticklabels([])
 
 
-    dir='/n/netscratch/conroy_lab/Lab/amphillips/movies/moving_grid_rotation/'
+    dir='/n/netscratch/conroy_lab/Lab/amphillips/movies/evolving_grid_long/'
     filename = f"frame_{it:05d}.png"
     plt.savefig(dir+filename)
     plt.close()
+
+# %%
