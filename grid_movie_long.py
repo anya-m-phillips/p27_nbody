@@ -3,7 +3,7 @@
 print("importing packages...")
 import sys
 repo_path = "/n/home02/amphillips/p27_nbody"
-script_path = repo_path+"/script"
+script_path = repo_path+"/scripts"
 
 import petar
 import numpy as np
