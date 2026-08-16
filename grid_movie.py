@@ -2,7 +2,8 @@
 ################ import packages
 print("importing packages...")
 import sys
-script_path = "/n/home02/amphillips/p27_nbody/scripts" # for cannon
+repo_path = "/n/home02/amphillips/p27_nbody"
+script_path = repo_path+"/script"
 
 import petar
 import numpy as np
@@ -21,8 +22,10 @@ plt.style.use(script_path+'/vedant.mplstyle')
 from tqdm import tqdm
 
 sys.path.append(script_path)
+sys.path.append(repo_path)
 from streamframe import StreamFrame
 import PETAR_ANALYSIS_FUNCTIONS as paf
+from inspect_new_sims import prepare_nbody_data, rotation_matrix
 import argparse
 
 print("done")
@@ -31,83 +34,6 @@ print("done")
 ### DEFINE STUFF ABOUT THE GRID: 
 grid_info = paf.extended_grid_info(scratch=True) 
 # %%
-def rotation_matrix(a,b,c):
-    """
-    rotate angles a,b,c about x,y,z axes
-    https://en.wikipedia.org/wiki/Rotation_matrix#In_three_dimensions
-    """
-    Rx = np.array([
-        [1,0,0],
-        [0, np.cos(a), -np.sin(a)],
-        [0, np.sin(a), np.cos(a)]
-    ])
-    Ry = np.array([
-        [np.cos(b), 0, np.sin(b)],
-        [0,1,0],
-        [-np.sin(b), 0, np.cos(b)]
-    ])
-    Rz = np.array([
-        [np.cos(c), -np.sin(c), 0],
-        [np.sin(c), np.cos(c), 0],
-        [0,0,1]
-    ])
-
-    # R = Rx @ Ry @ Rz
-    R = Rz @ Ry @ Rx # <-- do x rotation first, _then_ z rotation.. mostly for movie purposes. 
-    return R
-
-# main helper function: 
-def prepare_nbody_data(path = grid_info.gd1_lm_paths[0]+"0/", 
-                       include_photometry=False, 
-                       i=grid_info.gd1_age,
-                       apo = grid_info.gd1_apo,
-                       init_displacement = grid_info.gd1_init_displacement,
-                       ):
-    """
-    this is expecting N-body data that outputs every 10 Myr. 
-    """
-    core = paf.load_core(path)
-    file_index = int(i/10)
-
-    data_dict = paf.intrinsic_stream_data_v3(
-        path, i, core, apo, init_displacement,
-        use_core=False,
-        binary_treatments=['CoM','companions','luminous']
-    )
-
-    CMdict = data_dict['CoM']
-    lumdict = data_dict['luminous']
-    inMW, trim = CMdict['inMW'], CMdict['trim']
-
-
-    if include_photometry==True:
-        # do the calculations -- ORDERED AS ALL_PARTICLES
-        primary_Ls = lumdict["L"][inMW][trim] #* u.Lsun
-        primary_Rs = lumdict['R'][inMW][trim] #* u.Rsun
-        primary_Teffs = (primary_Ls / (4*np.pi*primary_Rs**2 * const.sigma_sb))**(1/4)
-
-        R_cgs = primary_Rs.cgs.value
-        Teff_cgs = primary_Teffs.cgs.value
-        G, BP, RP, z = [],[],[],[]
-        for Tval, Rval in tqdm(zip(Teff_cgs, R_cgs)):
-            Gval, BPval, RPval = paf.get_gaia_photometry(Tval, Rval, 10) # 10 pc. 
-            G.append(Gval)
-            BP.append(BPval)
-            RP.append(RPval)
-
-            zval = paf.get_z_photometry(Tval, Rval, 10) # 10pc
-            z.append(zval)
-        G = np.array(G)
-        BP = np.array(BP)
-        RP = np.array(RP)
-        z = np.array(z)
-
-        return core, data_dict, CMdict, lumdict, inMW, trim, G, BP, RP, z
-    
-    else:
-        return core, data_dict, CMdict, lumdict, inMW, trim
-# %%
-
 orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
 
 lm_colors, hm_colors, simcolors = paf.define_simcolors()

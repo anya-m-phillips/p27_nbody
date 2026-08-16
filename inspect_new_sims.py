@@ -10,7 +10,9 @@ from scipy.stats import binned_statistic
 from scipy.optimize import curve_fit
 from scipy.ndimage import gaussian_filter1d
 
-import astropy.coordinates as coord
+# import astropy.coordinates as coord
+from astropy.coordinates import Galactocentric, ICRS, CartesianRepresentation,CartesianDifferential
+from astropy.coordinates import SkyCoord
 import astropy.units as u
 import astropy.constants as const
 from astropy.table import Table
@@ -46,13 +48,15 @@ import PETAR_ANALYSIS_FUNCTIONS as paf
 from sklearn.mixture import GaussianMixture
 from pygaia.errors.astrometric import parallax_uncertainty, proper_motion_uncertainty, total_proper_motion_uncertainty, total_position_uncertainty
 
-sys.path.append("/n/home02/amphillips/p26/scripts/")
-from gen_king_clust import rotation_matrix_from_vectors, random_unit_vector
+
 
 # %%
 
 ### DEFINE STUFF ABOUT THE GRID: 
 grid_info = paf.extended_grid_info(scratch=True) 
+lm_colors, hm_colors, simcolors = paf.define_simcolors()
+reordered_colors = hm_colors + lm_colors[::-1]
+cc = reordered_colors[:-1]
 
 # main helper function: 
 def prepare_nbody_data(path = grid_info.gd1_lm_paths[0]+"0/", 
@@ -105,23 +109,6 @@ def prepare_nbody_data(path = grid_info.gd1_lm_paths[0]+"0/",
     else:
         return core, data_dict, CMdict, lumdict, inMW, trim
 
-# %%
-orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
-
-dicts = []
-for ii, orbit in tqdm(enumerate(orbits)):
-    path, apo, age, init_displacement = grid_info.retrieve_sim_info(
-        orbit=orbit, stellar_pop='lm', rvir_index=0, copy=0
-    )
-
-    core, data_dict, CMdict, lumdict, inMW, trim = prepare_nbody_data(
-        path = path,
-        include_photometry=False,
-        i=age if orbit != "circ" else 30000,
-        init_displacement = init_displacement
-    )
-    dicts.append(data_dict)
-# %%
 def rotation_matrix(a,b,c):
     """
     rotate angles a,b,c about x,y,z axes
@@ -146,105 +133,145 @@ def rotation_matrix(a,b,c):
     # R = Rx @ Ry @ Rz
     R = Rz @ Ry @ Rx # <-- do x rotation first, _then_ z rotation.. mostly for movie purposes. 
     return R
+
+
+def streamframe_coords_observed(orbit, data_dict):
+    """
+    orbit options are:
+    gd1, pa5, jet, aau, m3, c19, circ
+    
+    (input as strings), will put into a great-circle coordinate frame 
+    based on ICRS ra/dec. this will allow accounting for projection 
+    effects. also will correct radial velocity + proper motion for solar
+    reflex motion, using a distance that for now is assumed to 
+    be known exactly. For real streams this would be based on 
+    a dynamically-fit distance track and hopefully would also be 
+    pretty well-constrained....
+    """
+    pos, vel = data_dict['pos'], data_dict['vel']
+    coords_ICRS = paf.galcen_to_ICRS(pos, vel) #<-- check UNITS!
+    coords_ICRS = reflex_correct(coords_ICRS) #<-- correct for solar reflex motion
+
+    matrix_orbits = ['aau','jet'] #<-- these are given as rotation matrices in the literature. will not use gala. 
+    
+    if orbit not in matrix_orbits: # if orbit=='gd1' or orbit=='pa5' or orbit=='c19':
+        coords_stream = {}
+        if orbit=='gd1':
+            sc=coords_ICRS.transform_to(gc.GD1Koposov10)
+        if orbit=='pa5':
+            sc = coords_ICRS.transform_to(gc.Pal5PriceWhelan18)
+
+        if orbit=='c19':
+            # as defined in ibata+24 and explained in mohammed 26
+            alpha_0 = 354.356*u.degree #<-- sets the phi1 zero point
+
+            pole = SkyCoord( #<-- defines the pole
+                ra= 81.45*u.degree,
+                dec = -6.346*u.degree
+            )
+
+            C19Ibata24 = gc.GreatCircleICRSFrame.from_pole_ra0(
+                pole=pole, ra0=alpha_0 #, origin_disambiguate=[coordinate that the origin should be closest to?]
+            )
+            sc = coords_ICRS.transform_to(C19Ibata24)
+
+        if orbit=='m3':
+            # from Yang+2023, section 4.4
+            endpoints = SkyCoord(
+                ra=[186.45,197.20]*u.degree,
+                dec=[19.06,27.76]*u.degree
+            )
+
+            # choose the origin based on the ICRS coordinate of the progenitor 
+            # at present day. might be smart to read these in from data/FINAL_ics_nolmc.csv rather than hard coding here. 
+            prog_pos = np.array([-12.182298569979494,15.707205926304553,-9.692524337878561]) * u.kpc
+            prog_vel = np.array([56.692529246818786,-55.86054764465028,-122.08537966238212]) * u.km/u.s
+            prog_coord = paf.galcen_to_ICRS(prog_pos, prog_vel) #<-- debug and print htis out to see if its between the endpoints...
+            origin = SkyCoord(
+                ra=prog_coord.ra, dec=prog_coord.dec #<-- choose an origin... in ra
+            )
+            M3Yang23 = gc.GreatCircleICRSFrame.from_endpoints(
+                endpoints[0], endpoints[1], origin=origin
+            )
+            sc = coords_ICRS.tranform_to(M3Yang23)
+
+        coords_stream['phi1'] = sc.phi1.to(u.degree).value
+        coords_stream['phi2'] = sc.phi2.to(u.degree).value
+        coords_stream['pm_phi1'] = sc.pm_phi1.to(u.mas/u.yr).value
+        coords_stream['pm_phi2'] = sc.pm_phi2.to(u.mas/u.yr).value
+        coords_stream['distance'] = sc.distance.to(u.kpc).value
+        coords_stream['v_gsr'] = sc.radial_velocity.to(u.km/u.s).value
+
+    if orbit in matrix_orbits:
+        if orbit=='aau':
+            # rotation matrix from shipp+2019, Li+2021
+            M = np.array([
+                [0.83697865, 0.29481904, -0.4610298], 
+                [0.51616778, -0.70514011, 0.4861566],
+                [0.18176238, 0.64487142, 0.74236331]
+            ])
+        if orbit=='jet':
+            # Do+26
+            M = np.array([
+                [-0.69798645, 0.61127501, -0.37303856], 
+                [-0.62615889, -0.26819784, 0.73211677],
+                [0.34747655, 0.74458900, 0.56995374]
+            ])
+        ### rotate ICRS coords by M. see paf.xform_to_koposov_coords(ra, dec) for how to do this. 
+        # create the coords_stream dictionary
+
+        pass
+
+
+    return coords_stream #<-- a dictionary, like Jake's 
+
+def desi_RVerr(zmag, feh=-2.0):
+    """
+    get RV error for desi data model, which 
+    depends on z magnitude and metallicity
+    """
+    log_err = -0.47 + 0.27*(zmag-16) - 0.23*feh
+    return 10**log_err
+
+### define Via RVerr(mag, metallicity)
+
+def add_noise(icrs_coords, survey='DESI'):
+    """
+    will want to have "DESI" and "Via" options 
+    for the survey velocity errors. 
+    For Desi these will come from a Koposov paper, 
+    for Via they will come from viamock. 
+    """
+    return
 # %%
-lm_colors, hm_colors, simcolors = paf.define_simcolors()
-# cc = simcolors[3:]
-# reordered_colors = lm_colors+hm_colors
-# cc = reordered_colors[1:]
+# if __name__=='__main__': #### stuff i won't want to run when i import functions to other scripts below. 
 
-reordered_colors = hm_colors + lm_colors[::-1]
-cc = reordered_colors[:-1]
-### generate a rotation matrix here, so that I can view the streams from another angle!
+orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
 
-theta_list = np.arange(0, 361, 1)*u.degree.to(u.radian)
-it = 0
-for theta in tqdm(theta_list):
-# theta = 180*u.degree.to(u.radian)
-    phi =  5*u.degree.to(u.radian)
-    R = rotation_matrix(a=phi, b=0, c=theta)
+dicts = []
+for ii, orbit in tqdm(enumerate(orbits)):
+    path, apo, age, init_displacement = grid_info.retrieve_sim_info(
+        orbit=orbit, stellar_pop='lm', rvir_index=0, copy=0
+    )
 
-    fig, ax = plt.subplots()
-
-    e0,e1,e2 = np.array([]), np.array([]), np.array([])
-    n_sim = np.array([])
-
-    for ii, data_dict in enumerate(dicts):
-
-        x, y, z = data_dict['CoM']['pos'].T.to(u.kpc)
-        pos = data_dict['CoM']['pos'].to(u.kpc)
-
-        rotated_pos = (R@pos.T).T
-
-        e0_, e1_, e2_ = rotated_pos.T
-        e0 = np.append(e0, e0_.to(u.kpc).value)
-        e1 = np.append(e1, e1_.to(u.kpc).value)
-        e2 = np.append(e2, e2_.to(u.kpc).value)
-        n_sim = np.append(n_sim, 
-                        np.array([ii]*len(e0_)))
-        # xformed_pos = np.append(xformed_pos, rotated_pos.to(u.kpc).value)
-
-        # ax.scatter(rotated_pos[:,0], rotated_pos[:,2], 
-        #         c=cc[ii], 
-        #         rasterized=True, 
-        #         s=1)
-        
-    reordered = np.argsort(e1)[::-1]
-    # cmap = LinearSegmentedColormap.from_list('cmap', cc)
-    n_orbits = len(orbits)
-    cmap = mcolors.ListedColormap(cc[:n_orbits])
-    # discrete norm: one color band per orbit, boundaries on the half-integers
-    bounds = np.arange(n_orbits + 1) - 0.5   # [-0.5, 0.5, ..., n_orbits-0.5]
-    norm = mcolors.BoundaryNorm(bounds, cmap.N)
-    ob = ax.scatter(e0[reordered], e2[reordered],
-            c=n_sim[reordered],
-            cmap=cmap,
-            norm=norm,
-            s=1)
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes('right','5%',pad=0.05)
-    cbar = fig.colorbar(ob, cax=cax, ticks=np.arange(n_orbits))
-    cbar.ax.set_yticklabels(orbits)   # bottom -> top follows the orbits list order
+    core, data_dict, CMdict, lumdict, inMW, trim = prepare_nbody_data(
+        path = path,
+        include_photometry=False,
+        i=age if orbit != "circ" else 30000,
+        init_displacement = init_displacement
+    )
+    dicts.append(data_dict)
+# %%
 
 
-    r_earth = 8
-    pos_earth = np.array([r_earth,0,0])
-    theta_rng = np.linspace(0, 2*np.pi, 50)
-    x,y,z = r_earth*np.cos(theta_rng), r_earth*np.sin(theta_rng), np.zeros(len(theta_rng))
-    disk = np.array([x,y,z]).T
-
-    rotated_disk = (R@disk.T).T
-    ax.plot(rotated_disk[:,0], rotated_disk[:,2], zorder=0,
-            color='k', lw=1)
-
-    rotated_pos_earth = np.dot(R, pos_earth)
-    ax.scatter(rotated_pos_earth[0], rotated_pos_earth[2],
-                c='gold', marker='o', lw=1,
-                edgecolor='k', s=50,
-                zorder=0)
-
-
-
-
-    ax.set_xlim(-40,40)
-    ax.set_ylim(-40,40)
-    ax.set_yticks([])
-    ax.set_yticklabels([])
-    ax.set_xticks([])
-    ax.set_xticklabels([])
-
-    dir='/n/netscratch/conroy_lab/Lab/amphillips/movies/grid_rotation/'
-    filename = f"frame_{it:05d}.png"
-    plt.savefig(dir+filename)
-    plt.close()
-    it+=1
 # %%
 
 # %%
 # and do we have streamframes for everyone???
 # - [x] GD1 (koposov; in gala)
 # - [x] pa5 (price-whelan; in gala)
-# - [ ] c19 (ibata+24; not in gala; see Nasser's paper)
+# - [x ] c19 (ibata+24; not in gala; see Nasser's paper)
 # - [ ] M3 (??) lmao, does exist: Such a rotation can be easily done by some tools, e.g., Gala 7 (Price-Whelan 2017). -- Yang+23
-# - [ ] AAU: https://iopscience.iop.org/article/10.3847/1538-4357/abeb18#apjabeb18app1 (Li+21; not in gala)
-# - [ ] jet: Do+26 sec 3
+# - [x ] AAU: https://iopscience.iop.org/article/10.3847/1538-4357/abeb18#apjabeb18app1 (Li+21; not in gala)
+# - [x ] jet: Do+26 sec 3
 # %%
