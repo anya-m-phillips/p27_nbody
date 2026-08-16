@@ -215,7 +215,7 @@ class extended_grid_info():
 
         return path, apo, age, init_displacement
 
-def define_paths_scratch():
+def define_paths_scratch(): #<-- LEFTOVER FROM OLD GRID
     """
     alt path function to call from scratch directories. 
     """
@@ -251,7 +251,7 @@ def define_paths_scratch():
 
     return paths
 
-def define_paths():
+def define_paths(): #<-- LEFTOVER FROM OLD GRID
     ph = "/n/holystore01/LABS/conroy_lab/Lab/amphillips/finished_grid/"
 
     path0 = ph+"optimized_dense_sims/0_circ_rvir0.75_lm/" # unfinished
@@ -291,7 +291,7 @@ def define_paths():
     return paths
 
 
-def define_init_displacements():
+def define_init_displacements(): #<-- LEFTOVER FROM OLD GRID
     """
     returns a list of initial displacements in kpc, km/s
     for the main grid of petar simulations
@@ -312,7 +312,7 @@ def define_init_displacements():
 
     return init_displacements
 
-def define_apocenters():
+def define_apocenters(): #<-- LEFTOVER FROM OLD GRID
     """
     these numbers come from the notebook
     1_table_and_context.ipynb
@@ -324,7 +324,7 @@ def define_apocenters():
     return apocenters
 
 
-def get_tdis_tplot(paths, verbose=False):
+def get_tdis_tplot(paths, verbose=False): #<-- LEFTOVER FROM OLD GRID
     ##### dissolution and plotting times
     dissolution_times = []
     plotting_times_peri = []
@@ -373,7 +373,9 @@ def get_tdis_tplot(paths, verbose=False):
     return dissolution_times, plotting_times_peri, plotting_times_apo
 
 
-def unpack_escaper_dict(escaper_dict_dedup, return_vectors=False):
+# LEFTOVER FROM ~/stream_velocity_structures; keeping around in case 
+# i make escaper dictionaries for the new grid., same deal with match_escape_times/properties
+def unpack_escaper_dict(escaper_dict_dedup, return_vectors=False): #<-- LEFTOVER FROM OLD GRID
     # unpacking the de-duplicated dictionary:
 
     tdis = escaper_dict_dedup["tdis"]
@@ -1356,38 +1358,10 @@ def get_ICRS_coords(path, i, interrupt="bse"):
     coords_ICRS = coords_galcen.transform_to(ICRS())
     return coords_ICRS
 
-def xform_to_koposov_coords(ra, dec):
-    """
-    Convert (ra, dec) in radians to (phi1, phi2) in radians
-    using the Koposov et al. 2010 transformation matrix.
-    """
-
-    # Rotation matrix from equatorial (RA, Dec) to stream (phi1, phi2)
-    M = np.array([
-        [-0.4776303088, -0.1738432154,  0.8611897727],
-        [ 0.5108445890, -0.8524449229,  0.1112450420],
-        [ 0.7147776536,  0.4930681392,  0.4959603976]
-    ])
-
-    # Input unit vector in equatorial coordinates
-    x_eq = np.cos(ra) * np.cos(dec)
-    y_eq = np.sin(ra) * np.cos(dec)
-    z_eq = np.sin(dec)
-
-    vec_eq = np.array([x_eq, y_eq, z_eq])
-
-    # Apply rotation matrix
-    x_stream, y_stream, z_stream = np.dot(M, vec_eq)
-
-    # Convert rotated Cartesian vector to spherical coordinates
-    phi1 = np.arctan2(y_stream, x_stream)
-    phi2 = np.arcsin(z_stream)  # safer than arctan2(z, sqrt(x^2 + y^2))
-
-    return phi1, phi2
-
 
 def get_streamcoords_from_ICRS(ICRS_coords, try_every=1):
     """
+    for when I want to optimize. 
     get phi1, phi2 from transforming to ICRS coordinates, fitting a great circle coordinate frame
     then fitting a quadratic, cubic, or spline and subtracting it. 
     for finding stream widths; progenitor will not necessarily be centered.
@@ -1454,8 +1428,8 @@ def calculate_half_mass_radius(ms, rs):
     # print("half mass radius = %.3f pc"%half_mass_radius)
     return half_mass_radius 
 
+################ STATISTICS
 
-    
 def find_minima(arr):
     min_indeces = []
     min_values = []
@@ -1483,37 +1457,6 @@ def find_maxima(arr):
 
     return np.array(max_indeces), np.array(max_values)
 
-def find_dissolution_plotting_times(path, interrupt='bse', circ=False):
-    # find galactocentric radius at each timestep
-    core = petar.Core(interrupt_mode=interrupt, external='galpy')
-    core.loadtxt(path+'data.core')
-    x,y,z = core.pos.T
-    r = np.sqrt(x**2 + y**2 + z**2)
-    
-    # find dissolution time
-    tidal = load_tidal(path)
-    bound_times = tidal.time[tidal.n>=100]
-    tdis = int(max(bound_times))
-    
-    if circ==True:
-        t_plot_peri = tdis
-        t_plot_apo = tdis
-
-    else:    
-        # find last peri/apocenter before dissolution
-        r_times_to_check = tidal.time[tdis-500:tdis].astype(int) # check last 500 Myr for a min/max r
-        rs_to_check = r[r_times_to_check]
-        min_inds, min_vals = find_minima(rs_to_check)
-        times_at_minimum = r_times_to_check[min_inds]
-        max_inds, max_vals = find_maxima(rs_to_check)
-        times_at_maximum = r_times_to_check[max_inds]
-        
-        
-        t_plot_peri = int(max(times_at_minimum))
-        t_plot_apo = int(max(times_at_maximum))
-    
-    return tdis, t_plot_peri, t_plot_apo
-    
 
 ## for uncertainties in the binary fraction. 
 def Prob_of_frac(k, N, parr=np.linspace(0, 1, 1000)): # uniform prior??
@@ -2458,7 +2401,7 @@ def integrated_mag(nu_min, nu_max, T, R, d=10):
 
     ### now integrate this...
     f_filter = np.trapezoid(f_fid/nu_range, nu_range)
-    f_filter /= np.trapezoid(1/nu_range, nu_range) ### idk chat says to try this. 
+    f_filter /= np.trapezoid(1/nu_range, nu_range) ### suggestion that idk why works. 
 
     #### EVENTUALLY__ this should be integrated over a frequency range. 
     M = -2.5*np.log10(f_filter) - 48.60

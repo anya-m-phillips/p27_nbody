@@ -132,69 +132,7 @@ def rotation_matrix(a,b,c):
     R = Rz @ Ry @ Rx # <-- do x rotation first, _then_ z rotation.. mostly for movie purposes. 
     return R
 
-# %%
-# check data_dict outputs...
-_, data_dict, CMdict, lumdict, inMW, trim = prepare_nbody_data(
-    path = grid_info.m3_lm_paths[0]+"0/",
-    i=grid_info.m3_age,
-    apo=grid_info.m3_apo,
-    init_displacement=grid_info.m3_init_displacement
-) 
-# %%
-# example astropy coorddinate xforms
-pos, vel = CMdict['pos'], CMdict['vel']
-coords_ICRS = paf.galcen_to_ICRS(pos, vel)
-coords_ICRS = reflex_correct(coords_ICRS)
 
-# fig, ax = plt.subplots()
-# ax.scatter(coords_ICRS.ra, coords_ICRS.dec)
-
-# ### quick check to make sure i set up my orbits right. 
-# m3_catalog = Table.read('/n/home02/amphillips/stream_catalogs/M3.fits')
-# ax.scatter(m3_catalog['ra'], m3_catalog['dec'])
-# m3_catalog
-
-endpoints = SkyCoord(
-    ra=[186.45,197.20]*u.degree,
-    dec=[19.06,27.76]*u.degree
-)
-
-# choose the origin based on the ICRS coordinate of the progenitor 
-# at present day. might be smart to read these in from data/FINAL_ics_nolmc.csv rather than hard coding here.
-prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
-row = prog_tab[prog_tab['name']=='M3'] 
-prog_pos = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.kpc
-prog_vel = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.km/u.s
-prog_coord = paf.galcen_to_ICRS(prog_pos, prog_vel) #<-- debug and print htis out to see if its between the endpoints...
-origin = SkyCoord(
-    ra=prog_coord.ra, dec=prog_coord.dec #<-- choose an origin... in ra
-)
-M3Yang23 = gc.GreatCircleICRSFrame.from_endpoints(
-    endpoints[0], endpoints[1], origin=origin
-)
-M3Yang23
-pole = M3Yang23.pole
-ra0 = M3Yang23.origin.ra
-M3Yang23_tryagain = gc.GreatCircleICRSFrame.from_pole_ra0(
-    pole=pole, ra0=ra0, origin_disambiguate=origin
-)
-
-# %%
-origin
-# %%
-sc = coords_ICRS.tranform_to(M3Yang23_tryagain) #<--- why does the .from_endpoints variant not work but the from_pole_ra0 does?
-
-# sc = coords_ICRS.transform_to(C19Ibata24)
-# %%
-
-# plt.scatter(coords_ICRS.ra[inMW][trim], coords_ICRS.pm_dec[inMW][trim])
-fig, ax = plt.subplots(figsize=[8,3])
-ax.scatter(sc.phi1[inMW][trim], sc.phi2[inMW][trim], c='k', s=.1)
-# # ax.set_ylim(-3, 6)
-# ax.set_xlim(-15,15)
-
-
- 
 # %%
 def streamframe_coords_observed(orbit, data_dict):
     """
@@ -215,89 +153,103 @@ def streamframe_coords_observed(orbit, data_dict):
     pos, vel = data_dict['pos'], data_dict['vel']
     coords_ICRS = paf.galcen_to_ICRS(pos, vel) 
     coords_ICRS = reflex_correct(coords_ICRS) #<-- correct for solar reflex motion
+    prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 
-    matrix_orbits = ['aau','jet'] #<-- these are given as rotation matrices in the literature. will not use gala. 
     
-    if orbit not in matrix_orbits: # if orbit=='gd1' or orbit=='pa5' or orbit=='c19':
-        coords_stream = {}
-        if orbit=='gd1':
-            sc=coords_ICRS.transform_to(gc.GD1Koposov10)
-        if orbit=='pa5':
-            sc = coords_ICRS.transform_to(gc.Pal5PriceWhelan18)
+    coords_stream = {}
+    if orbit=='gd1': #<-- pre-defined frame in gala. 
+        sc=coords_ICRS.transform_to(gc.GD1Koposov10)
+    if orbit=='pa5': #<-- pre-defined frame in gala. 
+        sc = coords_ICRS.transform_to(gc.Pal5PriceWhelan18)
 
-        if orbit=='c19':
-            # as defined in ibata+24 and explained in mohammed 26
-            alpha_0 = 354.356*u.degree #<-- sets the phi1 zero point
+    if orbit=='c19': # defined by pole/origin in ibata+24, mohammed+26
+        alpha_0 = 354.356*u.degree #<-- sets the phi1 zero point
 
-            pole = SkyCoord( #<-- defines the pole
-                ra= 81.45*u.degree,
-                dec = -6.346*u.degree
-            )
-            prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
-            row = prog_tab[prog_tab['name']=='c19'] 
-            prog_pos = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.kpc
-            prog_vel = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.km/u.s
-            prog_coord = paf.galcen_to_ICRS(prog_pos, prog_vel) #<-- debug and print htis out to see if its between the endpoints...
-            origin = SkyCoord(
-                ra=prog_coord.ra, dec=prog_coord.dec #<-- choose an origin... in ra
-            )
+        pole = SkyCoord( #<-- defines the pole
+            ra= 81.45*u.degree,
+            dec = -6.346*u.degree
+        )
+        row = prog_tab[prog_tab['name']=='C-19'] 
+        prog_pos = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.kpc
+        prog_vel = np.array([row['vx'][0], row['vy'][0], row['vz'][0]]) * u.km/u.s
+        prog_coord = paf.galcen_to_ICRS(prog_pos, prog_vel) #<-- debug and print htis out to see if its between the endpoints...
+        origin = SkyCoord(
+            ra=prog_coord.ra, dec=prog_coord.dec #<-- choose an origin... in ra
+        )
 
-            C19Ibata24 = gc.GreatCircleICRSFrame.from_pole_ra0(
-                pole=pole, ra0=alpha_0, origin_disambiguate=origin #[coordinate that the origin should be closest to?]
-            )
-            sc = coords_ICRS.transform_to(C19Ibata24)
+        C19Ibata24 = gc.GreatCircleICRSFrame.from_pole_ra0(
+            pole=pole, ra0=alpha_0, origin_disambiguate=origin #[coordinate that the origin should be closest to?]
+        )
+        sc = coords_ICRS.transform_to(C19Ibata24)
 
-        if orbit=='m3':
-            # from Yang+2023, section 4.4. Endpoints are given but origin is not. 
-            endpoints = SkyCoord(
-                ra=[186.45,197.20]*u.degree,
-                dec=[19.06,27.76]*u.degree
-            )
+    if orbit=='jet': #<-- this also has a pole/origin vibe: from Do+26
+        pole = SkyCoord(
+            ra=64.983*u.degree, 
+            dec=34.747*u.degree
+        )
+        origin = SkyCoord(
+            ra = 138.62*u.degree,
+            dec = 22.10*u.degree
+        )
+        JetDo26 = gc.GreatCircleICRSFrame.from_pole_ra0(
+            pole=pole, ra0=origin.ra, origin_disambiguate=origin
+        )
+        sc = coords_ICRS.transform_to(JetDo26)
 
-            # choose the origin based on the ICRS coordinate of the progenitor 
-            # at present day. might be smart to read these in from data/FINAL_ics_nolmc.csv rather than hard coding here.
-            prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
-            row = prog_tab[prog_tab['name']=='M3'] 
-            prog_pos = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.kpc
-            prog_vel = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.km/u.s
-            prog_coord = paf.galcen_to_ICRS(prog_pos, prog_vel) #<-- debug and print htis out to see if its between the endpoints...
-            origin = SkyCoord(
-                ra=prog_coord.ra, dec=prog_coord.dec #<-- choose an origin... in ra
-            )
-            M3Yang23 = gc.GreatCircleICRSFrame.from_endpoints(
-                endpoints[0], endpoints[1], origin=origin
-            )
-            sc = coords_ICRS.tranform_to(M3Yang23)
+    if orbit=='aau': #<-- endpoints defined for ATLAS in table 1 of Shipp+2018
+        endpoints = SkyCoord(
+            ra=[9.3, 30.7]*u.degree,
+            dec=[-20.9, -33.2]*u.degree
+        )
+        # pole = SkyCoord( #<-- don't actually need in my definition. 
+        #     ra=74.3*u.degree, dec=47.9*u.degree
+        # )
+        row = prog_tab[prog_tab['name']=='ATLAS-Aliqa Uma'] 
+        prog_pos = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.kpc
+        prog_vel = np.array([row['vx'][0], row['vy'][0], row['vz'][0]]) * u.km/u.s
+        prog_coord = paf.galcen_to_ICRS(prog_pos, prog_vel) #<-- debug and print htis out to see if its between the endpoints...
+        origin = SkyCoord(
+            ra=prog_coord.ra, dec=prog_coord.dec #<-- choose an origin... in ra
+        )
+        AAUShipp18 = gc.GreatCircleICRSFrame.from_endpoints( #<-- see table 1; for the ATLAS stream. 
+            endpoints[0], endpoints[1], ra0=origin.ra#origin=origin, priority='pole'
+        )
+        sc = coords_ICRS.transform_to(AAUShipp18)
 
-        coords_stream['phi1'] = sc.phi1.to(u.degree).value
-        coords_stream['phi2'] = sc.phi2.to(u.degree).value
-        coords_stream['pm_phi1'] = sc.pm_phi1_cosphi2.to(u.mas/u.yr).value
-        coords_stream['pm_phi2'] = sc.pm_phi2.to(u.mas/u.yr).value
-        coords_stream['distance'] = sc.distance.to(u.kpc).value
-        coords_stream['v_gsr'] = sc.radial_velocity.to(u.km/u.s).value
+    if orbit=='m3': #<-- endpoints defined in Yang+23, sec 4.4
+        # TODO: ics file gives something that is off from this frame; might want to redefine, and settle for "stream on an m3-like orbit." since this is mostly just a high e, low pericenter test. 
+        endpoints = SkyCoord(
+            ra=[186.45,197.20]*u.degree,
+            dec=[19.06,27.76]*u.degree
+        )
+        # choose the origin based on the ICRS coordinate of the progenitor 
+        # at present day. might be smart to read these in from data/FINAL_ics_nolmc.csv rather than hard coding here.
+        row = prog_tab[prog_tab['name']=='M3'] 
+        prog_pos = np.array([row['x'][0], row['y'][0], row['z'][0]]) * u.kpc
+        prog_vel = np.array([row['vx'][0], row['vy'][0], row['vz'][0]]) * u.km/u.s
+        prog_coord = paf.galcen_to_ICRS(prog_pos, prog_vel) #<-- debug and print htis out to see if its between the endpoints...
+        origin = SkyCoord(
+            ra=prog_coord.ra, dec=prog_coord.dec #<-- choose an origin... in ra
+        )
+        M3Yang23 = gc.GreatCircleICRSFrame.from_endpoints(
+            endpoints[0], endpoints[1], origin=origin, priority='origin' #<-- warns...
+        )
+        sc = coords_ICRS.transform_to(M3Yang23) 
 
-    if orbit in matrix_orbits:
-        if orbit=='aau':
-            # rotation matrix from shipp+2019, Li+2021
-            M = np.array([
-                [0.83697865, 0.29481904, -0.4610298], 
-                [0.51616778, -0.70514011, 0.4861566],
-                [0.18176238, 0.64487142, 0.74236331]
-            ])
-        if orbit=='jet':
-            # Do+26
-            M = np.array([
-                [-0.69798645, 0.61127501, -0.37303856], 
-                [-0.62615889, -0.26819784, 0.73211677],
-                [0.34747655, 0.74458900, 0.56995374]
-            ])
-        ### rotate ICRS coords by M. see paf.xform_to_koposov_coords(ra, dec) for how to do this. 
-        # create the coords_stream dictionary
+    coords_stream['phi1'] = sc.phi1.to(u.degree).value
+    coords_stream['phi2'] = sc.phi2.to(u.degree).value
+    coords_stream['pm_phi1'] = sc.pm_phi1_cosphi2.to(u.mas/u.yr).value
+    coords_stream['pm_phi2'] = sc.pm_phi2.to(u.mas/u.yr).value
+    coords_stream['distance'] = sc.distance.to(u.kpc).value
+    coords_stream['v_gsr'] = sc.radial_velocity.to(u.km/u.s).value
 
-        pass
+    return coords_stream #<-- a dictionary, like Jake', but will have v_gsr instead of vr, and distance instead of r (different keys. )
 
+# TODO: 
+# define a function to straighten based on prog orbit interpolation; 
+    # see /old/DESI_comparison.py, get_GD1_coords_nbody() function for an implementation of the orbit interp, and 
+    # /old/prog_properties_summary.py for poly_straightening() function that I think worked better than paf. 
 
-    return coords_stream #<-- a dictionary, like Jake's 
 
 def desi_RVerr(zmag, feh=-2.0):
     """
@@ -307,7 +259,7 @@ def desi_RVerr(zmag, feh=-2.0):
     log_err = -0.47 + 0.27*(zmag-16) - 0.23*feh
     return 10**log_err
 
-### define Via RVerr(mag, metallicity)
+### TODO: define Via RVerr(mag, metallicity) #<-- from viamock; will need to add to this env (?) check my machine.  
 
 def add_noise(icrs_coords, survey='DESI'):
     """
@@ -318,12 +270,14 @@ def add_noise(icrs_coords, survey='DESI'):
     """
     return
 # %%
-# if __name__=='__main__': #### stuff i won't want to run when i import functions to other scripts below. 
-
+#### stuff i won't want to run when i import functions to other scripts below. 
+# comment out the if __name__==... line and un-indent stuff if doing work in this notebook. 
+# if __name__=='__main__': 
 orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
 
 dicts = []
-for ii, orbit in tqdm(enumerate(orbits)):
+sf_coords_obs = []
+for ii, orbit in enumerate(tqdm(orbits)):
     path, apo, age, init_displacement = grid_info.retrieve_sim_info(
         orbit=orbit, stellar_pop='lm', rvir_index=0, copy=0
     )
@@ -332,20 +286,29 @@ for ii, orbit in tqdm(enumerate(orbits)):
         path = path,
         include_photometry=False,
         i=age if orbit != "circ" else 30000,
-        init_displacement = init_displacement
+        init_displacement = init_displacement,
+        apo=apo #<-- always pass apo so that inMW, trim is correct and not always based on GD-1 orbit. 
     )
     dicts.append(data_dict)
+
+    if orbit!='circ':
+        coords_obs = streamframe_coords_observed(orbit, CMdict)
+        sf_coords_obs.append(coords_obs)
+    if orbit=='circ':
+        sf_coords_obs.append({})
 # %%
+for ii, sc in enumerate(tqdm(sf_coords_obs)):
+    if ii==0:
+        continue
+    cmdict = dicts[ii]['CoM']
+    inMW, trim = cmdict['inMW'], cmdict['trim']
+    fig, ax = plt.subplots(figsize=[8,3])
+    ax.scatter(sc['phi1'], sc['phi2'], c='k', s=1)
+    ax.set_title(orbits[ii])
+    ax.set_xlabel(r'$\phi_1~[\degree]$')
+    ax.set_ylabel(r'$\phi_2~[\degree]$')
+    # ax.set_ylim(-20,20)
+    # ax.set_xlim(-100,100)
 
 
-# %%
-
-# %%
-# and do we have streamframes for everyone???
-# - [x] GD1 (koposov; in gala)
-# - [x] pa5 (price-whelan; in gala)
-# - [x ] c19 (ibata+24; not in gala; see Nasser's paper)
-# - [ ] M3 (??) lmao, does exist: Such a rotation can be easily done by some tools, e.g., Gala 7 (Price-Whelan 2017). -- Yang+23
-# - [x ] AAU: https://iopscience.iop.org/article/10.3847/1538-4357/abeb18#apjabeb18app1 (Li+21; not in gala)
-# - [x ] jet: Do+26 sec 3
 # %%
