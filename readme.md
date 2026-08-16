@@ -160,4 +160,4 @@ note that the circular orbit simulation is from the [Phillips+26](https://iopsci
 nothing outside this env can import gala or petar, so run scripts with `~/.conda/envs/petar_env/bin/python` (or activate the env) rather than the system python. 
 
 ## petar documentation
-the `README.md` from Long Wang's (PeTar github)[https://github.com/lwang-astro/PeTar] is useful. 
+the `README.md` from Long Wang's [PeTar github](https://github.com/lwang-astro/PeTar) is useful. 
