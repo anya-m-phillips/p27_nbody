@@ -3,7 +3,7 @@ Exploring an N-body grid of mock streams to probe effects of progenitor dynamics
 - structure of the stream velocity dispersion profile: created by the (evolving) cluster dispersion+tidal filling factor and the progenitor orbit/overlap of successive energy ``feathers." see Bovy(2014).
 
 
-# map of code, briefely:
+# map of code, (not so) briefely:
 `/data`:
 - `FINAL_ics_nolmc.csv`: credit Vedant Chandra, present-day positions, velocities of some promising streams. Age and progenitor mass estimates also given.
 - `init_displacements.txt`: generated in `get_init_displacements.py`, Vedant's progenitor locations back-integrated by their stream ages, plus like 100 Myr to account for initial expansion due to massive star evolution, rounded to a multiple of 10 so that I can safely output sim snapshots every 10 Myr and get the present day in the final snapshot.
@@ -135,7 +135,7 @@ returns a plain dict (like Jake's, but different keys): `phi1`, `phi2` [deg], `p
 | `c19` | Ibata+2024 (see also Mohammed+2026) | `from_pole_ra0`, pole + alpha_0=354.356 deg |
 | `jet` | Do+2026 | `from_pole_ra0`, pole + origin |
 | `aau` | Shipp+2018 table 1 (the ATLAS half) | `from_endpoints` + `ra0` from the progenitor |
-| `m3` | Yang+2023 sec 4.4 | `from_endpoints` + progenitor origin, `priority='pole'` |
+| `m3` | Yang+2023 sec 4.4 | `from_endpoints` + progenitor origin, `priority='origin'` |
 | `circ` | -- | no frame; not a real stream, so it's skipped in the `__main__` loop |
 
 phi1 zero points are set by the present-day progenitor sky position read out of `data/FINAL_ics_nolmc.csv` (except `jet`, where Do+26 give an origin directly). there is no `else` branch -- an unrecognized `orbit` string leaves `sc` undefined and you get a `NameError` at the `coords_stream['phi1']` line rather than a useful message.
