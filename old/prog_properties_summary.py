@@ -159,7 +159,8 @@ def poly_straightening(nbody_coords, nbody_for_straightening):
     units = [u.degree, u.kpc, u.km/u.s, u.mas/u.yr, u.mas/u.yr] # phi2, dist, vr, pms
     for k, key in enumerate(list(nbody_coords.keys())[:-1]):
         y = nbody_coords[key].to(units[k]).value
-        _, _, poly, fit = paf.straighten_stream_polynomial(nbody_for_straightening['phi1'].to(u.degree).value, nbody_for_straightening[key].to(units[k]).value,
+        _, _, poly, fit = paf.straighten_stream_polynomial(nbody_for_straightening['phi1'].to(u.degree).value, 
+                                                           nbody_for_straightening[key].to(units[k]).value,
                                                         trim_criteria = [np.ones(len(nbody_for_straightening[key])).astype(bool),np.ones(len(nbody_for_straightening[key])).astype(bool)],
                                                         return_poly_fn=True)
         y -= poly(nbody_coords_straighter['phi1'].to(u.degree).value, *fit)

@@ -388,24 +388,51 @@ def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
         scd[key] = data_y[ii] - np.interp(data_x, orbit_x, orbit_y[ii])
     return scd
 
-# %% testing that that function works ! ! ! 
-orbit='gd1'
-path, apo, age, init_displacement = grid_info.retrieve_sim_info(
-        orbit=orbit, stellar_pop='hm', rvir_index=0, copy=0
-    )
-core, data_dict, CMdict, lumdict, inMW, trim = prepare_nbody_data(
-    path = path,
-    include_photometry=False,
-    i=age if orbit != "circ" else 30000,
-    init_displacement = init_displacement,
-    apo=apo #<-- always pass apo so that inMW, trim is correct and not always based on GD-1 orbit. 
-)
-scd = straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
-keys = ['phi2','pm_phi1','pm_phi2','v_gsr','distance']
-for ii, key in enumerate(keys):
-    fig, ax = plt.subplots(figsize=[8,3])
-    ax.scatter(scd['phi1'][inMW][trim], scd[key][inMW][trim], c='k', s=1)
+def outlier_clip(vr, pmphi1, pmphi2):
+    """
+    i've decided that dvr should be clipped at 100 km/s
+    and dpm should be clipped at 1.5 mas/yr
+    this avoids biasing the cocoon dispersion 
+    with one or two wack stars that really should
+    have been taken out with inMW, trim
+    """
+    outlier_clip = (np.abs(pmphi1)<1.5) & (np.abs(pmphi2)<1.5) & (np.abs(vr)<100)
+    return outlier_clip
 
+def poly_straightening(coords, tc=None): #<-- Q; should i be doing in MW, trim first?
+    """
+    coords should be in dictionary form, 
+    include phi1, and phi1 should be the first key
+    also, when in dict form my convention is that 
+    things don't have astropy units. 
+    phi1/phi2 should be in degrees, 
+    distance in kpc, 
+    proper motions in mas/yr
+    v_gsr in km/s
+    """
+    coords_straighter = {"phi1":coords['phi1']}
+    if tc is None:
+        tc = [np.ones(len(coords['phi1'])).astype(bool)]*2
+    
+    for k, key in enumerate(list(coords.keys())):
+        if key=='phi1':
+            continue
+        y = coords[key]
+        _, _, poly, fit = paf.straighten_stream_polynomial(coords['phi1'],y,
+                                                            trim_criteria = tc,
+                                                            degree=5, #<-- default, but choose explicitly here. 
+                                                            return_poly_fn=True) #<-- all i care about
+        y-=poly(coords_straighter['phi1'], *fit)
+        coords_straighter[key] = y
+
+    return coords_straighter
+
+def clip_coords(coords, tc):
+    inMW, trim = tc
+    out = {}
+    for key in coords.keys():
+        out[key] = coords[key][inMW][trim]
+    return out
 
 def desi_RVerr(zmag, feh=-2.0):
     """
@@ -419,6 +446,9 @@ def desi_RVerr(zmag, feh=-2.0):
 
 def add_noise(icrs_coords, survey='DESI'):
     """
+    TODO: write this function lol. 
+    i think in detail the transformation of proper motion errors (and phi1/phi2 errors if we have those)
+    is non-trivial and Gala might have functions for transforming the covariance matrix or something. 
     will want to have "DESI" and "Via" options 
     for the survey velocity errors. 
     For Desi these will come from a Koposov paper, 
@@ -433,6 +463,8 @@ orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
 
 dicts = []
 sf_coords_obs = []
+straight_sf_coords_obs = []
+
 for ii, orbit in enumerate(tqdm(orbits)):
     print(orbit)
     path, apo, age, init_displacement = grid_info.retrieve_sim_info(
@@ -451,19 +483,44 @@ for ii, orbit in enumerate(tqdm(orbits)):
     if orbit!='circ':
         coords_obs, sf = streamframe_coords_observed(orbit, CMdict, prog_tab)
         sf_coords_obs.append(coords_obs)
+
+        scd = straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+        straight_sf_coords_obs.append(scd)
+
     if orbit=='circ':
         sf_coords_obs.append({})
+        straight_sf_coords_obs.append({})
 # %%
-for ii, sc in enumerate(tqdm(sf_coords_obs)):
+keys = ['phi2','pm_phi1','pm_phi2','v_gsr']#,'distance']
+
+for ii, sc in enumerate(tqdm(straight_sf_coords_obs)):
     if ii==0:
         continue
+    fig, axs = plt.subplots(len(keys), 1, figsize=[10, 10], sharex=True)
+    plt.subplots_adjust(hspace=0.03, wspace=0.03)
+
+    fig.suptitle(orbits[ii])
+    
     cmdict = dicts[ii]['CoM']
     inMW, trim = cmdict['inMW'], cmdict['trim']
-    fig, ax = plt.subplots(figsize=[8,3])
-    ax.scatter(sc.phi1, sc.phi2, c='k', s=1)
-    ax.set_title(orbits[ii])
-    ax.set_xlabel(r'$\phi_1~[\degree]$')
-    ax.set_ylabel(r'$\phi_2~[\degree]$')
+
+    trimmed_sc = clip_coords(sc, [inMW, trim])
+
+    sc_straighter = poly_straightening(trimmed_sc)
+
+    ol_clip = outlier_clip(
+        sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2']
+    )
+
+
+
+    for jj, key in enumerate(keys):
+        ax = axs[jj]
+        ax.scatter(sc_straighter['phi1'][ol_clip], sc_straighter[key][ol_clip], c='k', s=1,
+                    rasterized=True) 
+        ax.set_ylabel(key)
+    axs[-1].set_xlabel(r'$\phi_1~[\degree]$')
+    # ax.set_ylabel(r'$\phi_2~[\degree]$')
     # ax.set_ylim(-20,20)
     # ax.set_xlim(-100,100)
 
