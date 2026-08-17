@@ -1,6 +1,9 @@
 #------------------------------------------------------------#
 #   print initial phase space displacement from zero for     #
-#   the progenitor cluster when initializing petar sims      #
+#   the progenitor cluster when initializing petar sims 
+#   TODO: rewrite so that orbit rows are called by my orbit
+#   indexing convention, ie all lowercase and <3 characters
+#   see updated column names in FINAL_ics_nolmc.csv          #
 #------------------------------------------------------------#
 # %%
 import sys

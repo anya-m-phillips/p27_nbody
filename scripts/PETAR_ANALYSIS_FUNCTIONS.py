@@ -140,9 +140,20 @@ class extended_grid_info():
         self.pa5_init_displacement = [3984.70438680068355097319,4551.73882141487047192641,-13226.39622530415363144130,113.09106691651193443704,-70.74982682771090480855,88.07032224724790125947]
 
 
-        self.circ_init_displacement = np.array([20.0,0.0,0.0,0.0,197.61111175113643,0.0])  # <-- comes from computing vcirc in mwp2014 at 20 kpc
+        self.circ_init_displacement = np.array([20.0,0.0,0.0,0.0,197.61111175113643,0.0])  # <-- comes from computing vcirc in mwp2014 at 20 kpc, ALREADY IN kpc, km/s
         self.circ_age = 10000
         self.circ_apo = 20.0
+
+        ### UNITS: the numbers above are copied verbatim out of data/init_displacements.txt,
+        ### which get_init_displacements.py writes in **pc, km/s** because that's what petar.init wants.
+        ### every analysis function that consumes an init_displacement (prog_position,
+        ### integrate_prog_orbit, straighten_stream_orbit_interp) does init_displacement[:3]*u.kpc,
+        ### so convert the positions to kpc once, here. (circ was already in kpc -- don't touch it.)
+        for _orbit in ['aau','c19','gd1','jet','m3','pa5']:
+            _key = _orbit+'_init_displacement'
+            _disp = np.array(getattr(self, _key), dtype=float)
+            _disp[:3] *= u.pc.to(u.kpc)
+            setattr(self, _key, _disp)
 
     def retrieve_sim_info(self, orbit, stellar_pop, rvir_index, copy):
         """
@@ -1120,6 +1131,11 @@ def straighten_stream_polynomial(phi1,y, degree=5, show_plot=False, return_poly_
         return phi1, new_y, poly, fit
 
 
+
+# WIP stub -- commented out so the module still imports:
+# def straighten_stream_orbit_interp_arbitrary_frame(coords, frame, prog_position):
+
+
 def straighten_stream_orbit_interp(coords, yval, core, i, 
                                    trim_criteria=None,
                                    Dt_start=375, # Myr
@@ -1274,20 +1290,26 @@ def straighten_stream_orbit_interp(coords, yval, core, i,
 
 
 
+    ### np.interp REQUIRES xp to be increasing -- it does not check, it just returns garbage.
+    ### the orbit chunk is ordered in time (backward-reversed then forward), so phi1 comes out
+    ### increasing or decreasing depending on which way the progenitor moves. sort it here.
+    phi1_order = np.argsort(orbit_coords['phi1'])
+    orbit_phi1_sorted = orbit_coords['phi1'][phi1_order]
+
     if type(yval)==str: # when I request only one string, only return that to me.
-        def interp_orbit(phi1):
-            return np.interp(phi1, orbit_coords['phi1'], orbit_coords[yval]) 
+        def interp_orbit(phi1, yval=yval):
+            return np.interp(phi1, orbit_phi1_sorted, orbit_coords[yval][phi1_order])
         y_new = coords[yval] - interp_orbit(coords['phi1'])
 
     else:
         interp_orbit = []
         y_new = []
         for y in yval:
-                
-            def interp_orbit_fn(phi1):
-                return np.interp(phi1, orbit_coords['phi1'], orbit_coords[y])
+
+            def interp_orbit_fn(phi1, y=y): # y=y so each closure keeps its own key
+                return np.interp(phi1, orbit_phi1_sorted, orbit_coords[y][phi1_order])
             interp_orbit.append(interp_orbit_fn)
-            y_new_now = coords[y]-interp_orbit_fn(coords['phi1']) 
+            y_new_now = coords[y]-interp_orbit_fn(coords['phi1'])
             y_new.append(y_new_now)
 
     if return_orbit_chunk==True:
