@@ -2280,8 +2280,8 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
 
         ### RADII WITHIN THE CORE FRAME
         spos_core, bpos_core = singles.pos, binaries.pos 
-        s_r = np.sqrt(np.sum(np.array([spos_core[:,i]**2 for i in range(2)]), axis=0))
-        b_r = np.sqrt(np.sum(np.array([bpos_core[:,i]**2 for i in range(2)]), axis=0))
+        s_r = np.sqrt(np.sum(np.array([spos_core[:,i]**2 for i in range(3)]), axis=0))
+        b_r = np.sqrt(np.sum(np.array([bpos_core[:,i]**2 for i in range(3)]), axis=0))
         tidal = load_tidal(path)
         rtid = tidal.rtid[file_index]
         in_rtid_s = s_r<=rtid

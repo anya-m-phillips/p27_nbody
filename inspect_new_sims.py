@@ -436,8 +436,8 @@ def poly_straightening(coords, tc=None): #<-- Q; should i be doing in MW, trim f
                                                             trim_criteria = tc,
                                                             degree=5, #<-- default, but choose explicitly here. 
                                                             return_poly_fn=True) #<-- all i care about
-        y-=poly(coords_straighter['phi1'], *fit)
-        coords_straighter[key] = y
+        y_s=y- poly(coords_straighter['phi1'], *fit)
+        coords_straighter[key] = y_s
 
     return coords_straighter
 
