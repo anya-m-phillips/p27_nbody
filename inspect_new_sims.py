@@ -110,6 +110,50 @@ def prepare_nbody_data(path = grid_info.gd1_lm_paths[0]+"0/",
     else:
         return core, data_dict, CMdict, lumdict, inMW, trim
 
+def prepare_nbody_data_anycopy(orbit, stellar_pop='lm', rvir_index=0, copies=range(5),
+                               verbose=True, **kwargs):
+    """
+    retrieve_sim_info()'s `copy` only picks which subdirectory to look in, and not every
+    copy in the grid ran all the way to the present day. an unfinished one still has a
+    data.core (just a short one), so it gets as far as intrinsic_stream_data_v3 and then
+    raises FileNotFoundError on the missing data.<file_index> snapshot.
+
+    every (orbit, stellar_pop, rvir_index) has at least one copy that finished, so try
+    them in order and take the first that loads.
+
+    extra kwargs go straight to prepare_nbody_data (e.g. include_photometry=True).
+    returns (whatever prepare_nbody_data returns), path, apo, age, init_displacement, copy
+    """
+    tried = []
+    for copy in copies:
+        path, apo, age, init_displacement = grid_info.retrieve_sim_info(
+            orbit=orbit, stellar_pop=stellar_pop, rvir_index=rvir_index, copy=copy
+        )
+        if path in tried: #<-- circ has no copy subdir, so retrieve_sim_info ignores `copy`
+            continue
+        tried.append(path)
+
+        try:
+            out = prepare_nbody_data(
+                path = path,
+                i = age if orbit != "circ" else 30000,
+                init_displacement = init_displacement,
+                apo = apo, #<-- always pass apo so that inMW, trim is correct and not always based on GD-1 orbit.
+                **kwargs
+            )
+        except FileNotFoundError as err:
+            if verbose:
+                print("  %s rvir_index=%i copy %i unfinished, missing %s"%(
+                    orbit, rvir_index, copy, err.filename))
+            continue
+
+        if verbose:
+            print("  %s rvir_index=%i: using copy %i"%(orbit, rvir_index, copy))
+        return out, path, apo, age, init_displacement, copy
+
+    raise FileNotFoundError("no finished copy of %s/%s/rvir_index=%i; tried %s"%(
+        orbit, stellar_pop, rvir_index, list(copies)))
+
 def rotation_matrix(a,b,c):
     """
     rotate angles a,b,c about x,y,z axes
@@ -318,36 +362,6 @@ def chop_orbit_track(phi1, jump_threshold=45):
         idx = idx[::-1]   # so it can go straight into np.interp
     return idx
 
-# %%
-#----------------------------------------------------#
-#       TESTING TESTING TESTING                      #
-#----------------------------------------------------#
-
-# coords_obs, obs_streamframe = streamframe_coords_observed(orbit, CMdict)
-
-
-
-# prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
-# row = prog_tab[prog_tab['name']==orbit]
-# w0 = gd.PhaseSpacePosition(
-#     np.array([row['x'][0], row['y'][0], row['z'][0]])*u.kpc,
-#     np.array([row['vx'][0], row['vy'][0], row['vz'][0]])*u.km/u.s
-#     )
-# Dt=500 #<-- Myr, counted as steps. 
-# orbit_pos, orbit_vel = prog_orbit_track(w0, Dt)
-# orbit_sf = observed_orbit_track(orbit_pos, orbit_vel, obs_streamframe)
-# idx = chop_orbit_track(orbit_sf.phi1.to(u.degree).value)
-
-# # okay, now create an interpolant of the orbit
-# x_orbit, y_orbit = orbit_sf.phi1[idx].to(u.degree).value, orbit_sf.pm_phi2[idx].to(u.mas/u.yr).value
-# x_data, y_data = coords_obs.phi1.to(u.degree).value[inMW][trim], coords_obs.pm_phi2.to(u.mas/u.yr).value[inMW][trim]
-# spline = CubicSpline(x_orbit, y_orbit)
-
-# fig, ax = plt.subplots()
-# ax.scatter(x_data,
-#            y_data - np.interp(x_data, x_orbit, y_orbit), c='k', s=.1) #<--fine for my purposes frankly. 
-
-
 def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
     """
     should _this_ return a dictionary ??? 
@@ -455,30 +469,50 @@ def add_noise(icrs_coords, survey='DESI'):
     for Via they will come from viamock. 
     """
     return
+
+
+def get_cocoon_selection(coords, cuts):
+    """
+    assume that coords and cuts are in the same order,
+    i.e., the convention of 
+    phi2, pmphi1, pmphi2, vgsr
+    """
+    coords_to_cut = {"phi2":coords['phi2'],"pm_phi1":coords['pm_phi1'],"pm_phi2":coords['pm_phi2'], 'v_gsr':coords['v_gsr']}
+
+    selections = []
+    for ii, key in enumerate(coords_to_cut.keys()):
+        selection = np.abs(coords_to_cut[key])>cuts[ii]
+        selections.append(selection)
+    cocoon_selection = np.logical_or.reduce(selections) #<-- this should be true if any of the selections are true. 
+
+    return cocoon_selection
 # %%
 #### stuff i won't want to run when i import functions to other scripts below. 
 # comment out the if __name__==... line and un-indent stuff if doing work in this notebook. 
 # if __name__=='__main__': 
 orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
+masses = ['lm','hm']
+rvirs = [0.75, 1.5, 3, 6]
+rvir_index=0
+mass_index = 1
+
 
 dicts = []
 sf_coords_obs = []
 straight_sf_coords_obs = []
 
+copy_options = [0,1,2,3,4]
 for ii, orbit in enumerate(tqdm(orbits)):
     print(orbit)
-    path, apo, age, init_displacement = grid_info.retrieve_sim_info(
-        orbit=orbit, stellar_pop='lm', rvir_index=0, copy=0
-    )
 
-    core, data_dict, CMdict, lumdict, inMW, trim = prepare_nbody_data(
-        path = path,
-        include_photometry=False,
-        i=age if orbit != "circ" else 30000,
-        init_displacement = init_displacement,
-        apo=apo #<-- always pass apo so that inMW, trim is correct and not always based on GD-1 orbit. 
-    )
+    (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+        prepare_nbody_data_anycopy(
+            orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+            include_photometry=False
+        )
+
     dicts.append(data_dict)
+
 
     if orbit!='circ':
         coords_obs, sf = streamframe_coords_observed(orbit, CMdict, prog_tab)
@@ -490,13 +524,30 @@ for ii, orbit in enumerate(tqdm(orbits)):
     if orbit=='circ':
         sf_coords_obs.append({})
         straight_sf_coords_obs.append({})
-# %%
+
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']#,'distance']
 
+# do cuts as phi2, pmphi1, pmphi2, vgsr
+gd1_cuts = [0.75, 0.12,0.04, 1.5]
+aau_cuts = [0.5, 0.05, 0.0125, 2]
+pa5_cuts = [0.3, 0.02, 0.04, 4.5]
+jet_cuts = [0.4, 0.013, 0.005, 2.]
+m3_cuts = [1.8, 0.4, 0.15, 4.75]
+c19_cuts = [0.32, 0.023, 0.018, 2.75]
+
+orbit_cuts = [
+    [], gd1_cuts, aau_cuts, pa5_cuts, jet_cuts, m3_cuts, c19_cuts
+]
+
+
+
+
 for ii, sc in enumerate(tqdm(straight_sf_coords_obs)):
+    orbit=orbits[ii]
     if ii==0:
         continue
-    fig, axs = plt.subplots(len(keys), 1, figsize=[10, 10], sharex=True)
+    fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
+
     plt.subplots_adjust(hspace=0.03, wspace=0.03)
 
     fig.suptitle(orbits[ii])
@@ -504,25 +555,71 @@ for ii, sc in enumerate(tqdm(straight_sf_coords_obs)):
     cmdict = dicts[ii]['CoM']
     inMW, trim = cmdict['inMW'], cmdict['trim']
 
+    unbound = ~cmdict['in_rtid']
+    unbound = unbound[inMW][trim]
+
     trimmed_sc = clip_coords(sc, [inMW, trim])
 
     sc_straighter = poly_straightening(trimmed_sc)
+
 
     ol_clip = outlier_clip(
         sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2']
     )
 
+    cocoon_clips = orbit_cuts[ii]
+    cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)
 
-
+    key_labels = [
+        r'$\phi_2~[\degree]$',
+        r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+        r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+        r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
+    ]
     for jj, key in enumerate(keys):
-        ax = axs[jj]
-        ax.scatter(sc_straighter['phi1'][ol_clip], sc_straighter[key][ol_clip], c='k', s=1,
+        cut = cocoon_clips[jj]
+        # ax_row = axs[jj]
+
+        ax = axs[jj,0]
+        ax.scatter(sc_straighter['phi1'][ol_clip & unbound], 
+                   sc_straighter[key][ol_clip & unbound],
+                    c='k', s=.1,
                     rasterized=True) 
-        ax.set_ylabel(key)
-    axs[-1].set_xlabel(r'$\phi_1~[\degree]$')
-    # ax.set_ylabel(r'$\phi_2~[\degree]$')
-    # ax.set_ylim(-20,20)
-    # ax.set_xlim(-100,100)
+
+        ax.scatter(sc_straighter['phi1'][ol_clip & unbound & cocoon_selection], 
+                   sc_straighter[key][ol_clip & unbound & cocoon_selection],
+                    c=cc[-1], s=20, edgecolor='k', lw=0.5,
+                    rasterized=True) 
+
+        ax.axhline(cut, c='k', lw=1)
+        ax.axhline(-cut, c='k', lw=1)
+        ax.set_ylim(-3*cut, 3*cut)
+        ax.set_ylabel(key_labels[jj], fontsize=15)
+
+
+        ax = axs[jj,1]
+        bins = np.linspace(-3*cut, 3*cut, 50)
+        ax.hist(sc_straighter[key][ol_clip & unbound & ~cocoon_selection], 
+                alpha=0.2, density=True, color='k',orientation='horizontal',
+                bins=bins)
+        ax.hist(sc_straighter[key][ol_clip & unbound & cocoon_selection],
+                histtype='step', density=True, lw=2, 
+                color=cc[-1],orientation='horizontal',
+                bins=bins)
+
+        ax.set_yticklabels([])
+        ax.set_xticks
+        if jj<3:
+            # print("REMOVING TICK LABLES>>>>>")
+            axs[jj,0].set_xticklabels([])
+            axs[jj,1].set_xticklabels([])
+
+
+    axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
+    axs[-1,1].set_xlabel(r'density')
+
+    # plt.savefig('/n/home02/amphillips/p27_nbody/plots/cocoon_separation/%s/%s_%.2f.pdf'%(masses[mass_index],orbit, rvirs[rvir_index]), 
+    #             dpi=300, bbox_inches='tight')
 
 
 # %%

@@ -2157,6 +2157,9 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
                             binary_treatments = ["CoM","companions","luminous"] # <-- "CoM" to do the analysis with center of mass values, "companions" to use the values for the more luminous companion. 
                              ): 
     """
+    ON 17 AUGUST 2026 I WOULD LIKE TO ADD SOME FUNCTIONALITY TO FLAG WHAT HAS ESCAPED 
+    THE PROGENITOR (IE REMOVE THINGS INSIDE THE TIDAL RADIUS. )
+
     v3 is different from v2 because it does not rely on a simulation indexing convention with n
     instead just pass a path, init_displacement, core, apo, etc 
 
@@ -2274,6 +2277,17 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
         }
         subdict["coords"] = coords
 
+
+        ### RADII WITHIN THE CORE FRAME
+        spos_core, bpos_core = singles.pos, binaries.pos 
+        s_r = np.sqrt(np.sum(np.array([spos_core[:,i]**2 for i in range(2)]), axis=0))
+        b_r = np.sqrt(np.sum(np.array([bpos_core[:,i]**2 for i in range(2)]), axis=0))
+        tidal = load_tidal(path)
+        rtid = tidal.rtid[file_index]
+        in_rtid_s = s_r<=rtid
+        in_rtid_b = b_r<=rtid
+        in_rtid = np.concatenate([in_rtid_s, in_rtid_b])
+        subdict['in_rtid'] = in_rtid #<-- this is before in_MW, trim. 
 
         # GALACTOCENTRIC PHASE SPACE POSITIONS
         spos, svel = core_to_galcen_frame(path, singles, file_index, core=core)
