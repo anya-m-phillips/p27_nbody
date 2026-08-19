@@ -32,6 +32,8 @@ scripts in top directory for now:
   - `get_cocoon_selection(coords, cuts)`: OR of `|x| > cut` over phi2, pm_phi1, pm_phi2, v_gsr -- order matters, it zips against the `*_cuts` lists at the bottom of the script.
   - `desi_RVerr(zmag, feh)`, `add_noise(...)`: survey error models. `add_noise` is still a stub.
   - everything under `if __name__=='__main__':` loops all orbits and makes the cocoon-separation panels, so the function defs can be imported elsewhere without running it. comment that line out and un-indent if working interactively in the notebook cells. **right now that guard is commented out**, so importing this module runs the whole loop.
+
+- `cocoons.py` summarizing cocoon fractions and properties as a function of progenitor properties. functions are called from `inspect_new_sims.py` as `simspect.[...]`
 - `velocity_movie.py`, `grid_movie.py`, `grid_movie_long.py` : scripts to run with a slurm wrapper for animations. TODO: make all of these parallel so that the wrapper is submitted as an array job where each sub-job generates one frame. indescribably faster than doing this in a loop. 
 - `nfc_plots.py` was used for plotting in preparation for a conference; will likely abandon soon
 
