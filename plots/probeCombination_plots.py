@@ -181,12 +181,14 @@ if step==5:
         axx.set_ylabel(r'$\Delta v_{\rm GSR}~[\rm km~s^{-1}]$')
         axx.scatter(x[:-nbinaries], y_new[:-nbinaries], c='k', s=.3)
         # axx.scatter(x[-nbinaries:], y_new[-nbinaries:]+brvs, c=cc[-6], s=5)
-        axx.scatter(x[-nbinaries:], y_new[-nbinaries:]+binary_rvs, c='k', s=0.3)
+        axx.scatter(x[-nbinaries:], y_new[-nbinaries:]+brvs, c='k', s=0.3)
 
         axx.text(0.38, 0.38, 'day %i'%(obstimes_multi[0][0][ii]), transform=axx.transAxes)
 
         plt.savefig(repo_path+f'/plots/probeCombination_workshop/binary_demo_mov/frame_{ii:05d}.png', dpi=300, bbox_inches='tight')
         plt.close()
+# %%
+
 # %%
 
 # %%
