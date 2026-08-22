@@ -489,140 +489,140 @@ def get_cocoon_selection(coords, cuts):
 # %%
 #### stuff i won't want to run when i import functions to other scripts below. 
 # comment out the if __name__==... line and un-indent stuff if doing work in this notebook. 
-# if __name__=='__main__': 
-orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
-masses = ['lm','hm']
-rvirs = [0.75, 1.5, 3, 6]
-# rvir_index=0
-mass_index = 0
+if __name__=='__main__': 
+    orbits = ['circ','gd1','aau','pa5','jet','m3','c19']
+    masses = ['lm','hm']
+    rvirs = [0.75, 1.5, 3, 6]
+    # rvir_index=0
+    mass_index = 0
 
 
-for rvir_index in tqdm(range(0,4)):
+    for rvir_index in tqdm(range(0,4)):
 
-    dicts = []
-    sf_coords_obs = []
-    straight_sf_coords_obs = []
+        dicts = []
+        sf_coords_obs = []
+        straight_sf_coords_obs = []
 
-    copy_options = [0,1,2,3,4]
-    for ii, orbit in enumerate(tqdm(orbits)):
-        print(orbit)
+        copy_options = [0,1,2,3,4]
+        for ii, orbit in enumerate(tqdm(orbits)):
+            print(orbit)
 
-        (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-            prepare_nbody_data_anycopy(
-                orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-                include_photometry=False
+            (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+                prepare_nbody_data_anycopy(
+                    orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+                    include_photometry=False
+                )
+
+            dicts.append(data_dict)
+
+
+            if orbit!='circ':
+                coords_obs, sf = streamframe_coords_observed(orbit, CMdict, prog_tab)
+                sf_coords_obs.append(coords_obs)
+
+                scd = straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+                straight_sf_coords_obs.append(scd)
+
+            if orbit=='circ':
+                sf_coords_obs.append({})
+                straight_sf_coords_obs.append({})
+
+        keys = ['phi2','pm_phi1','pm_phi2','v_gsr']#,'distance']
+
+        # do cuts as phi2, pmphi1, pmphi2, vgsr
+        gd1_cuts = [0.75, 0.12,0.04, 1.5]
+        aau_cuts = [0.5, 0.05, 0.0125, 2]
+        pa5_cuts = [0.3, 0.02, 0.04, 4.5]
+        jet_cuts = [0.4, 0.013, 0.005, 2.]
+        m3_cuts = [1.8, 0.4, 0.15, 4.75]
+        c19_cuts = [0.32, 0.023, 0.018, 2.75]
+
+        orbit_cuts = [
+            [], gd1_cuts, aau_cuts, pa5_cuts, jet_cuts, m3_cuts, c19_cuts
+        ]
+
+
+
+
+        for ii, sc in enumerate(tqdm(straight_sf_coords_obs)):
+            orbit=orbits[ii]
+            if ii==0:
+                continue
+            fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
+
+            plt.subplots_adjust(hspace=0.03, wspace=0.03)
+
+            fig.suptitle(orbits[ii])
+            
+            cmdict = dicts[ii]['CoM']
+            inMW, trim = cmdict['inMW'], cmdict['trim']
+
+            unbound = ~cmdict['in_rtid']
+            unbound = unbound[inMW][trim]
+
+            trimmed_sc = clip_coords(sc, [inMW, trim])
+
+            sc_straighter = poly_straightening(trimmed_sc)
+
+
+            ol_clip = outlier_clip(
+                sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2']
             )
 
-        dicts.append(data_dict)
+            cocoon_clips = orbit_cuts[ii]
+            cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)
+
+            key_labels = [
+                r'$\phi_2~[\degree]$',
+                r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+                r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+                r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
+            ]
+            for jj, key in enumerate(keys):
+                cut = cocoon_clips[jj]
+                # ax_row = axs[jj]
+
+                ax = axs[jj,0]
+                ax.scatter(sc_straighter['phi1'][ol_clip & unbound], 
+                        sc_straighter[key][ol_clip & unbound],
+                            c='k', s=.1,
+                            rasterized=True) 
+
+                ax.scatter(sc_straighter['phi1'][ol_clip & unbound & cocoon_selection], 
+                        sc_straighter[key][ol_clip & unbound & cocoon_selection],
+                            c=cc[-1], s=20, edgecolor='k', lw=0.5,
+                            rasterized=True) 
+
+                ax.axhline(cut, c='k', lw=1)
+                ax.axhline(-cut, c='k', lw=1)
+                ax.set_ylim(-3*cut, 3*cut)
+                ax.set_ylabel(key_labels[jj], fontsize=15)
 
 
-        if orbit!='circ':
-            coords_obs, sf = streamframe_coords_observed(orbit, CMdict, prog_tab)
-            sf_coords_obs.append(coords_obs)
+                ax = axs[jj,1]
+                bins = np.linspace(-3*cut, 3*cut, 50)
+                ax.hist(sc_straighter[key][ol_clip & unbound & ~cocoon_selection], 
+                        alpha=0.2, density=True, color='k',orientation='horizontal',
+                        bins=bins)
+                ax.hist(sc_straighter[key][ol_clip & unbound & cocoon_selection],
+                        histtype='step', density=True, lw=2, 
+                        color=cc[-1],orientation='horizontal',
+                        bins=bins)
 
-            scd = straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
-            straight_sf_coords_obs.append(scd)
-
-        if orbit=='circ':
-            sf_coords_obs.append({})
-            straight_sf_coords_obs.append({})
-
-    keys = ['phi2','pm_phi1','pm_phi2','v_gsr']#,'distance']
-
-    # do cuts as phi2, pmphi1, pmphi2, vgsr
-    gd1_cuts = [0.75, 0.12,0.04, 1.5]
-    aau_cuts = [0.5, 0.05, 0.0125, 2]
-    pa5_cuts = [0.3, 0.02, 0.04, 4.5]
-    jet_cuts = [0.4, 0.013, 0.005, 2.]
-    m3_cuts = [1.8, 0.4, 0.15, 4.75]
-    c19_cuts = [0.32, 0.023, 0.018, 2.75]
-
-    orbit_cuts = [
-        [], gd1_cuts, aau_cuts, pa5_cuts, jet_cuts, m3_cuts, c19_cuts
-    ]
+                ax.set_yticklabels([])
+                ax.set_xticks
+                if jj<3:
+                    # print("REMOVING TICK LABLES>>>>>")
+                    axs[jj,0].set_xticklabels([])
+                    axs[jj,1].set_xticklabels([])
 
 
+            axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
+            axs[-1,1].set_xlabel(r'density')
+
+            plt.savefig('/n/home02/amphillips/p27_nbody/plots/cocoon_separation/%s/%s_%.2f.pdf'%(masses[mass_index],orbit, rvirs[rvir_index]), 
+                        dpi=300, bbox_inches='tight')
+            plt.close()
 
 
-    for ii, sc in enumerate(tqdm(straight_sf_coords_obs)):
-        orbit=orbits[ii]
-        if ii==0:
-            continue
-        fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
-
-        plt.subplots_adjust(hspace=0.03, wspace=0.03)
-
-        fig.suptitle(orbits[ii])
-        
-        cmdict = dicts[ii]['CoM']
-        inMW, trim = cmdict['inMW'], cmdict['trim']
-
-        unbound = ~cmdict['in_rtid']
-        unbound = unbound[inMW][trim]
-
-        trimmed_sc = clip_coords(sc, [inMW, trim])
-
-        sc_straighter = poly_straightening(trimmed_sc)
-
-
-        ol_clip = outlier_clip(
-            sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2']
-        )
-
-        cocoon_clips = orbit_cuts[ii]
-        cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)
-
-        key_labels = [
-            r'$\phi_2~[\degree]$',
-            r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
-            r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-            r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
-        ]
-        for jj, key in enumerate(keys):
-            cut = cocoon_clips[jj]
-            # ax_row = axs[jj]
-
-            ax = axs[jj,0]
-            ax.scatter(sc_straighter['phi1'][ol_clip & unbound], 
-                    sc_straighter[key][ol_clip & unbound],
-                        c='k', s=.1,
-                        rasterized=True) 
-
-            ax.scatter(sc_straighter['phi1'][ol_clip & unbound & cocoon_selection], 
-                    sc_straighter[key][ol_clip & unbound & cocoon_selection],
-                        c=cc[-1], s=20, edgecolor='k', lw=0.5,
-                        rasterized=True) 
-
-            ax.axhline(cut, c='k', lw=1)
-            ax.axhline(-cut, c='k', lw=1)
-            ax.set_ylim(-3*cut, 3*cut)
-            ax.set_ylabel(key_labels[jj], fontsize=15)
-
-
-            ax = axs[jj,1]
-            bins = np.linspace(-3*cut, 3*cut, 50)
-            ax.hist(sc_straighter[key][ol_clip & unbound & ~cocoon_selection], 
-                    alpha=0.2, density=True, color='k',orientation='horizontal',
-                    bins=bins)
-            ax.hist(sc_straighter[key][ol_clip & unbound & cocoon_selection],
-                    histtype='step', density=True, lw=2, 
-                    color=cc[-1],orientation='horizontal',
-                    bins=bins)
-
-            ax.set_yticklabels([])
-            ax.set_xticks
-            if jj<3:
-                # print("REMOVING TICK LABLES>>>>>")
-                axs[jj,0].set_xticklabels([])
-                axs[jj,1].set_xticklabels([])
-
-
-        axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
-        axs[-1,1].set_xlabel(r'density')
-
-        plt.savefig('/n/home02/amphillips/p27_nbody/plots/cocoon_separation/%s/%s_%.2f.pdf'%(masses[mass_index],orbit, rvirs[rvir_index]), 
-                    dpi=300, bbox_inches='tight')
-        plt.close()
-
-
-    # %%
+        # %%
