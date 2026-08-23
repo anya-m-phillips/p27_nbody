@@ -174,8 +174,8 @@ for ii, orbit in enumerate(tqdm(orbits)):
 
         f_cocoon = len(phi2[cocoon_selection]) / len(phi2[use])
 
-        sigma_phi2 = paf.dispersion_5_95(phi2[cocoon_selection])
-        sigma_vgsr = paf.dispersion_5_95(vgsr[cocoon_selection])
+        sigma_phi2 = paf.dispersion_5_95(phi2[cocoon_selection])/2
+        sigma_vgsr = paf.dispersion_5_95(vgsr[cocoon_selection])/2
 
         # sigma_phi2 = np.std(phi2[cocoon_selection])
         # sigma_vgsr = np.std(vgsr[cocoon_selection])
@@ -208,7 +208,7 @@ for ii, orbit in enumerate(tqdm(orbits)):
     # if orbit=='m3':
     #     continue
 
-    if orbit not in ['gd1']:#,'jet','c19']:#,'pa5','aau']:
+    if orbit not in ['gd1','jet','c19','pa5','aau']:
         continue
 
     f_cocoons_this_orbit = f_cocoons[ii]
@@ -231,13 +231,14 @@ axs[0].set_ylabel(r'$f_{\rm cocoon}$')
 axs[1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
 axs[2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
 axs[0].set_ylim(0, 0.13)
-axs[1].set_ylim(0, 4.)
-axs[2].set_ylim(0, 23)
+axs[1].set_ylim(0, 2.1)
+axs[1].set_yticks([0, 0.5, 1, 1.5, 2])
+axs[2].set_ylim(0, 23/2)
 
 
-# plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'%masses[mass_index])
+plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'%masses[mass_index])
 # plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_jet_c19_%s.pdf'%masses[mass_index])
-plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_%s.pdf'%masses[mass_index])
+# plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_%s.pdf'%masses[mass_index])
 
 
 
