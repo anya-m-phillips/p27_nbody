@@ -74,6 +74,7 @@ reordered_colors = hm_colors + lm_colors[::-1]
 cc = reordered_colors[:-1]
 prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 # %%
+#### PART 1: binaries movie: 
 orbit='gd1'
 mass = 'hm'
 rvir_index=3
@@ -132,7 +133,7 @@ y_new = y+vkick(x,
 # nsingles = data_dict['nsingles']
 # nbinaries = data_dict['nbinaries']
 nbinaries = int(2 * data_dict['nbinaries'])
-step = 5
+step = 1
 
 
 fig, ax = plt.subplots(figsize=[15,7])
@@ -188,131 +189,8 @@ if step==5:
         plt.savefig(repo_path+f'/plots/probeCombination_workshop/binary_demo_mov/frame_{ii:05d}.png', dpi=300, bbox_inches='tight')
         plt.close()
 # %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-
-
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-unbound = ~CMdict['in_rtid']
-unbound = unbound[inMW][trim]
-trimmed_sc = simspect.clip_coords(sc, [inMW, trim]) #<-- this applies inMW, trim to the coordinate dictionary
-sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
-ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
-    sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
-)
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
-# %%
-
+# part 2: cocoons explainer. 
+## a. everything in the MW with and without cocoons. 
 orbits = ['gd1','aau','pa5','jet','m3','c19']
 masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
@@ -326,30 +204,164 @@ pa5_cuts = [0.3, 0.02, 0.04, 4.5]
 jet_cuts = [0.4, 0.013, 0.005, 2.]
 m3_cuts = [1.8, 0.4, 0.15, 4.75]
 c19_cuts = [0.32, 0.023, 0.018, 2.75]
-
-
-orbit_cuts = [
-    gd1_cuts, aau_cuts, pa5_cuts, jet_cuts, m3_cuts, c19_cuts
-]
-
-
+orbit_cuts = [gd1_cuts, aau_cuts, pa5_cuts, jet_cuts, m3_cuts, c19_cuts]
 
 
 dicts = []
-sf_coords_obs = [] # before straightening
-straight_sf_coords_obs = [] 
+inMWs = [] #<-- len(n particles)
+trims = [] #<-- len(particles[inMW])
+ol_clips = [] #<-- len(particles[inMW][trim])
+unbound_clips = [] #<-- len(particles[inMW][trim])
+cocoon_selections = [] # <-- len(particles[inMW][trim])
 
-f_cocoons = []
-vgsr_dispersions = []
-phi2_dispersions = []
+for ii, orbit in enumerate(tqdm(orbits)):
+    rvir_index=0
+    init_displacement = grid_info.circ_init_displacement
+    (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+        simspect.prepare_nbody_data_anycopy(
+            orbit, stellar_pop=mass, rvir_index=rvir_index, copies=[0,1,2,3,4],
+            include_photometry=False
+
+        )
+    dicts.append(CMdict)
+
+    inMWs.append(inMW)
+    trims.append(trim)
+
+    coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
+    sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+
+    trimmed_sc = simspect.clip_coords(sc, [inMW, trim]) #<-- this applies inMW, trim to the coordinate dictionary
+    sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
+    ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
+        sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
+    )
+    ol_clips.append(ol_clip)
+
+    unbound = ~CMdict['in_rtid']
+    unbound = unbound[inMW][trim]
+    unbound_clips.append(unbound)
 
 
-pericenters_kpc = []
-init_displacements = [
-    grid_info.gd1_init_displacement, 
-    grid_info.aau_init_displacement,
-    grid_info.pa5_init_displacement,
-    grid_info.jet_init_displacement,
-    grid_info.m3_init_displacement,
-    grid_info.c19_init_displacement
-]
+    cocoon_clips = orbit_cuts[ii]
+    cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)     #<-- so now i'll want to index ol_clip & unbound & cocoon_selection
+    cocoon_selections.append(cocoon_selection)
+# %%
+### MAKE PLOT WITH COCOONS:
+
+remove_cocoon = True 
+theta = -90*u.degree.to(u.radian) # <--- not rotating azimuthally for now. 
+phi =  0*u.degree.to(u.radian) 
+R = simspect.rotation_matrix(a=phi, b=0, c=theta)
+
+
+fig, ax = plt.subplots(figsize=[8,8])
+e0,e1,e2 = np.array([]), np.array([]), np.array([])
+n_sim = np.array([])
+for ii, orbit in enumerate(tqdm(orbits)):
+    CMdict = dicts[ii]
+    pos = CMdict['pos'].to(u.kpc)
+
+    rotated_pos = (R@pos.T).T
+    e0_, e1_, e2_ = rotated_pos.T
+
+
+    if remove_cocoon==False:
+        unbound = ~CMdict['in_rtid']
+        e0_ = e0_[unbound]
+        e1_ = e1_[unbound]
+        e2_ = e2_[unbound]
+
+
+    if remove_cocoon==True:
+        inMW = inMWs[ii]
+        trim = trims[ii]
+        unbound = unbound_clips[ii]
+        ol_clip = ol_clips[ii]
+        ts_selection = ~cocoon_selections[ii]
+
+        e0_ = e0_[inMW][trim][unbound & ol_clip & ts_selection]
+        e1_ = e1_[inMW][trim][unbound & ol_clip & ts_selection]
+        e2_ = e2_[inMW][trim][unbound & ol_clip & ts_selection]
+
+
+
+
+    e0 = np.append(e0, e0_.to(u.kpc).value)
+    e1 = np.append(e1, e1_.to(u.kpc).value)
+    e2 = np.append(e2, e2_.to(u.kpc).value)
+    n_sim = np.append(n_sim, 
+                    np.array([ii]*len(e0_)))
+
+reordered = np.argsort(e1)[::-1]
+
+n_orbits = len(orbits)
+cmap = mcolors.ListedColormap(cc[1:n_orbits+1])
+# discrete norm: one color band per orbit, boundaries on the half-integers
+bounds = np.arange(n_orbits + 1) - 0.5   # [-0.5, 0.5, ..., n_orbits-0.5]
+norm = mcolors.BoundaryNorm(bounds, cmap.N)
+ob = ax.scatter(e0[reordered], e2[reordered],
+        c=n_sim[reordered],
+        cmap=cmap,
+        norm=norm,
+        s=1, rasterized=True)
+
+ax.set_xlim(-35, 35)
+ax.set_ylim(-35, 35)
+ax.set_yticks([])
+ax.set_yticklabels([])
+ax.set_xticks([])
+ax.set_xticklabels([])
+
+plt.savefig(repo_path+"/plots/probeCombination_workshop/cocoonless.pdf", dpi=300, bbox_inches='tight')
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+
+# %%
+
+dicts = []
+
+
+
+
+
+
+ax.scatter(CMdict['pos'][:,0].to(u.kpc), CMdict['pos'][:,1].to(u.kpc))
+ax.set_xlim(-40, 40)
+ax.set_ylim(-40,40)
+# plt.show()
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%

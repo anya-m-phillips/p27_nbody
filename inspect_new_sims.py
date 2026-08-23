@@ -442,6 +442,11 @@ def poly_straightening(coords, tc=None): #<-- Q; should i be doing in MW, trim f
     return coords_straighter
 
 def clip_coords(coords, tc):
+    """
+    returns coordinate dictionary
+    with [inMW][trim] applied. 
+    does not apply any new trims! 
+    """
     inMW, trim = tc
     out = {}
     for key in coords.keys():
