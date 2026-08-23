@@ -88,8 +88,8 @@ rvirs = [0.75, 1.5, 3, 6]
 copy_options = [0,1,2,3,4]
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
-# cuts in phi2, pmphi1, pmphi2, v_gsr off-track to define cocoon. 
-gd1_cuts = [0.75, 0.12,0.04, 1.5]
+# do cuts as phi2, pmphi1, pmphi2, vgsr
+gd1_cuts = [0.75, 0.15,0.04, 1.5]
 aau_cuts = [0.5, 0.05, 0.0125, 2]
 pa5_cuts = [0.3, 0.02, 0.04, 4.5]
 jet_cuts = [0.4, 0.013, 0.005, 2.]
@@ -136,7 +136,7 @@ for ii, orbit in enumerate(tqdm(orbits)):
     vgsr_dispersions_this_orbit = []
     phi2_dispersions_this_orbit = []
 
-    mass_index = 0
+    mass_index = 1
     for rvir_index in range(4):
         (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
             simspect.prepare_nbody_data_anycopy(
@@ -173,8 +173,12 @@ for ii, orbit in enumerate(tqdm(orbits)):
         vgsr = sc_straighter['v_gsr']
 
         f_cocoon = len(phi2[cocoon_selection]) / len(phi2[use])
-        sigma_phi2 = np.std(phi2[cocoon_selection])
-        sigma_vgsr = np.std(vgsr[cocoon_selection])
+
+        sigma_phi2 = paf.dispersion_5_95(phi2[cocoon_selection])
+        sigma_vgsr = paf.dispersion_5_95(vgsr[cocoon_selection])
+
+        # sigma_phi2 = np.std(phi2[cocoon_selection])
+        # sigma_vgsr = np.std(vgsr[cocoon_selection])
 
         f_cocoons_this_orbit.append(f_cocoon)
         vgsr_dispersions_this_orbit.append(sigma_vgsr)
@@ -194,14 +198,19 @@ vgsr_dispersions = np.array(vgsr_dispersions)[reordered]
 phi2_dispersions = np.array(phi2_dispersions)[reordered]
 orbits = np.array(orbits)[reordered]
 
-ccc = plt.cm.magma(np.linspace(0.9, 0, len(pericenters_kpc)))
+# ccc = plt.cm.magma(np.linspace(0.9, 0, len(pericenters_kpc)))
+ccc = cc[1:]
 
 fig, axs = plt.subplots(1,3,figsize=[21,7], sharex=True)
 
 ### iterate through orbits
 for ii, orbit in enumerate(tqdm(orbits)):
-    if orbit=='m3':
+    # if orbit=='m3':
+    #     continue
+
+    if orbit not in ['gd1']:#,'jet','c19']:#,'pa5','aau']:
         continue
+
     f_cocoons_this_orbit = f_cocoons[ii]
     vgsr_dispersions_this_orbit = vgsr_dispersions[ii]
     phi2_dispersions_this_orbit = phi2_dispersions[ii]
@@ -221,9 +230,19 @@ for ax in axs:
 axs[0].set_ylabel(r'$f_{\rm cocoon}$')
 axs[1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
 axs[2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
+axs[0].set_ylim(0, 0.13)
+axs[1].set_ylim(0, 4.)
+axs[2].set_ylim(0, 23)
 
-plt.savefig('/n/home02/amphillips/p27_nbody/plots/cocoon_separation/%s/prog_summary.pdf'%masses[mass_index],
-             dpi=300, bbox_inches='tight')
+
+# plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'%masses[mass_index])
+# plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_jet_c19_%s.pdf'%masses[mass_index])
+plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_%s.pdf'%masses[mass_index])
+
+
+
+# plt.savefig('/n/home02/amphillips/p27_nbody/plots/cocoon_separation/%s/prog_summary.pdf'%masses[mass_index],
+#              dpi=300, bbox_inches='tight')
 
 
 
