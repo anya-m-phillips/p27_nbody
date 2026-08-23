@@ -501,7 +501,7 @@ rvirs = [0.75, 1.5, 3, 6]
 # rvir_index=0
 mass_index = 1
 
-do_sep=True 
+do_sep=False 
 
 for rvir_index in tqdm(range(0,4)):
     if rvir_index not in [0,3]:
