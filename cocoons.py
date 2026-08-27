@@ -72,6 +72,8 @@ def get_cocoon_selection(coords, cuts):
     cocoon_selection = np.logical_or.reduce(selections) #<-- this should be true if any of the selections are true. 
 
     return cocoon_selection
+# %%
+#### try making the cuts quantiles ??? ??? ??? 
 
 # %%
 # define stuff about the grid:
@@ -208,7 +210,7 @@ for ii, orbit in enumerate(tqdm(orbits)):
     # if orbit=='m3':
     #     continue
 
-    if orbit not in ['gd1','jet','c19','pa5','aau']:
+    if orbit not in ['gd1']:#,'jet','c19']:#,'pa5','aau']:
         continue
 
     f_cocoons_this_orbit = f_cocoons[ii]
@@ -226,7 +228,7 @@ for ii, orbit in enumerate(tqdm(orbits)):
 axs[0].legend(loc='upper right')
 for ax in axs:
     ax.set_ylim(bottom=0)
-    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm kpc]$')
+    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
 axs[0].set_ylabel(r'$f_{\rm cocoon}$')
 axs[1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
 axs[2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
@@ -236,9 +238,9 @@ axs[1].set_yticks([0, 0.5, 1, 1.5, 2])
 axs[2].set_ylim(0, 23/2)
 
 
-plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'%masses[mass_index])
+# plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'%masses[mass_index])
 # plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_jet_c19_%s.pdf'%masses[mass_index])
-# plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_%s.pdf'%masses[mass_index])
+plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_%s.pdf'%masses[mass_index])
 
 
 
@@ -247,3 +249,5 @@ plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'
 
 
 
+
+# %%
