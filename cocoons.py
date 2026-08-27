@@ -210,7 +210,7 @@ for ii, orbit in enumerate(tqdm(orbits)):
     # if orbit=='m3':
     #     continue
 
-    if orbit not in ['gd1']:#,'jet','c19']:#,'pa5','aau']:
+    if orbit not in ['gd1','jet','c19','pa5','aau']:
         continue
 
     f_cocoons_this_orbit = f_cocoons[ii]
@@ -240,7 +240,7 @@ axs[2].set_ylim(0, 23/2)
 
 # plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'%masses[mass_index])
 # plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_jet_c19_%s.pdf'%masses[mass_index])
-plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_%s.pdf'%masses[mass_index])
+# plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_gd1_%s.pdf'%masses[mass_index])
 
 
 
