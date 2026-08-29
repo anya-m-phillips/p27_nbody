@@ -72,6 +72,26 @@ def get_cocoon_selection(coords, cuts):
     cocoon_selection = np.logical_or.reduce(selections) #<-- this should be true if any of the selections are true. 
 
     return cocoon_selection
+
+
+def get_cocoon_selection_percentile(coords, p=[2,98]):
+    ### cuts will be returned as [phi]
+    coords_to_cut = {"phi2":coords['phi2'],"pm_phi1":coords['pm_phi1'],"pm_phi2":coords['pm_phi2'], 'v_gsr':coords['v_gsr']}
+
+    selections = []
+
+    for ii, key in enumerate(coords_to_cut.keys()):
+        pval_l, pval_u = np.percentile(coords_to_cut[key], p)
+
+        selection = (coords_to_cut[key]<pval_l) | (coords_to_cut[key]>pval_u)
+        selections.append(selection)
+
+    cocoon_selection = np.logical_or.reduce(selections)
+
+
+    return cocoon_selection
+
+
 # %%
 #### try making the cuts quantiles ??? ??? ??? 
 
@@ -87,7 +107,8 @@ prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 orbits = ['gd1','aau','pa5','jet','m3','c19']
 masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
-copy_options = [0,1,2,3,4]
+# copy_options = [0,1,2,3,4]
+copy_options = [4,3,2,1,0]
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 # do cuts as phi2, pmphi1, pmphi2, vgsr
@@ -165,7 +186,8 @@ for ii, orbit in enumerate(tqdm(orbits)):
             sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
         )
         cocoon_clips = orbit_cuts[ii]
-        cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)     #<-- so now i'll want to index ol_clip & unbound & cocoon_selection
+        # cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)     #<-- so now i'll want to index ol_clip & unbound & cocoon_selection
+        cocoon_selection = get_cocoon_selection_percentile(sc_straighter, p=[2,98]) #<-- 2-98 percentile, idk
 
         use = ol_clip & unbound
         cocoon_selection = use & cocoon_selection
@@ -176,8 +198,8 @@ for ii, orbit in enumerate(tqdm(orbits)):
 
         f_cocoon = len(phi2[cocoon_selection]) / len(phi2[use])
 
-        sigma_phi2 = paf.dispersion_5_95(phi2[cocoon_selection])/2
-        sigma_vgsr = paf.dispersion_5_95(vgsr[cocoon_selection])/2
+        sigma_phi2 = paf.dispersion_5_95(phi2[cocoon_selection])
+        sigma_vgsr = paf.dispersion_5_95(vgsr[cocoon_selection])
 
         # sigma_phi2 = np.std(phi2[cocoon_selection])
         # sigma_vgsr = np.std(vgsr[cocoon_selection])
@@ -206,6 +228,7 @@ ccc = cc[1:]
 fig, axs = plt.subplots(1,3,figsize=[21,7], sharex=True)
 
 ### iterate through orbits
+
 for ii, orbit in enumerate(tqdm(orbits)):
     # if orbit=='m3':
     #     continue
@@ -232,10 +255,14 @@ for ax in axs:
 axs[0].set_ylabel(r'$f_{\rm cocoon}$')
 axs[1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
 axs[2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
-axs[0].set_ylim(0, 0.13)
-axs[1].set_ylim(0, 2.1)
-axs[1].set_yticks([0, 0.5, 1, 1.5, 2])
-axs[2].set_ylim(0, 23/2)
+# axs[0].set_ylim(0, 0.13)
+# axs[1].set_ylim(0, 2.1)
+# axs[1].set_yticks([0, 0.5, 1, 1.5, 2])
+# # axs[2].set_ylim(0, 23/2)
+
+
+
+
 
 
 # plt.savefig(repo_path+'/plots/probeCombination_workshop/prog_summary_all_%s.pdf'%masses[mass_index])
