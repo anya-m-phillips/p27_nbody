@@ -34,6 +34,7 @@ scripts in top directory for now:
   - everything under `if __name__=='__main__':` loops all orbits and makes the cocoon-separation panels, so the function defs can be imported elsewhere without running it. comment that line out and un-indent if working interactively in the notebook cells. **right now that guard is commented out**, so importing this module runs the whole loop.
 
 - `cocoons.py` summarizing cocoon fractions and properties as a function of progenitor properties. functions are called from `inspect_new_sims.py` as `simspect.[...]`
+- `develop_GMM.py`: replacing the hard cuts in `cocoons.py` with a two-component (thin + cocoon) gaussian mixture, so cocoon membership is a fitted probability per star instead of a by-hand threshold per orbit. this is the point of the whole thing -- the manual cuts didn't standardize across orbits. see the GMM section below.
 - `velocity_movie.py`, `grid_movie.py`, `grid_movie_long.py` : scripts to run with a slurm wrapper for animations. TODO: make all of these parallel so that the wrapper is submitted as an array job where each sub-job generates one frame. indescribably faster than doing this in a loop. 
 - `nfc_plots.py` was used for plotting in preparation for a conference; will likely abandon soon
 
@@ -209,11 +210,66 @@ version in `petar_env` is gala 1.9.1. the modern API is pole+origin only; passin
 - **the `priority` kwarg matters a lot.** the pole and origin have to be orthogonal. if your origin is off the great circle, gala emits only a `RuntimeWarning` (easy to miss in a notebook cell) and silently fixes it. default is `priority='origin'`, which *moves the pole* -- i.e. throws away the great circle you defined by endpoints. `priority='pole'` keeps the great circle and projects the origin onto it, which is what you want when the endpoints are the literature definition and the progenitor is only setting the phi1 zero point. passing `ra0=` instead of `origin=` also keeps the pole.
 - for `m3` this is not academic: the `M3` row of `FINAL_ics_nolmc.csv` sits ~17 deg off the great circle through the Yang+23 endpoints, so `priority` changes where the endpoints land by >12 deg in phi2. also, `data/M3.fits` spans ra 189-269 deg with ~7.5 deg of phi2 scatter in every endpoint-derived frame, so one great circle may just not describe the whole M3 stream. see the TODO in the code -- may end up settling for "stream on an M3-like orbit," since that run is really a high-e / low-pericenter test.
 
+# cocoon separation by gaussian mixture (`develop_GMM.py`)
+two components -- thin stream + cocoon -- fit to the straightened observed-frame residuals, in place of the hard `get_cocoon_selection` cuts. the data vector is `keys = ['phi2','pm_phi1','pm_phi2','v_gsr']`, stacked `(N, 4)` in that order, so **`mu` and `sigma` are 4-vectors in that same order** and mixing up the column order silently gives a nonsense fit. built on `sc_straighter` (orbit-interp straightening, then `poly_straightening`), masked by `unbound & ol_clip`. eventually the proper motions should become transverse velocities *before* straightening; not done yet.
+
+## the likelihood
+the model is: each star independently is drawn from thin or cocoon.
+
+    L = prod_i [ Q_1 p_1(x_i) + Q_2 p_2(x_i) ],   Q_1 = f_1, Q_2 = 1 - f_1
+
+**the mixture weights go inside the product over stars.** the other ordering, `Q_1 prod_i p_1 + Q_2 prod_i p_2`, is a different and wrong model -- it says the *whole stream* is either thin or cocoon, and it collapses onto whichever component wins globally. (the first draft of `gmm_likelihood_simple` had it that way.)
+
+everything stays in logs. there are two products and they become two sums:
+- **inner**, over the 4 phase space dims: `norm.logpdf(x, mu, sigma).sum(axis=1)`. broadcasting does the loop.
+- **outer**, over stars: the final `np.sum`.
+
+the *one* place a sum-of-probabilities survives is the per-star mixing, and that's what `np.logaddexp` is for -- it factors out the larger term, so it's exact even when both terms are ~ -3000. no intermediate ever leaves log space.
+
+- `component_likelihood(x_data, mu, sigma) -> (N,)` -- ln p per star under one component. returns `-inf` for sigma <= 0 so an optimizer stepping out of bounds gets rejected instead of NaN.
+- `gmm_likelihood_simple(...) -> scalar` -- returns **+ln L** (not negated). right sign for emcee's `log_prob`.
+- `gmm_negative_loglikelihood(f_1, mu_1, sigma_1, mu_2, sigma_2, x_data) -> scalar` -- the minimization objective. **note the argument order is different from `gmm_likelihood_simple`: `x_data` is last here**, so `minimize`'s `args` can supply it. its out-of-bounds guard returns `+np.inf`, not `-inf` -- getting that sign wrong rewards the optimizer for leaving the valid region.
+- `membership_probability(...) -> (N,)` -- the responsibility `Q_1 p_1 / (Q_1 p_1 + Q_2 p_2)`, as `exp(ln_w1 - logaddexp(ln_w1, ln_w2))`. **this is the actual cocoon separation**: `p_cocoon = 1 - p_thin`, a soft per-star weight rather than a boolean cut.
+
+the "simple" (diagonal-sigma) version *is* `gmm_likelihood_multivariate` with `cov = np.diag(sigma**2)` -- verified identical to 1e-10. the only thing given up is correlations *within* a component (e.g. phi2 with v_gsr along the track). those should be small post-straightening, but that's an assumption worth checking on the residuals rather than assuming.
+
+a positive `ln L` is not a bug: these are log *densities*, and with sigma_phi2 ~ 0.1 deg the density exceeds 1. it also means `ln L` is not comparable across different unit choices -- only differences at fixed units mean anything.
+
+## fitting it: the packing layer
+`scipy.optimize.minimize` wants **one flat 1-D array** as the objective's first argument. `x0=(f_1, mu_1, sigma_1, mu_2, sigma_2)` is a scalar plus four 4-vectors -- numpy makes that a ragged object array and it dies with `ValueError: setting an array element with a sequence`. and `args=x_data` (no trailing comma) is not a tuple, so scipy iterates the array and splats it as separate arguments. it has to be `args=(x_data,)`.
+
+so: `pack_params` / `unpack_params` flatten to `(17,)`, and `nll_flat(theta, x_data)` is what actually gets handed to `minimize`. the packing also **reparameterizes to make the fit unconstrained** -- `f_1 -> logit(f_1)`, `sigma -> log(sigma)` (via `scipy.special.expit`/`logit`). the optimizer then can't step into invalid territory and hit the `inf` walls, which is what wrecks a finite-difference gradient, and it fixes the conditioning: phi2 is ~0.1 deg while v_gsr is ~10 km/s, and in logs those are comparable steps.
+
+`sort_components` handles **label switching** -- the likelihood is exactly invariant under swapping 1<->2 and `f_1 -> 1-f_1`, so the fit has no idea which component you meant to call "thin." convention imposed here: component 1 is the narrower one in phi2.
+
+## initial guesses: this is the part that actually matters
+**do not start both components identical** (`mu=0, sigma=1` for each). identical components are an exact saddle point: if `p_1 == p_2` then every star's responsibility is `f_1` regardless of `f_1`, the gradient wrt `f_1` is exactly zero, and the components can never split. confirmed empirically -- from that start L-BFGS-B returns `f_thin = 0.5` with the two sigma vectors bit-identical. `sigma = 1` is also meaningless across mixed units (1 deg in phi2 is the whole stream; 1 km/s in v_gsr is nothing), so scale off `x_data.std(axis=0)`: `0.3*sd` thin, `1.5*sd` cocoon.
+
+**`f_1` has to start high -- 0.9 or above.** ⚠️ this is the important empirical finding, not a detail. for streams with a by-eye negligible cocoon, starting at `f_1 = 0.5` lands in a local optimum where the fitter splits *the thin stream itself* into two gaussians and calls the wider half a cocoon. starting at `f_1 = 0.9+` finds cocoons that match what the eye picks out, across orbits. the likelihood surface is genuinely multimodal here and `minimize` only ever finds a local optimum -- there is no "success" flag that will warn about this.
+
+this is a real caveat on the whole approach and should be stated in any writeup: the reported cocoon fraction is conditional on the starting basin. worth doing at some point -- scan `f_1` init over a grid, keep the best `result.fun`, and check whether the good-looking solution is actually the global optimum or just the one that matches expectation. the physical prior is that cocoon fraction should *decrease* with increasing rvir (decreasing initial cluster density), so that trend across the grid is the independent check on whether the fits are landing sensibly.
+
+## optimizer choice
+the script currently uses `method='Nelder-Mead'`. benchmarked against alternatives on synthetic data with the same 17 free parameters, N=30000:
+
+| method | wall time | final nll | fitted f_thin (true 0.7495) |
+|---|---|---|---|
+| Nelder-Mead | 312 s | 34121.9 | 0.6915 |
+| L-BFGS-B | 64 s | 33168.1 | 0.7492 |
+| Powell | 5 s | 33168.1 | 0.7491 |
+
+**all three returned `success=True`.** Nelder-Mead stopped ~950 nll units short of the optimum with a 6% error in `f_thin` and said it converged -- simplex methods degrade badly above ~10 dimensions. so: check `result.fun`, never `result.success`, and Powell is the drop-in worth switching to (same optimum, 60x faster). with the good optimum, recovered sigmas match truth to <1% and per-star label recovery is 99.7%.
+
+## next
+maximum likelihood first, then emcee for posteriors (per the header comment). `gmm_likelihood_simple` is already the right sign for `log_prob` and its `-inf` guard is what emcee expects for a rejected step -- add a prior and it's ready. sampling would also expose the multimodality in `f_1` directly, which point estimation hides.
+
 # bugs / stale things that remain
 in rough order of how much they'd hurt:
 - **`in_rtid` is the wrong length for the `companions` subdict**, so `in_rtid[inMW]` raises `IndexError` there. fine for `CoM` and `luminous`. details above.
 - **`get_init_displacements.py` silently produces nothing** -- its `names_to_run` list still uses the long stream names that were renamed out of `FINAL_ics_nolmc.csv`.
 - **anything cached from before the init_displacement units fix is wrong** -- not just the `*_straight` residuals but the intrinsic `coords` themselves, since the progenitor reference position and velocity were both bogus. regenerate.
+- **the GMM fit is multimodal in `f_1`** -- starting at 0.5 finds a local optimum that splits the thin stream in two. has to start at 0.9+. see the GMM section; no warning is emitted, `success=True` either way.
+- `develop_GMM.py` uses `method='Nelder-Mead'`, which benchmarks as 60x slower than Powell *and* stops short of the optimum while reporting success. switch it.
 - `straightened_obscoords_orbit_interp` clamps instead of flagging outside the orbit track's phi1 range.
 - `straighten_stream_polynomial`'s `trim_criteria=None` default is a `TypeError`, not a default.
 - no `else` branch in either `retrieve_sim_info` (`UnboundLocalError`) or `streamframe_coords_observed` (`NameError`) for an unrecognized orbit string.
