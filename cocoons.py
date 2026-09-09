@@ -137,15 +137,14 @@ phi2_dispersions = []
 
 
 pericenters_kpc = []
-init_displacements = t
-]
-[
+init_displacements = [
     grid_info.gd1_init_displacement, 
     grid_info.aau_init_displacement,
     grid_info.pa5_init_displacement,
     grid_info.jet_init_displacement,
     grid_info.m3_init_displacement,
-    grid_info.c19_init_displacemen
+    grid_info.c19_init_displacement]
+
 for ii, orbit in enumerate(tqdm(orbits)):
 
     ## do the orbit-wise check -- integrate prog orbit and find the pericenter. 

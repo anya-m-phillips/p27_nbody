@@ -20,7 +20,7 @@ from scipy.stats import binned_statistic, norm, multivariate_normal
 from scipy.optimize import curve_fit, minimize
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import CubicSpline
-from scipy.special import expit, logit # inverse-logit / logit, for the f_1 reparameterization
+from scipy.special import expit, logit, logsumexp # inverse-logit / logit, for the f_1 reparameterization
 
 
 # import astropy.coordinates as coord
@@ -60,54 +60,33 @@ import inspect_new_sims as simspect # lol idk. but i need basically all the func
 # first import... very beefy...
 from pygaia.errors.astrometric import parallax_uncertainty, proper_motion_uncertainty, total_proper_motion_uncertainty, total_position_uncertainty
 # %%
-# define stuff about the grid:
-grid_info = paf.extended_grid_info(scratch=True) 
-lm_colors, hm_colors, simcolors = paf.define_simcolors()
-reordered_colors = hm_colors + lm_colors[::-1]
-cc = reordered_colors[:-1]
-prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+#### this requires inputting a full covariance matrix. 
+# def gmm_likelihood_multivariate(x_data, 
+#                    f_1, Mu_1, Sigma_1, 
+#                    Mu_2, Sigma_2
+#                    ):
+#     """
+#     Mu_1, Mu_2 should be 4-vectors (phi2, transverse+radial velocities)
+#     Sigma_1, Sigma_2 should I guess be covariance matrices. yikes. 
+#     """
+#     Q_1 = f_1
+#     Q_2 = 1 - f_1 
+#     component_1 = Q_1 * multivariate_normal.pdf(x_data, mean=Mu_1, cov=Sigma_1)
+#     component_2 = Q_2 * multivariate_normal.pdf(x_data, mean=Mu_2, cov=Sigma_2)
+#     li = component_1 + component_2
 
+#     ln_li = np.log(li)
+#     ln_L = np.sum(ln_li)
 
-orbits = ['gd1','aau','pa5','jet','m3','c19']
-init_displacements = [
-    grid_info.gd1_init_displacement, 
-    grid_info.aau_init_displacement,
-    grid_info.pa5_init_displacement,
-    grid_info.jet_init_displacement,
-    grid_info.m3_init_displacement,
-    grid_info.c19_init_displacement
-]
-masses = ['lm','hm']
-rvirs = [0.75, 1.5, 3, 6]
-# copy_options = [0,1,2,3,4]
-copy_options = [4,3,2,1,0]
-
-keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
-# %%
-def gmm_likelihood_multivariate(x_data, 
-                   f_1, Mu_1, Sigma_1, 
-                   Mu_2, Sigma_2
-                   ):
-    """
-    Mu_1, Mu_2 should be 4-vectors (phi2, transverse+radial velocities)
-    Sigma_1, Sigma_2 should I guess be covariance matrices. yikes. 
-    """
-    Q_1 = f_1
-    Q_2 = 1 - f_1 
-    component_1 = Q_1 * multivariate_normal.pdf(x_data, mean=Mu_1, cov=Sigma_1)
-    component_2 = Q_2 * multivariate_normal.pdf(x_data, mean=Mu_2, cov=Sigma_2)
-    li = component_1 + component_2
-
-    ln_li = np.log(li)
-    ln_L = np.sum(ln_li)
-
-    return ln_L # idk how to test. 
+#     return ln_L # idk how to test. 
 # except that idk what a covariance matrix is so let's take a different approach:
 # note this "simple" version IS the multivariate one with a diagonal covariance
 # matrix, i.e. sigma = np.diag(sigma_vec**2). no correlations between phi2 and the
 # velocities within a single component. that's an assumption, not a hack, and it's
 # the same one jarvis+26 make.
-def component_likelihood(x_data, mu, sigma):
+
+
+def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
     """
     log likelihood of each star under ONE gaussian component, with independent
     (uncorrelated) phase space dimensions.
@@ -134,65 +113,103 @@ def component_likelihood(x_data, mu, sigma):
     return norm.logpdf(x_data, loc=mu, scale=sigma).sum(axis=1)
 
 
-def gmm_likelihood_simple(x_data,
-                          f_1,
-                          mu_1, sigma_1,
-                          mu_2, sigma_2):
+
+
+# def gmm_likelihood_simple(x_data,
+#                           f_1,
+#                           mu_1, sigma_1,
+#                           mu_2, sigma_2):
+#     """
+#     total log likelihood of a two-component (thin + cocoon) mixture.
+
+#     now mu's are still 4-vectors, but so are sigmas.
+
+#     the mixture weights go INSIDE the product over stars, not outside:
+#         L = prod_i [ Q_1 p_1(x_i) + Q_2 p_2(x_i) ]
+#     each star independently belongs to thin OR cocoon. the other ordering,
+#         L = Q_1 prod_i p_1(x_i) + Q_2 prod_i p_2(x_i),
+#     is a different (wrong) model: it says the WHOLE stream is thin or the whole
+#     stream is cocoon, and it will collapse onto whichever component wins overall.
+
+#     in log space the per-star mixing is the only place we'd have to exponentiate,
+#     and logaddexp does it stably (it factors out the larger term):
+#         ln L = sum_i logaddexp( ln Q_1 + ln p_1(x_i), ln Q_2 + ln p_2(x_i) )
+#     """
+#     if not (0 < f_1 < 1):
+#         return -np.inf
+#     Q_1 = f_1
+#     Q_2 = 1 - f_1
+
+#     ln_p1 = component_likelihood(x_data, mu_1, sigma_1) # (N,)
+#     ln_p2 = component_likelihood(x_data, mu_2, sigma_2) # (N,)
+
+#     # per-star mixture, still in logs:
+#     ln_li = np.logaddexp(np.log(Q_1) + ln_p1,
+#                          np.log(Q_2) + ln_p2) # (N,)
+
+#     # the "outer" product over stars -> a sum:
+#     return np.sum(ln_li) #<-- eventually will want to minimize the negative of this.
+
+
+### for the optimizer. 
+def gmm_negative_loglikelihood(component_fractions, means, sigmas, data):
     """
-    total log likelihood of a two-component (thin + cocoon) mixture.
-
-    now mu's are still 4-vectors, but so are sigmas.
-
-    the mixture weights go INSIDE the product over stars, not outside:
-        L = prod_i [ Q_1 p_1(x_i) + Q_2 p_2(x_i) ]
-    each star independently belongs to thin OR cocoon. the other ordering,
-        L = Q_1 prod_i p_1(x_i) + Q_2 prod_i p_2(x_i),
-    is a different (wrong) model: it says the WHOLE stream is thin or the whole
-    stream is cocoon, and it will collapse onto whichever component wins overall.
-
-    in log space the per-star mixing is the only place we'd have to exponentiate,
-    and logaddexp does it stably (it factors out the larger term):
-        ln L = sum_i logaddexp( ln Q_1 + ln p_1(x_i), ln Q_2 + ln p_2(x_i) )
+    all inputs should be numpy arrays
+    component fractions should have length (n_components - 1) -- the last weight
+    is implicit, fixed by sum(Q) = 1, so only n-1 of them are free
+    means, sigmas should have length n_components x four dimensions
     """
-    if not (0 < f_1 < 1):
-        return -np.inf
-    Q_1 = f_1
-    Q_2 = 1 - f_1
+    ### number of components
+    n_components = len(component_fractions)+1 #<-- provide the first n-1 components, last one is so that they sum to 1
+    if (len(means)!= n_components) or (len(sigmas)!= n_components):
+        raise ValueError("len(means)=%i, len(sigmas)=%i, ncomponents=%i"%(len(means), len(sigmas), n_components))
 
-    ln_p1 = component_likelihood(x_data, mu_1, sigma_1) # (N,)
-    ln_p2 = component_likelihood(x_data, mu_2, sigma_2) # (N,)
+    # making sure we have valid component fractions
+    if np.any(component_fractions <= 0) or np.sum(component_fractions) >= 1:
+        return np.inf   # POSITIVE inf: we are MINIMIZING, so invalid must look BAD.
 
-    # per-star mixture, still in logs:
-    ln_li = np.logaddexp(np.log(Q_1) + ln_p1,
-                         np.log(Q_2) + ln_p2) # (N,)
+    # checking for positive sigmas.
+    if np.any(sigmas <= 0) or not np.all(np.isfinite(sigmas)):
+        return np.inf
 
-    # the "outer" product over stars -> a sum:
-    return np.sum(ln_li) #<-- eventually will want to minimize the negative of this.
+    
+    ln_ps = np.array([component_likelihood(data, means[j], sigmas[j])
+                      for j in range(n_components)]) #<-- this is the likelihood over the four dimensions
 
-def gmm_negative_loglikelihood(f_1,
-                                mu_1, sigma_1,
-                                mu_2, sigma_2,
-                                x_data):
-    """
-    same as gmm_likelihood_simple() but returns negative.
-    """
-    if not (0 < f_1 < 1):
-        return np.inf #<-- POSITIVE inf here. this is what we're MINIMIZING, so an
-                      #    invalid f_1 has to look BAD (+inf), not infinitely good.
-    Q_1 = f_1
-    Q_2 = 1 - f_1
-
-    ln_p1 = component_likelihood(x_data, mu_1, sigma_1) # (N,)
-    ln_p2 = component_likelihood(x_data, mu_2, sigma_2) # (N,)
-
-    # per-star mixture, still in logs:
-    ln_li = np.logaddexp(np.log(Q_1) + ln_p1,
-                         np.log(Q_2) + ln_p2) # (N,)
-
-    # the "outer" product over stars -> a sum:
-    return -np.sum(ln_li)
+    Qs = np.append(component_fractions, 1 - np.sum(component_fractions))
 
 
+    ln_Li=logsumexp(np.log(Qs[:,None])+ln_ps, axis=0)
+
+    return -np.sum(ln_Li)
+    
+
+
+# def gmm_negative_loglikelihood(f_1,
+#                                 mu_1, sigma_1,
+#                                 mu_2, sigma_2,
+#                                 x_data):
+#     """
+#     same as gmm_likelihood_simple() but returns negative.
+#     """
+#     if not (0 < f_1 < 1):
+#         return np.inf #<-- POSITIVE inf here. this is what we're MINIMIZING, so an
+#                       #    invalid f_1 has to look BAD (+inf), not infinitely good.
+#     Q_1 = f_1
+#     Q_2 = 1 - f_1
+
+#     ln_p1 = component_likelihood(x_data, mu_1, sigma_1) # (N,)
+#     ln_p2 = component_likelihood(x_data, mu_2, sigma_2) # (N,)
+
+#     # per-star mixture, still in logs:
+#     ln_li = np.logaddexp(np.log(Q_1) + ln_p1,
+#                          np.log(Q_2) + ln_p2) # (N,)
+
+#     # the "outer" product over stars -> a sum:
+#     return -np.sum(ln_li)
+
+
+                      #    invalid f_1 has to look BAD (+inf), not infinitely good.   
 #--- packing, so scipy.optimize.minimize can see the parameters ----------------#
 # minimize() wants ONE flat 1-D array as the first argument to the objective.
 # it cannot take (scalar, 4-vector, 4-vector, 4-vector, 4-vector) -- numpy turns
@@ -206,62 +223,189 @@ def gmm_negative_loglikelihood(f_1,
 # fixes the conditioning: phi2 is ~0.1 deg while v_gsr is ~10 km/s, and in logs
 # those are comparable steps.
 
-def pack_params(f_1, mu_1, sigma_1, mu_2, sigma_2):
-    """natural parameters -> flat (4K+1,) unconstrained vector."""
-    return np.concatenate([[logit(f_1)],
-                           mu_1, np.log(sigma_1),
-                           mu_2, np.log(sigma_2)])
+# with n_components free, the (0,1) reparameterization of f_1 generalizes to a
+# MULTINOMIAL LOGIT (softmax): the last component's alpha is pinned at 0 as the
+# reference, so n-1 free reals map onto the interior of the simplex, i.e. all
+# Q_j > 0 and sum(Q_j) = 1, automatically. for n_components=2 this reduces to
+# exactly logit/expit, and the theta layout below is bit-identical to the old
+# 2-component one, so an old result.x still unpacks correctly.
+#
+# layout, length (n-1) + 2nK:
+#   [alpha_1 ... alpha_{n-1},  mu_1, ln sigma_1,  mu_2, ln sigma_2,  ...]
+# the mu/ln-sigma pairs stay blocked BY COMPONENT (not all mus then all sigmas)
+# to preserve that backward compatibility.
+
+def pack_params(component_fractions, means, sigmas):
+    """
+    natural parameters -> flat ((n-1) + 2nK,) unconstrained vector.
+
+    component_fractions : (n_components - 1,) -- the last weight is implicit
+    means, sigmas       : (n_components, K)
+    """
+    fracs  = np.atleast_1d(np.asarray(component_fractions, dtype=float))
+    means  = np.asarray(means,  dtype=float)
+    sigmas = np.asarray(sigmas, dtype=float)
+
+    n_components = len(fracs) + 1
+    if (len(means) != n_components) or (len(sigmas) != n_components):
+        raise ValueError("len(means)=%i, len(sigmas)=%i, ncomponents=%i"
+                         % (len(means), len(sigmas), n_components))
+    if np.any(fracs <= 0) or np.sum(fracs) >= 1:
+        raise ValueError("component_fractions must all be > 0 and sum to < 1; "
+                         "got %s (sum %.6f)" % (fracs, np.sum(fracs)))
+    if np.any(sigmas <= 0):
+        raise ValueError("sigmas must be positive; got min %g" % np.min(sigmas))
+
+    # alpha_j = ln(Q_j / Q_last). for n=2 this is ln(f_1/(1-f_1)) = logit(f_1).
+    alpha = np.log(fracs) - np.log(1 - np.sum(fracs))
+    blocks = np.hstack([means, np.log(sigmas)])          # (n_components, 2K)
+    return np.concatenate([alpha, blocks.ravel()])
 
 
 def unpack_params(theta, K=4):
-    """flat unconstrained vector -> natural parameters. inverse of pack_params."""
-    f_1     = expit(theta[0])
-    mu_1    = theta[1       : 1 +   K]
-    sigma_1 = np.exp(theta[1 +   K : 1 + 2*K])
-    mu_2    = theta[1 + 2*K : 1 + 3*K]
-    sigma_2 = np.exp(theta[1 + 3*K : 1 + 4*K])
-    return f_1, mu_1, sigma_1, mu_2, sigma_2
+    """
+    flat unconstrained vector -> natural parameters. inverse of pack_params.
+
+    n_components is INFERRED from the length: len(theta) = (n-1) + 2nK, so
+    n = (len(theta) + 1) / (2K + 1). a length that isn't of that form is a
+    K/n_components mismatch and raises rather than silently misreshaping.
+    """
+    theta = np.asarray(theta, dtype=float)
+
+    n_components, remainder = divmod(len(theta) + 1, 2 * K + 1)
+    if remainder != 0 or n_components < 2:
+        raise ValueError("len(theta)=%i is not (n-1) + 2nK for any n >= 2 with "
+                         "K=%i" % (len(theta), K))
+    n_free = n_components - 1
+
+    # softmax with the last component pinned at alpha=0. subtracting logsumexp
+    # keeps it stable for large |alpha| -- no overflow, and the Qs sum to 1 by
+    # construction rather than by luck.
+    alpha_full = np.append(theta[:n_free], 0.0)
+    Qs = np.exp(alpha_full - logsumexp(alpha_full))
+
+    blocks = theta[n_free:].reshape(n_components, 2 * K)
+    means  = blocks[:, :K]
+    sigmas = np.exp(blocks[:, K:])
+
+    # return only the n-1 free fractions, to match gmm_negative_loglikelihood's
+    # signature -- the last one is always 1 - sum(the rest).
+    return Qs[:-1], means, sigmas
+
 
 
 def nll_flat(theta, x_data):
-    """the objective actually handed to minimize()."""
-    return gmm_negative_loglikelihood(*unpack_params(theta), x_data)
+    """
+    the objective actually handed to minimize().
+
+    K is read off x_data.shape[1] rather than defaulted, so theta can never be
+    unpacked against the wrong number of phase space dimensions.
+    """
+    return gmm_negative_loglikelihood(*unpack_params(theta, K=x_data.shape[1]),
+                                      x_data)
 
 
-def sort_components(f_1, mu_1, sigma_1, mu_2, sigma_2, sort_dim=0):
+def sort_components(component_fractions, means, sigmas, sort_dim=-1):
     """
     a mixture model has no idea which component you meant to call "thin" -- the
-    likelihood is identical if you swap 1<->2 and send f_1 -> 1-f_1 (this is
-    "label switching"). so we impose the convention ourselves: component 1 is the
-    NARROWER one in sort_dim (default 0 = phi2), i.e. the thin stream.
+    likelihood is exactly invariant under relabelling the components (this is
+    "label switching"), so we impose the convention ourselves: components come
+    back ordered NARROWEST -> WIDEST, so component 0 is the thinnest part of the
+    stream and the LAST one is the cocoon.
+
+    sort_dim picks which phase space dimension sets the ordering, since a
+    component can be the widest in one coordinate and not another. default -1 =
+    v_gsr given keys = ['phi2','pm_phi1','pm_phi2','v_gsr'].
+
+    component_fractions : (n_components - 1,) -- the last weight is implicit
+    means, sigmas       : (n_components, K)
+
+    NOTE the implicit weight is re-derived after sorting, so the returned
+    component_fractions are the n-1 NARROWEST components and the cocoon fraction
+    is 1 - sum(returned). that is the number you want to report.
     """
-    if sigma_1[sort_dim] <= sigma_2[sort_dim]:
-        return f_1, mu_1, sigma_1, mu_2, sigma_2
-    return 1 - f_1, mu_2, sigma_2, mu_1, sigma_1
+    fracs  = np.atleast_1d(np.asarray(component_fractions, dtype=float))
+    means  = np.asarray(means,  dtype=float)
+    sigmas = np.asarray(sigmas, dtype=float)
+
+    Qs = np.append(fracs, 1 - np.sum(fracs))       # reconstruct the full weights
+    order = np.argsort(sigmas[:, sort_dim])        # narrowest -> widest
+    return Qs[order][:-1], means[order], sigmas[order]
 
 
-def membership_probability(x_data, f_1, mu_1, sigma_1, mu_2, sigma_2):
+def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=-1):
     """
-    posterior probability that each star belongs to component 1 (the thin stream),
-    a.k.a. the "responsibility". this is the thing that actually does the cocoon
-    separation -- p_cocoon = 1 - this.
+    posterior probability that each star belongs to the THIN STREAM, defined as
+    any of the n-1 narrower components -- i.e. everything except the final
+    (widest) one, which is the cocoon. p_cocoon = 1 - this.
 
-        p_1(i) = Q_1 p_1(x_i) / [ Q_1 p_1(x_i) + Q_2 p_2(x_i) ]
+        p_thin(i) = sum_{j < n} Q_j p_j(x_i) / sum_{j} Q_j p_j(x_i)
+
+    this is the thing that actually does the cocoon separation: a soft per-star
+    weight rather than a boolean cut. with n_components > 2 the extra narrow
+    components soak up the non-gaussian shape of the thin stream (epicyclic
+    feathers etc.) instead of being mistaken for a cocoon.
 
     computed as a difference of logs so it never overflows.
 
+    ORDER MATTERS: "the last component is the cocoon" is only true if the
+    components are sorted, so this checks and refuses rather than quietly
+    reporting the wrong population. run sort_components first.
+
     returns : (N,) array in [0, 1]
     """
-    Q_1 = f_1
-    Q_2 = 1 - f_1
+    fracs  = np.atleast_1d(np.asarray(component_fractions, dtype=float))
+    means  = np.asarray(means,  dtype=float)
+    sigmas = np.asarray(sigmas, dtype=float)
 
-    ln_w1 = np.log(Q_1) + component_likelihood(x_data, mu_1, sigma_1)
-    ln_w2 = np.log(Q_2) + component_likelihood(x_data, mu_2, sigma_2)
+    n_components = len(fracs) + 1
+    if n_components < 2:
+        raise ValueError("need at least 2 components to separate a cocoon")
 
-    return np.exp(ln_w1 - np.logaddexp(ln_w1, ln_w2))
+    widths = sigmas[:, sort_dim]
+    if np.any(np.diff(widths) < 0):
+        raise ValueError("components are not sorted narrowest -> widest in "
+                         "sort_dim=%i (widths %s) -- call sort_components first"
+                         % (sort_dim, widths))
+
+    Qs = np.append(fracs, 1 - np.sum(fracs))
+
+    # (n_components, N) -- ln Q_j + ln p_j(x_i)
+    ln_w = np.array([np.log(Qs[j]) + component_likelihood(x_data, means[j], sigmas[j])
+                     for j in range(n_components)])
+
+    # numerator drops the last (widest) component; denominator keeps everything.
+    return np.exp(logsumexp(ln_w[:-1], axis=0) - logsumexp(ln_w, axis=0))
+
+
 
 # %%
-ii = 0 # <--- gd1 i think. 
+#### START REWRITING FOR 3 COMPONENTS HERE: 
+# define stuff about the grid:
+grid_info = paf.extended_grid_info(scratch=True) 
+lm_colors, hm_colors, simcolors = paf.define_simcolors()
+reordered_colors = hm_colors + lm_colors[::-1]
+cc = reordered_colors[:-1]
+prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+
+
+orbits = ['gd1','aau','pa5','jet','m3','c19']
+init_displacements = [
+    grid_info.gd1_init_displacement, 
+    grid_info.aau_init_displacement,
+    grid_info.pa5_init_displacement,
+    grid_info.jet_init_displacement,
+    grid_info.m3_init_displacement,
+    grid_info.c19_init_displacement
+]
+masses = ['lm','hm']
+rvirs = [0.75, 1.5, 3, 6]
+copy_options = [0,1,2,3,4]
+# copy_options = [4,3,2,1,0]
+
+keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
+
+ii = 2 # <--- 0 for gd1 i think. 
 orbit = orbits[ii]
 ## do the orbit-wise check -- integrate prog orbit and find the pericenter. 
 init_displacement = init_displacements[ii]
@@ -278,9 +422,6 @@ rvir_index=0
 
 coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) # observed frame
 sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) # straight coords
-
-
-
 
 
 # clip the straight coords before putting into polynomial straightening step
@@ -313,47 +454,220 @@ x_data = np.column_stack([sc_straighter[k][unbound & ol_clip] for k in keys])
 #  2. sigma=1 is meaningless across mixed units -- 1 deg in phi2 is the whole
 #     stream width, 1 km/s in v_gsr is nothing. scale off the data instead.
 sd = x_data.std(axis=0)
-mu_1, sigma_1 = np.zeros(4), 0.3 * sd  # thin: narrower than the data
-mu_2, sigma_2 = np.zeros(4), 1.5 * sd  # cocoon: broader than the data
-f_1 = 0.99                           # let the data decide, don't start at 0.999. this is the thin stream fraction. 
+mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
+mu_2, sigma_2 = np.zeros(4), 1.0 * sd  
+mu_3, sigma_3 = np.zeros(4), 10. * sd   # cocoon: broader than the data
+f_1 = 1/3                           # starting at 0.5 would "let the data decide." this is the thin stream fraction. 
+f_2 = 1/3 # - 0.01
 
+fracs_0 = np.array([f_1, f_2])
+means_0 = np.array([mu_1, mu_2, mu_3])
+sigmas_0 = np.array([sigma_1, sigma_2, sigma_3])
+print(gmm_negative_loglikelihood(component_fractions = np.array([f_1, f_2]),
+                                 means = means_0, 
+                                 sigmas = sigmas_0,
+                                 data=x_data
+                                 )
+)
 # print(gmm_negative_loglikelihood(f_1, mu_1, sigma_1, mu_2, sigma_2, x_data)) # test function
 
 # %%
 # minimize() passes ONE flat array as the first argument and `args` as a TUPLE of
 # everything after it -- `args=x_data` (no comma) gets iterated and splatted.
-theta0 = pack_params(f_1, mu_1, sigma_1, mu_2, sigma_2)
+theta0 = pack_params(fracs_0, means_0, sigmas_0)
 
-#### note this step takes a long time: 
-result = minimize(nll_flat, x0=theta0, args=(x_data,), method='Nelder-Mead',
+result = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # method='Nelder-Mead',
                   options={'maxiter': 100000, 'maxfev': 100000,
                            'fatol': 1e-6, 'xatol': 1e-6})
 
-f_1_fit, mu_1_fit, sigma_1_fit, mu_2_fit, sigma_2_fit = \
-    sort_components(*unpack_params(result.x))
+fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
+p_thin = membership_probability(x_data, fracs_fit, means_fit, sigmas_fit)
+cocoon_fraction = 1 - fracs_fit.sum()
+#### note this step takes a long time: 
+
+
+
 
 print(result.success, result.message, '\nnll =', result.fun)
-print('f_thin  =', np.round(f_1_fit, 4))
-for k, m1, s1, m2, s2 in zip(keys, mu_1_fit, sigma_1_fit, mu_2_fit, sigma_2_fit):
-    print(f'  {k:>8}   thin mu={m1:9.4f} sig={s1:8.4f} | cocoon mu={m2:9.4f} sig={s2:8.4f}')
-# %%
-# per-star cocoon membership -- the soft replacement for get_cocoon_selection()
-p_thin = membership_probability(x_data, f_1_fit, mu_1_fit, sigma_1_fit,
-                                mu_2_fit, sigma_2_fit)
-p_cocoon = 1 - p_thin
+print("cocoon fraction:", cocoon_fraction)
+# print('f_thin  =', np.round(f_1_fit, 4))
+# for k, m1, s1, m2, s2 in zip(keys, mu_1_fit, sigma_1_fit, mu_2_fit, sigma_2_fit):
+#     print(f'  {k:>8}   thin mu={m1:9.4f} sig={s1:8.4f} | cocoon mu={m2:9.4f} sig={s2:8.4f}')
+
 # %%
 for k in range(4):
-    fig, axs = plt.subplots(1,2, figsize=[10,3], width_ratios=[3,1])
+    fig, axs = plt.subplots(1,2, figsize=[10,3], width_ratios=[3,1], sharey=True)
     x = sc_straighter['phi1'][unbound & ol_clip]
     y = x_data[:,k]
 
-    order = np.argsort(p_cocoon)
+    order = np.argsort(1-p_thin)
 
-    axs[0].scatter(x[order], y[order], c=p_thin[order], s=5, cmap='cool', rasterized=True)
+    axs[0].scatter(x[order], y[order], c=p_thin[order], s=5, cmap='winter', rasterized=True)
 
     ts = p_thin>0.5
     cn = ~ts
     bins = np.linspace(min(y), max(y), 50)
     axs[1].hist(y[ts], bins=bins, histtype='step', color='magenta', orientation='horizontal', lw=3, density=True)
     axs[1].hist(y[cn], bins=bins, histtype='step', color='cyan', orientation='horizontal', lw=3, density=True)
+
+
 # %%
+#
+#
+#
+#
+#
+#
+#
+#
+#
+############ RUN A LOOP OVER THE GRID. DO THINGS BEHAVE AS EXPECTED?? ############
+grid_info = paf.extended_grid_info(scratch=True) 
+lm_colors, hm_colors, simcolors = paf.define_simcolors()
+reordered_colors = hm_colors + lm_colors[::-1]
+cc = reordered_colors[:-1]
+prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+
+
+# orbits = ['gd1','aau','pa5','jet','m3','c19']
+orbits = ['gd1','pa5','m3']
+masses = ['lm','hm']
+rvirs = [0.75, 1.5, 3, 6]
+# copy_options = [0,1,2,3,4]
+copy_options = [4,3,2,1,0]
+
+keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
+
+dicts = []
+sf_coords_obs = [] # before straightening
+straight_sf_coords_obs = [] 
+
+f_cocoons = []
+vgsr_dispersions = []
+phi2_dispersions = []
+
+
+pericenters_kpc = []
+init_displacements = [
+    grid_info.gd1_init_displacement, 
+    grid_info.aau_init_displacement,
+    grid_info.pa5_init_displacement,
+    grid_info.jet_init_displacement,
+    grid_info.m3_init_displacement,
+    grid_info.c19_init_displacement]
+
+for ii, orbit in enumerate(tqdm(orbits)):
+
+    ## do the orbit-wise check -- integrate prog orbit and find the pericenter. 
+    init_displacement = init_displacements[ii]
+    orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
+    peri = orbit_obj.pericenter()
+    pericenters_kpc.append(peri.to(u.kpc).value)
+
+    ### eventually eventually another inner loop will go here for masses.
+    f_cocoons_this_orbit = []
+    vgsr_dispersions_this_orbit = []
+    phi2_dispersions_this_orbit = []
+
+    mass_index = 1 # <-- high mass stellar population... 
+    for rvir_index in range(4):
+        (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+            simspect.prepare_nbody_data_anycopy(
+                orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+                include_photometry=False
+            )
+
+        # dicts.append(data_dict)
+
+        coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
+        # sf_coords_obs.append(sf_coords_obs)
+
+        # straightened coords
+        sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+
+        unbound = ~CMdict['in_rtid']
+        unbound = unbound[inMW][trim]
+
+        trimmed_sc = simspect.clip_coords(sc, [inMW, trim]) #<-- this applies inMW, trim to the coordinate dictionary
+        sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
+        ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
+            sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
+        )
+
+        use = ol_clip & unbound
+
+        #### assemble the data and perform the fit: 
+        x_data = np.column_stack([sc_straighter[k][unbound & ol_clip] for k in keys])
+
+        sd = x_data.std(axis=0)
+        mu_1, sigma_1 = np.zeros(4), 0.3 * sd  # thin: narrower than the data
+        mu_2, sigma_2 = np.zeros(4), 1.0 * sd  
+        mu_3, sigma_3 = np.zeros(4), 100 * sd   # cocoon: broader than the data
+        f_1 = 1/3                           # starting at 0.5 would "let the data decide." this is the thin stream fraction. 
+        f_2 = 1/3 # - 0.01
+
+        fracs_0 = np.array([f_1, f_2])
+        means_0 = np.array([mu_1, mu_2, mu_3])
+        sigmas_0 = np.array([sigma_1, sigma_2, sigma_3])
+        theta0 = pack_params(fracs_0, means_0, sigmas_0)
+
+        result = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # method='Nelder-Mead',
+                        options={'maxiter': 100000, 'maxfev': 100000,
+                                'fatol': 1e-6, 'xatol': 1e-6})
+
+        fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
+        p_thin = membership_probability(x_data, fracs_fit, means_fit, sigmas_fit)
+        p_cocoon = 1 - p_thin
+
+        print(result.success, result.message, '\nnll =', result.fun) #<-- verbose? 
+
+
+
+        # for now let's say I just care about the cocoon fraction... 
+        f_cocoon = len(p_thin[p_thin<0.5]) / len(p_thin)
+        f_cocoons_this_orbit.append(f_cocoon)
+
+        sigphi2, sigpmphi1, sigpmphi2, sigvgsr = sigmas_fit[-1] #<-- cocoon component. thin stream is components 0 and 1
+        vgsr_dispersions_this_orbit.append(sigvgsr)
+        phi2_dispersions_this_orbit.append(sigphi2)
+
+
+    f_cocoons.append(f_cocoons_this_orbit)
+    vgsr_dispersions.append(vgsr_dispersions_this_orbit)
+    phi2_dispersions.append(phi2_dispersions_this_orbit)
+
+
+# %%
+pericenters_kpc = np.array(pericenters_kpc)
+reordered = np.argsort(pericenters_kpc)
+pericenters_kpc = pericenters_kpc[reordered]
+f_cocoons = np.array(f_cocoons)[reordered]
+vgsr_dispersions = np.array(vgsr_dispersions)[reordered]
+phi2_dispersions = np.array(phi2_dispersions)[reordered]
+
+orbits = np.array(orbits)[reordered]
+
+ccc = cc[1:]
+fig, axs = plt.subplots(1,3,figsize=[21,7], sharex=True)
+for ii, orbit in enumerate(tqdm(orbits)):
+    f_cocoons_this_orbit = f_cocoons[ii]
+    phi2_dispersions_this_orbit = phi2_dispersions[ii]
+    vgsr_dispersions_this_orbit = vgsr_dispersions[ii]
+
+    x = rvirs
+    axs[0].plot(x, f_cocoons_this_orbit, label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[ii],
+                marker='o', color=ccc[ii], markersize=10)
+
+
+    axs[1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10)
+    axs[2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10)
+axs[0].legend(loc='upper right')
+axs[0].legend(loc='upper right')
+for ax in axs:
+    ax.set_ylim(bottom=0)
+    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+axs[0].set_ylabel(r'$f_{\rm cocoon}$')
+axs[1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
+axs[2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
+
+ 
