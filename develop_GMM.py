@@ -393,8 +393,8 @@ sd = x_data.std(axis=0)
 mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
 mu_2, sigma_2 = np.zeros(4), 1.0 * sd  
 mu_3, sigma_3 = np.zeros(4), 3. * sd   # cocoon: broader than the data
-f_1 = 1/3                           # starting at 0.5 would "let the data decide." this is the thin stream fraction. 
-f_2 = 1/3 # - 0.01
+f_1 = 0.5                           # starting at 0.5 would "let the data decide." this is the thin stream fraction. 
+f_2 = 0.45 # - 0.01
 
 fracs_0 = np.array([f_1, f_2])
 means_0 = np.array([mu_1, mu_2, mu_3])
@@ -445,15 +445,20 @@ for k in range(4):
 
 
 # %%
-#
-#
-#
-#
-#
-#
-#
-#
-#
+
+
+
+
+
+
+
+
+
+
+
+
+
+# %%
 ############ RUN A LOOP OVER THE GRID. DO THINGS BEHAVE AS EXPECTED?? ############
 grid_info = paf.extended_grid_info(scratch=True) 
 lm_colors, hm_colors, simcolors = paf.define_simcolors()
@@ -578,6 +583,8 @@ for ii, orbit in enumerate(tqdm(orbits)):
     f_cocoons.append(f_cocoons_this_orbit)
     vgsr_dispersions.append(vgsr_dispersions_this_orbit)
     phi2_dispersions.append(phi2_dispersions_this_orbit)
+
+    ### TODO: add a step that plots everything and saves the folder so that I can visually inspect -- see inspect_new_sims.py for a nice plotting routine. 
 
 
 # %%
