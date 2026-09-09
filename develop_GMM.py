@@ -113,44 +113,6 @@ def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
     return norm.logpdf(x_data, loc=mu, scale=sigma).sum(axis=1)
 
 
-
-
-# def gmm_likelihood_simple(x_data,
-#                           f_1,
-#                           mu_1, sigma_1,
-#                           mu_2, sigma_2):
-#     """
-#     total log likelihood of a two-component (thin + cocoon) mixture.
-
-#     now mu's are still 4-vectors, but so are sigmas.
-
-#     the mixture weights go INSIDE the product over stars, not outside:
-#         L = prod_i [ Q_1 p_1(x_i) + Q_2 p_2(x_i) ]
-#     each star independently belongs to thin OR cocoon. the other ordering,
-#         L = Q_1 prod_i p_1(x_i) + Q_2 prod_i p_2(x_i),
-#     is a different (wrong) model: it says the WHOLE stream is thin or the whole
-#     stream is cocoon, and it will collapse onto whichever component wins overall.
-
-#     in log space the per-star mixing is the only place we'd have to exponentiate,
-#     and logaddexp does it stably (it factors out the larger term):
-#         ln L = sum_i logaddexp( ln Q_1 + ln p_1(x_i), ln Q_2 + ln p_2(x_i) )
-#     """
-#     if not (0 < f_1 < 1):
-#         return -np.inf
-#     Q_1 = f_1
-#     Q_2 = 1 - f_1
-
-#     ln_p1 = component_likelihood(x_data, mu_1, sigma_1) # (N,)
-#     ln_p2 = component_likelihood(x_data, mu_2, sigma_2) # (N,)
-
-#     # per-star mixture, still in logs:
-#     ln_li = np.logaddexp(np.log(Q_1) + ln_p1,
-#                          np.log(Q_2) + ln_p2) # (N,)
-
-#     # the "outer" product over stars -> a sum:
-#     return np.sum(ln_li) #<-- eventually will want to minimize the negative of this.
-
-
 ### for the optimizer. 
 def gmm_negative_loglikelihood(component_fractions, means, sigmas, data):
     """
@@ -184,32 +146,6 @@ def gmm_negative_loglikelihood(component_fractions, means, sigmas, data):
     return -np.sum(ln_Li)
     
 
-
-# def gmm_negative_loglikelihood(f_1,
-#                                 mu_1, sigma_1,
-#                                 mu_2, sigma_2,
-#                                 x_data):
-#     """
-#     same as gmm_likelihood_simple() but returns negative.
-#     """
-#     if not (0 < f_1 < 1):
-#         return np.inf #<-- POSITIVE inf here. this is what we're MINIMIZING, so an
-#                       #    invalid f_1 has to look BAD (+inf), not infinitely good.
-#     Q_1 = f_1
-#     Q_2 = 1 - f_1
-
-#     ln_p1 = component_likelihood(x_data, mu_1, sigma_1) # (N,)
-#     ln_p2 = component_likelihood(x_data, mu_2, sigma_2) # (N,)
-
-#     # per-star mixture, still in logs:
-#     ln_li = np.logaddexp(np.log(Q_1) + ln_p1,
-#                          np.log(Q_2) + ln_p2) # (N,)
-
-#     # the "outer" product over stars -> a sum:
-#     return -np.sum(ln_li)
-
-
-                      #    invalid f_1 has to look BAD (+inf), not infinitely good.   
 #--- packing, so scipy.optimize.minimize can see the parameters ----------------#
 # minimize() wants ONE flat 1-D array as the first argument to the objective.
 # it cannot take (scalar, 4-vector, 4-vector, 4-vector, 4-vector) -- numpy turns
@@ -456,7 +392,7 @@ x_data = np.column_stack([sc_straighter[k][unbound & ol_clip] for k in keys])
 sd = x_data.std(axis=0)
 mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
 mu_2, sigma_2 = np.zeros(4), 1.0 * sd  
-mu_3, sigma_3 = np.zeros(4), 10. * sd   # cocoon: broader than the data
+mu_3, sigma_3 = np.zeros(4), 3. * sd   # cocoon: broader than the data
 f_1 = 1/3                           # starting at 0.5 would "let the data decide." this is the thin stream fraction. 
 f_2 = 1/3 # - 0.01
 
@@ -470,6 +406,7 @@ print(gmm_negative_loglikelihood(component_fractions = np.array([f_1, f_2]),
                                  )
 )
 # print(gmm_negative_loglikelihood(f_1, mu_1, sigma_1, mu_2, sigma_2, x_data)) # test function
+# %%
 
 # %%
 # minimize() passes ONE flat array as the first argument and `args` as a TUPLE of
@@ -483,16 +420,12 @@ result = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # method
 fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
 p_thin = membership_probability(x_data, fracs_fit, means_fit, sigmas_fit)
 cocoon_fraction = 1 - fracs_fit.sum()
-#### note this step takes a long time: 
-
-
-
 
 print(result.success, result.message, '\nnll =', result.fun)
 print("cocoon fraction:", cocoon_fraction)
-# print('f_thin  =', np.round(f_1_fit, 4))
-# for k, m1, s1, m2, s2 in zip(keys, mu_1_fit, sigma_1_fit, mu_2_fit, sigma_2_fit):
-#     print(f'  {k:>8}   thin mu={m1:9.4f} sig={s1:8.4f} | cocoon mu={m2:9.4f} sig={s2:8.4f}')
+print(fracs_fit)
+print(sigmas_fit[:,-1])
+
 
 # %%
 for k in range(4):
@@ -529,8 +462,23 @@ cc = reordered_colors[:-1]
 prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 
 
-# orbits = ['gd1','aau','pa5','jet','m3','c19']
-orbits = ['gd1','pa5','m3']
+# orbits = ["m3","pa5","aau","c19","gd1","jet"] #<-- ordered by pericenter. 
+# orbits = ['gd1','pa5','m3']
+# init_displacements = [
+#     grid_info.gd1_init_displacement,
+#     grid_info.pa5_init_displacement,
+#     grid_info.m3_init_displacement
+# ]
+
+
+orbits = ['gd1','aau','pa5','jet','m3','c19']
+init_displacements = [
+    grid_info.gd1_init_displacement, 
+    grid_info.aau_init_displacement,
+    grid_info.pa5_init_displacement,
+    grid_info.jet_init_displacement,
+    grid_info.m3_init_displacement,
+    grid_info.c19_init_displacement]
 masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
 # copy_options = [0,1,2,3,4]
@@ -548,13 +496,7 @@ phi2_dispersions = []
 
 
 pericenters_kpc = []
-init_displacements = [
-    grid_info.gd1_init_displacement, 
-    grid_info.aau_init_displacement,
-    grid_info.pa5_init_displacement,
-    grid_info.jet_init_displacement,
-    grid_info.m3_init_displacement,
-    grid_info.c19_init_displacement]
+
 
 for ii, orbit in enumerate(tqdm(orbits)):
 
@@ -600,10 +542,10 @@ for ii, orbit in enumerate(tqdm(orbits)):
         x_data = np.column_stack([sc_straighter[k][unbound & ol_clip] for k in keys])
 
         sd = x_data.std(axis=0)
-        mu_1, sigma_1 = np.zeros(4), 0.3 * sd  # thin: narrower than the data
+        mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
         mu_2, sigma_2 = np.zeros(4), 1.0 * sd  
-        mu_3, sigma_3 = np.zeros(4), 100 * sd   # cocoon: broader than the data
-        f_1 = 1/3                           # starting at 0.5 would "let the data decide." this is the thin stream fraction. 
+        mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
+        f_1 = 1/3                           # starting at even groups would "let the data decide." 
         f_2 = 1/3 # - 0.01
 
         fracs_0 = np.array([f_1, f_2])
@@ -624,7 +566,8 @@ for ii, orbit in enumerate(tqdm(orbits)):
 
 
         # for now let's say I just care about the cocoon fraction... 
-        f_cocoon = len(p_thin[p_thin<0.5]) / len(p_thin)
+        # f_cocoon = len(p_thin[p_thin<0.5]) / len(p_thin)
+        f_cocoon = 1-np.sum(fracs_fit)
         f_cocoons_this_orbit.append(f_cocoon)
 
         sigphi2, sigpmphi1, sigpmphi2, sigvgsr = sigmas_fit[-1] #<-- cocoon component. thin stream is components 0 and 1
