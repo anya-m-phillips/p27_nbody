@@ -137,13 +137,17 @@ phi2_dispersions = []
 
 
 pericenters_kpc = []
+apocenters_kpc = []
+present_rs = []
+
 init_displacements = [
     grid_info.gd1_init_displacement, 
     grid_info.aau_init_displacement,
     grid_info.pa5_init_displacement,
     grid_info.jet_init_displacement,
     grid_info.m3_init_displacement,
-    grid_info.c19_init_displacement]
+    grid_info.c19_init_displacement
+    ]
 
 for ii, orbit in enumerate(tqdm(orbits)):
 
@@ -151,7 +155,13 @@ for ii, orbit in enumerate(tqdm(orbits)):
     init_displacement = init_displacements[ii]
     orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
     peri = orbit_obj.pericenter()
+    apo = orbit_obj.apocenter()
     pericenters_kpc.append(peri.to(u.kpc).value)
+    apocenters_kpc.append(apo.to(u.kpc).value)
+
+    x,y,z = init_displacement[:3]
+    r = np.sqrt(x**2 + y**2 + z**2)
+    present_rs.append(r) # kpc
 
     ### eventually eventually another inner loop will go here for masses.
     f_cocoons_this_orbit = []
@@ -185,8 +195,8 @@ for ii, orbit in enumerate(tqdm(orbits)):
             sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
         )
         cocoon_clips = orbit_cuts[ii]
-        # cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)     #<-- so now i'll want to index ol_clip & unbound & cocoon_selection
-        cocoon_selection = get_cocoon_selection_percentile(sc_straighter, p=[2,98]) #<-- 2-98 percentile, idk
+        cocoon_selection = get_cocoon_selection(sc_straighter, cocoon_clips)     #<-- so now i'll want to index ol_clip & unbound & cocoon_selection
+        # cocoon_selection = get_cocoon_selection_percentile(sc_straighter, p=[2,98]) #<-- 2-98 percentile, idk
 
         use = ol_clip & unbound
         cocoon_selection = use & cocoon_selection
@@ -211,15 +221,26 @@ for ii, orbit in enumerate(tqdm(orbits)):
     vgsr_dispersions.append(vgsr_dispersions_this_orbit)
     phi2_dispersions.append(phi2_dispersions_this_orbit)
 # %%
+
 pericenters_kpc = np.array(pericenters_kpc)
+apocenters_kpc = np.array(apocenters_kpc)
+present_rs = np.array(present_rs)
 
-reordered = np.argsort(pericenters_kpc)
-pericenters_kpc = pericenters_kpc[reordered]
+f_cocoons = np.array(f_cocoons)
+vgsr_dispersions = np.array(vgsr_dispersions)
+phi2_dispersions = np.array(phi2_dispersions)
 
-f_cocoons = np.array(f_cocoons)[reordered]
-vgsr_dispersions = np.array(vgsr_dispersions)[reordered]
-phi2_dispersions = np.array(phi2_dispersions)[reordered]
-orbits = np.array(orbits)[reordered]
+### roughly ~amount of the way through orbit
+orbital_phases = (present_rs - pericenters_kpc) / (apocenters_kpc - pericenters_kpc)
+orbits = np.array(orbits)
+
+eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
+
+# %%
+# reordered = np.argsort(eccentricities)
+reordered = np.argsort(orbital_phases)
+# reordered = np.argsort(pericenters_kpc)
+# reordered = np.argsort(present_rs)
 
 # ccc = plt.cm.magma(np.linspace(0.9, 0, len(pericenters_kpc)))
 ccc = cc[1:]
@@ -228,19 +249,23 @@ fig, axs = plt.subplots(1,3,figsize=[21,7], sharex=True)
 
 ### iterate through orbits
 
-for ii, orbit in enumerate(tqdm(orbits)):
-    # if orbit=='m3':
-    #     continue
-
-    if orbit not in ['gd1','jet','c19','pa5','aau']:
+for ii, orbit in enumerate(tqdm(orbits[reordered])):
+    if orbit=='m3':
         continue
 
-    f_cocoons_this_orbit = f_cocoons[ii]
-    vgsr_dispersions_this_orbit = vgsr_dispersions[ii]
-    phi2_dispersions_this_orbit = phi2_dispersions[ii]
+    # if orbit not in ['gd1','jet','c19','pa5','aau']:
+    #     continue
+
+    f_cocoons_this_orbit = f_cocoons[reordered][ii]
+    vgsr_dispersions_this_orbit = vgsr_dispersions[reordered][ii]
+    phi2_dispersions_this_orbit = phi2_dispersions[reordered][ii]
 
     x = rvirs
-    axs[0].plot(x, f_cocoons_this_orbit, label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[ii],
+    axs[0].plot(x, f_cocoons_this_orbit, 
+                # label=orbit+r"; $r_{\rm prog}=%.2f~\rm kpc$"%present_rs[reordered][ii],
+                # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
+                label=orbit+r'; orbital phase=%.2f'%orbital_phases[reordered][ii],
+                # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
                 marker='o', color=ccc[ii], markersize=10)
     axs[1].plot(x, phi2_dispersions_this_orbit,
                 marker='o', color=ccc[ii], markersize=10)
