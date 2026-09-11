@@ -198,20 +198,26 @@ def pack_params(component_fractions, means, sigmas):
     return np.concatenate([alpha, blocks.ravel()])
 
 
-def unpack_params(theta, K=4):
+def unpack_params(theta, K=4, min_components=2):
     """
     flat unconstrained vector -> natural parameters. inverse of pack_params.
 
     n_components is INFERRED from the length: len(theta) = (n-1) + 2nK, so
     n = (len(theta) + 1) / (2K + 1). a length that isn't of that form is a
     K/n_components mismatch and raises rather than silently misreshaping.
+
+    min_components stays at 2 by default because for a MIXTURE the n=1 case is
+    almost always a wiring mistake (an empty fractions array that got flattened
+    away somewhere) rather than something you meant. pass min_components=1 when
+    you really do want the single-component model -- the AIC/BIC null -- which is
+    what nll_flat_anyn does.
     """
     theta = np.asarray(theta, dtype=float)
 
     n_components, remainder = divmod(len(theta) + 1, 2 * K + 1)
-    if remainder != 0 or n_components < 2:
-        raise ValueError("len(theta)=%i is not (n-1) + 2nK for any n >= 2 with "
-                         "K=%i" % (len(theta), K))
+    if remainder != 0 or n_components < min_components:
+        raise ValueError("len(theta)=%i is not (n-1) + 2nK for any n >= %i with "
+                         "K=%i" % (len(theta), min_components, K))
     n_free = n_components - 1
 
     # softmax with the last component pinned at alpha=0. subtracting logsumexp
@@ -230,14 +236,30 @@ def unpack_params(theta, K=4):
 
 
 
-def nll_flat(theta, x_data):
+def nll_flat(theta, x_data, min_components=2):
     """
     the objective actually handed to minimize().
 
     K is read off x_data.shape[1] rather than defaulted, so theta can never be
     unpacked against the wrong number of phase space dimensions.
+
+    min_components is passed straight through to unpack_params. leave it at 2 for
+    a mixture, so an accidentally-emptied fractions array still fails loudly.
+    pass min_components=1 for the single multivariate (diagonal) gaussian -- the
+    null model for the AIC/BIC comparison -- where component_fractions really is
+    empty. nothing downstream needs special-casing for that: pack_params turns
+    (np.array([]), (1,K) means, (1,K) sigmas) into a length-2K theta with no
+    weights in it, unpack_params sends it back to an empty fractions array, and
+    gmm_negative_loglikelihood's validity guards are vacuously true on an empty
+    array (np.any of nothing is False, np.sum of nothing is 0 < 1) so Qs = [1.0],
+    ln Q = 0, and the single-row logsumexp is the identity -- what comes out is
+    just the plain single-gaussian log likelihood.
+
+    NOTE minimize() passes this via args, so the single-component call is
+    args=(x_data, 1) -- the trailing comma rule applies as always.
     """
-    return gmm_negative_loglikelihood(*unpack_params(theta, K=x_data.shape[1]),
+    return gmm_negative_loglikelihood(*unpack_params(theta, K=x_data.shape[1],
+                                                     min_components=min_components),
                                       x_data)
 
 
@@ -384,6 +406,19 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
                                             component=slice(0, -1),
                                             sort_dim=sort_dim)
 
+
+### for model choice...
+def AIC(lnL0, k, N):
+    t1 = -2 * lnL0
+    t2 = 2*k
+    t3 = (2*k*(k+1))/(N-k-1)
+
+    return t1+t2+t3
+
+def BIC(lnL0, k, N):
+    t1 = -2*lnL0
+    t2 = k*np.log(N)
+    return t1+t2
 # %%
 #### START REWRITING FOR 3 COMPONENTS HERE: 
 # define stuff about the grid:
@@ -410,15 +445,15 @@ copy_options = [0,1,2,3,4]
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 
-ii = 2 # <--- 0 for gd1 i think. 
+ii = 2 # <--- pick orbit. 
 orbit = orbits[ii]
 ## do the orbit-wise check -- integrate prog orbit and find the pericenter. 
 init_displacement = init_displacements[ii]
 orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
 peri = orbit_obj.pericenter()
 
-mass_index = 1
-rvir_index=0
+mass_index = 1 # <--- pick stellar population
+rvir_index=-1 # <--- pick density
 (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
     simspect.prepare_nbody_data_anycopy(
         orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
@@ -441,79 +476,72 @@ ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a
             sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
         )
 
+use = unbound & ol_clip
+x_data = np.column_stack([sc_straighter[k][use] for k in keys])
 
-### for right now i am blindly putting these into the gmm, eventually will need 
-# to convert proper motions -> transverse velocities and _then_ straighten before 
-# doing the mixture modeling step. 
-# (N, 4), column order set by `keys` = ['phi2','pm_phi1','pm_phi2','v_gsr'].
-# mu/sigma have to be in this same order. `unbound` drops the bound progenitor so
-# it doesn't get swallowed by the thin component.
-x_data = np.column_stack([sc_straighter[k][unbound & ol_clip] for k in keys])
-
-# --- initial guess -----------------------------------------------------------#
-# NOT mu=0, sigma=1 for both components. two reasons:
-#  1. identical components are an exact saddle point of the likelihood. if
-#     p_1 == p_2 then every star has responsibility f_1 regardless of f_1, the
-#     gradient wrt f_1 is exactly zero, and the two components can never split.
-#     the initial guess HAS to break the symmetry.
-#  2. sigma=1 is meaningless across mixed units -- 1 deg in phi2 is the whole
-#     stream width, 1 km/s in v_gsr is nothing. scale off the data instead.
 sd = x_data.std(axis=0)
 mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
-mu_2, sigma_2 = np.zeros(4), 1.0 * sd  
-mu_3, sigma_3 = np.zeros(4), 3. * sd   # cocoon: broader than the data
-f_1 = 0.3                           # starting at 0.5 would "let the data decide." this is the thin stream fraction. 
-f_2 = 0.3 # - 0.01
-fracs_0 = np.array([f_1, f_2])
-means_0 = np.array([mu_1, mu_2, mu_3])
-sigmas_0 = np.array([sigma_1, sigma_2, sigma_3])
+mu_2, sigma_2 = np.zeros(4), 10.0 * sd  
+# mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
+f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
+# f_2 = 1/3 # - 0.01
 
-# print(gmm_negative_loglikelihood(component_fractions = np.array([f_1, f_2]),
-#                                  means = means_0, 
-#                                  sigmas = sigmas_0,
-#                                  data=x_data
-#                                  )
-# )
-# print(gmm_negative_loglikelihood(f_1, mu_1, sigma_1, mu_2, sigma_2, x_data)) # test function
-# minimize() passes ONE flat array as the first argument and `args` as a TUPLE of
-# everything after it -- `args=x_data` (no comma) gets iterated and splatted.
+fracs_0 = np.array([f_1])#, f_2])
+means_0 = np.array([mu_1, mu_2])#, mu_3])
+sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
 theta0 = pack_params(fracs_0, means_0, sigmas_0)
 
-result = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # method='Nelder-Mead',
-                  options={'maxiter': 100000, 'maxfev': 100000})#,
-                        #    'fatol': 1e-6, 'xatol': 1e-6})
+ncomponents = len(fracs_0)+1
 
+result = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # method='Nelder-Mead',
+                options={'maxiter': 100000, 'maxfev': 100000})#,
+                        # 'fatol': 1e-6, 'xatol': 1e-6}) #<-- those are for Nelder-Mead optimizer.
 # %%
 fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
-p_thin = membership_probability(x_data, fracs_fit, means_fit, sigmas_fit)
+p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=ii) for ii in range(ncomponents)]
 
-p1, p2, p3 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=ii) for ii in range(3)]
+k = len(theta0) #<-- model complexity -- number of parameters here. 
+N = len(x_data) #<-- number of data points
 
+L0 = -gmm_negative_loglikelihood(fracs_fit, means_fit, sigmas_fit, 
+                                        data=x_data)
 
+aic = AIC(L0, k, N)
+bic = BIC(L0, k, N)
 
+print("AIC/BIC", aic, bic)
 
-
-# %%
-
-fracs_fit, 1-np.sum(fracs_fit)
-# cocoon_fraction = 1 - fracs_fit.sum()
-if len(fracs_fit)<3:
+if len(fracs_fit)<ncomponents:
     fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
 
+cocoon_fraction = fracs_fit[-1]
 
-if fracs_fit[1]+fracs_fit[2]<0.5: #<-- in this case, components 2 and 3 count as cocoon. 
-    cocoon_fraction = fracs_fit[1] + fracs_fit[2]
-
-if fracs_fit[1]+fracs_fit[2]>=0.5: #<-- in this case, only component 3 counts as cocoon
-    cocoon_fraction = fracs_fit[2]
-# %%
 print(result.success, result.message, '\nnll =', result.fun)
 print("cocoon fraction:", cocoon_fraction)
 print(fracs_fit)
 print(sigmas_fit[:,-1])
-
 # %%
-fracs_fit
+#### NEXT: single-component model. 
+fracs_1comp = np.array([]) #<-- empty by construction: with one component there are NO free weights, Q_1 = 1. pass min_components=1 so unpack_params allows it.
+means_1comp = np.array([np.zeros(4)])
+sigmas_1comp = np.array([np.ones(4) * sd])
+theta0_1comp = pack_params(fracs_1comp, means_1comp, sigmas_1comp) #<-- length 2K = 8, no weights in it at all
+
+
+result_1comp = minimize(nll_flat, x0=theta0_1comp, args=(x_data, 1), method='Powell', # <-- the 1 is min_components
+                        options = {'maxiter':100000, "maxfev":100000})
+fracs_fit_1comp, means_fit_1comp, sigmas_fit_1comp = \
+    sort_components(*unpack_params(result_1comp.x, K=x_data.shape[1], min_components=1))
+k_1comp = len(theta0_1comp)
+L0_1comp = -gmm_negative_loglikelihood(fracs_fit_1comp, means_fit_1comp, sigmas_fit_1comp,
+                                 data=x_data)
+aic_1comp, bic_1comp = AIC(L0_1comp, k_1comp, N), BIC(L0_1comp, k_1comp, N)
+
+print("AIC/BIC", aic_1comp, bic_1comp)
+
+### ugH so officially two components is a better fit :((((
+
+
 # %%
 for k in range(4):
     fig, axs = plt.subplots(1,2, figsize=[10,3], width_ratios=[3,1], sharey=True)
@@ -524,14 +552,14 @@ for k in range(4):
 
     # ts = p_thin>0.5
     # ts = p3<(1-np.sum(fracs_fit))
-    if fracs_fit[1]+fracs_fit[2]<0.5: #<-- in this case, components 2 and 3 count as cocoon. 
-        print("thin stream is only component 1")
-        ts = p1>0.5
-        p_thin = p1
-    if fracs_fit[1]+fracs_fit[2]>=0.5: #<-- in this case, only component 3 counts as cocoon
-        print("thin stream is components one and two")
-        ts = p3<0.5 #< ie both p1 and p2 count to thin stream. 
-        p_thin = p1+p2
+    # if fracs_fit[1]+fracs_fit[2]<0.5: #<-- in this case, components 2 and 3 count as cocoon. 
+    #     print("thin stream is only component 1")
+    #     ts = p1>0.5
+    #     p_thin = p1
+    # if fracs_fit[1]+fracs_fit[2]>=0.5: #<-- in this case, only component 3 counts as cocoon
+    #     print("thin stream is components one and two")
+    #     ts = p3<0.5 #< ie both p1 and p2 count to thin stream. 
+    #     p_thin = p1+p2
 
     order = np.argsort(1-p_thin)
 
@@ -827,6 +855,7 @@ axs[1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
 axs[2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
 
 
-plt.savefig("plots/cocoon_separation/gmm/two_component_summary_orbPhase.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/cocoon_separation/gmm/two_component_summary_orbPhase.pdf", dpi=300, bbox_inches='tight')
 # %%
 # idk man, that looks rly bad. let's get some MCMC going maybe... ... ... ... ... 
+
