@@ -18,6 +18,9 @@ Exploring an N-body grid of mock streams to probe effects of progenitor dynamics
 - `DESI_comparison.py`: noise old simulation data like Gaia+DESI and compare to Jarvis+2026 cocoon detection. Will eventually systematize and do for all new sims
 - `prog_properties_summary.py`: cocoon fractions/dispersions for GD-1 portion of old sim grid
 
+`/animations`:
+- `velocity_movie.py`, `grid_movie.py`, `grid_movie_long.py` : scripts to run with a slurm wrapper for animations. TODO: make all of these parallel so that the wrapper is submitted as an array job where each sub-job generates one frame. way faster than doing this in a loop. 
+
 scripts in top directory for now:
 - `get_init_displacements.py`: used to generate init_displacements.txt, fed as inputs to `petar.init ...` for displacing progenitors from the galactic center at the initial condition. **stale:** its `names_to_run` list still holds the long names (`'ATLAS-Aliqa Uma'`, `'GD-1'`, ...) which no longer match the renamed `name` column, so re-running it right now writes an *empty* file with no error. update that list before touching it again.
 - `inspect_new_sims.py`: writing a bunch of functions to process sim data alongside `paf`; in particular transforming to ``observed" stream frame coordinates (based on ICRS coordinates; correcting for solar reflex motion, etc). see the stream frame section below. contents:
@@ -35,7 +38,7 @@ scripts in top directory for now:
 
 - `cocoons.py` summarizing cocoon fractions and properties as a function of progenitor properties. functions are called from `inspect_new_sims.py` as `simspect.[...]`
 - `develop_GMM.py`: replacing the hard cuts in `cocoons.py` with an n-component (narrow ... narrow + cocoon) gaussian mixture, so cocoon membership is a fitted probability per star instead of a by-hand threshold per orbit. this is the point of the whole thing -- the manual cuts didn't standardize across orbits. the fitting layer is n-component general; the script currently runs 3. see the GMM section below.
-- `velocity_movie.py`, `grid_movie.py`, `grid_movie_long.py` : scripts to run with a slurm wrapper for animations. TODO: make all of these parallel so that the wrapper is submitted as an array job where each sub-job generates one frame. indescribably faster than doing this in a loop. 
+
 - `nfc_plots.py` was used for plotting in preparation for a conference; will likely abandon soon
 
 # notes on `paf` (PETAR_ANALYSIS_FUNCTIONS.py)
@@ -148,6 +151,8 @@ two fixes went in here:
 `straighten_stream_polynomial(phi1, y, degree=5, trim_criteria=[inMW, trim], return_poly_fn=True)` is the polynomial alternative. note `trim_criteria` has no working default -- it unpacks `inMW, trim = trim_criteria` unconditionally, so leaving it `None` is a `TypeError`.
 
 ## photometry stuff [MAJOR WIP ⚠️]
+TODO: i think it would be way easier to just pull a MIST isochrone with gaia + the z-band to grab photometry given masses. would not be totally honest since a caveat of this project is that the stellar+dynamical ages of the streams are the same, however all of the massive stellar evolution stuff should be over by a few Gyr. the tophat photometric bandbass integration is easy to add bugs to. 
+
 synthetic photometry from a **blackbody**, with **top-hat filters** -- no real Gaia/SDSS response curves, so treat colors as approximate.
 - `define_photometric_bands()` -- Gaia G (330-1050 nm), BP (330-680), RP (630-1050) from the DR2 paper, plus a 100 nm-wide z centered at 900 nm.
 - `integrated_mag(nu_min, nu_max, T, R, d=10)` -- AB magnitude (the -48.60 zero point), `d` in pc, so `d=10` gives an absolute mag. **T and R must be cgs bare numbers** (K and cm) since `B(nu,T)` uses cgs constants -- this is why `inspect_new_sims.py` does `.cgs.value` first. note the 1/nu weighting normalization at the `np.trapezoid` lines is marked "suggestion that idk why works. " in the source and has not been validated against a real photometric zero point; worth checking against a known star before trusting absolute mags (colors are probably safer).
@@ -179,6 +184,9 @@ when it does get flattened to a dict (in `straightened_obscoords_orbit_interp`) 
 phi1 zero points are set by the present-day progenitor sky position read out of `data/FINAL_ics_nolmc.csv` (except `jet`, where Do+26 give an origin directly), looked up as `prog_tab[prog_tab['name']==orbit]` -- which works because the table's `name` column was renamed to the short keys. there is still no `else` branch -- an unrecognized `orbit` string leaves `selected_streamframe` undefined and you get a `NameError` at the `transform_to` line rather than a useful message.
 
 ## straightening in the observed frame
+
+TODO: I am not 100% convinced that this is successful for M3 of Pal 5, which have notable diverging tails that get added to cocoons. 
+
 four functions in `inspect_new_sims.py`, chained by `straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500)`:
 
 1. `prog_orbit_track(w0, Dt)` -- integrate the progenitor +/- `Dt` Myr in mwp2014 and concatenate `[backward reversed, forward]`. **note the `[:-1]`**: both integrations contain t=0, so the naive concatenation duplicates the progenitor and puts an exact `dphi1 = 0` step at the midpoint, which stalls any sign-based walk. with it dropped the progenitor sits at index exactly `Dt`, which is also `n//2`.
@@ -211,9 +219,14 @@ version in `petar_env` is gala 1.9.1. the modern API is pole+origin only; passin
 - for `m3` this is not academic: the `M3` row of `FINAL_ics_nolmc.csv` sits ~17 deg off the great circle through the Yang+23 endpoints, so `priority` changes where the endpoints land by >12 deg in phi2. also, `data/M3.fits` spans ra 189-269 deg with ~7.5 deg of phi2 scatter in every endpoint-derived frame, so one great circle may just not describe the whole M3 stream. see the TODO in the code -- may end up settling for "stream on an M3-like orbit," since that run is really a high-e / low-pericenter test.
 
 # cocoon separation by gaussian mixture (`develop_GMM.py`)
-🚨 **I've gone back and forth on whether to use a two or three-component model. it's not clear that much is gained with a three-component model vs a two component model where the initial guess/prior is that the dispersion of the cocoon is 10x the std of the data and the cocoon fraction is 0.1. why not just have a simpler model. but also that means much of this i sout of date now.**
 
-an **n-component** gaussian mixture fit to the straightened observed-frame residuals, in place of the hard `get_cocoon_selection` cuts. the convention throughout is **narrowest first, cocoon last**: components `0 .. n-2` are the thin stream and the final (widest) one is the cocoon. the script currently runs `n_components = 3`, so the thin stream gets two narrow gaussians -- that's deliberate, they soak up the non-gaussian shape of the thin part (epicyclic feathers, the not-quite-gaussian core) instead of that shape being mistaken for a cocoon.
+adding __constraints__ seems to help quite a bit. a persistent issue has been that the thin stream component itself is non-gaussian, meaning that when the highly dispersed cocoon doesn't contain enough stars the optimizer is clearly just fitting two gaussians to the thin stream (really just by eye). This is a particular issue for M3 and Pal 5, with close-in orbits and significant width variations along the stream in multiple dimensions. The constraints have been to require that the cocoon component be at least $R$ times wider than the thin stream.
+
+**$R$ is now per-dimension, which resolves the "possibly it should only be in one dimension" question** -- it doesn't have to be a single number, and it shouldn't be. from Jarvis+26 the GD-1 cocoon is ~10x wider in phi2 but only ~3x wider in radial velocity, so one scalar $R$ is either too weak in phi2 or actively excludes the right answer in v_gsr. the script runs `min_ratio = [10.0, 5.0]` on `dims = [0, 3]` (phi2, v_gsr) and leaves the proper motions unconstrained. see the constraints/bounds section below.
+
+**the model is back to two components** (the `# , f_2` / `# , mu_3` bits are commented out in both the interactive cell and the grid loop). the earlier three-component version gave the thin stream two narrow gaussians to soak up its non-gaussian shape; the conclusion was that the constraints do that job more directly and honestly, so there's no reason to carry the extra 10 parameters. the fitting layer below is still n-component general and the n=3 path still works -- it's the *settings* that are n=2, so anything that says "the thin stream is components 0..n-2" degenerates to "component 0" right now.
+
+an **n-component** gaussian mixture fit to the straightened observed-frame residuals, in place of the hard `get_cocoon_selection` cuts. the convention throughout is **narrowest first, cocoon last**: components `0 .. n-2` are the thin stream and the final (widest) one is the cocoon.
 
 the data vector is `keys = ['phi2','pm_phi1','pm_phi2','v_gsr']`, stacked `(N, 4)` in that order, so **every `mu` and `sigma` row is a 4-vector in that same order** and mixing up the column order silently gives a nonsense fit. built on `sc_straighter` (orbit-interp straightening, then `poly_straightening`), masked by `unbound & ol_clip`. eventually the proper motions should become transverse velocities *before* straightening; not done yet.
 
@@ -245,7 +258,7 @@ a positive `ln L` is not a bug: these are log *densities*, and with sigma_phi2 ~
 ## fitting it: the packing layer
 `scipy.optimize.minimize` wants **one flat 1-D array** as the objective's first argument. it cannot take `(fracs, means, sigmas)` -- numpy makes that a ragged object array and it dies with `ValueError: setting an array element with a sequence`. and `args=x_data` (no trailing comma) is not a tuple, so scipy iterates the array and splats it as separate arguments. it has to be `args=(x_data,)`.
 
-so `pack_params` / `unpack_params` flatten to a **length `(n-1) + 2nK`** vector (17 for the old n=2, K=4 case; 27 for the n=3 fit running now), and `nll_flat(theta, x_data)` is what actually gets handed to `minimize`. layout:
+so `pack_params` / `unpack_params` flatten to a **length `(n-1) + 2nK`** vector (17 for the n=2, K=4 fit running now; 27 for n=3), and `nll_flat(theta, x_data)` is what actually gets handed to `minimize`. layout:
 
     [alpha_1 ... alpha_{n-1},  mu_1, ln sigma_1,  mu_2, ln sigma_2,  ...]
 
@@ -261,19 +274,78 @@ two guards worth knowing about:
 - `unpack_params` **infers `n_components` from `len(theta)`** via `divmod(len(theta) + 1, 2K + 1)`, and raises if the length isn't of that form. so a K/n mismatch fails loudly instead of misreshaping.
 - `nll_flat` reads `K` off `x_data.shape[1]` rather than defaulting it, so `theta` can never be unpacked against the wrong number of phase space dimensions.
 
-`sort_components(fracs, means, sigmas, sort_dim=-1)` handles **label switching** -- the likelihood is exactly invariant under relabelling components, so the fit has no idea which one you meant to call "thin." it returns them ordered **narrowest -> widest**, and `sort_dim` picks which phase space dimension does the ordering (a component can be widest in one coordinate and not another). **the default is now `sort_dim=-1`, i.e. v_gsr**, not phi2 as in the 2-component version. the implicit weight is re-derived after sorting, so the returned fractions are the n-1 narrowest and the cocoon fraction is `1 - sum(returned)`.
+`nll_flat(theta, x_data, min_components=1)` is also **the single-gaussian null model** for the AIC/BIC comparison, and it needs no special-casing anywhere: `pack_params` turns a `(np.array([]), (1,K), (1,K))` triple into a length-2K theta with no weights in it, the validity guards in `gmm_negative_loglikelihood` are vacuously true on an empty fractions array, so `Qs = [1.0]`, `ln Q = 0`, and the single-row `logsumexp` is the identity. it comes back as the plain single-gaussian log likelihood. `min_components` stays at 2 by default so an *accidentally* emptied fractions array still fails loudly. note the call is `args=(x_data, 1)` -- the trailing-comma rule again.
+
+`sort_components(fracs, means, sigmas, sort_dim=-1)` handles **label switching** -- the likelihood is exactly invariant under relabelling components, so the fit has no idea which one you meant to call "thin." it returns them ordered **narrowest -> widest**, and `sort_dim` picks which phase space dimension does the ordering (a component can be widest in one coordinate and not another). **the default is `sort_dim=-1`, i.e. v_gsr**, not phi2 as in the earliest 2-component version. the implicit weight is re-derived after sorting, so the returned fractions are the n-1 narrowest and the cocoon fraction is `1 - sum(returned)`. note the **sigma-ratio constraint does not sort for you** -- it hardcodes "cocoon = last component," so during the fit that's a definition rather than an observation, and `sort_components` is still what makes the index meaningful afterwards.
+
+## constraints and bounds: the degeneracy fix
+this is the part that made the fits usable, and it is two separate mechanisms that scipy treats differently. **both only do anything for `SLSQP`, `trust-constr` or `COBYLA`.** Powell and Nelder-Mead accept `constraints=` , emit only `RuntimeWarning: Method Powell cannot handle constraints`, and then ignore it and hand back a normal-looking result with `success=True` -- same genre of trap as the gala `priority` warning, and you end up thinking you constrained a fit you didn't. (Powell *does* honour `bounds`, though. only constraints get ignored.)
+
+three general things:
+1. a constraint function is called as `g(theta)` **only**. `args=(x_data,)` goes to the OBJECTIVE, not to the constraints -- if a constraint needs the data, close over it.
+2. `constraints=` takes a **list** of constraint objects, one entry per constraint. `[]` or `None` is unconstrained.
+3. for the legacy dict form the convention is `g(theta) >= 0`, i.e. "feasible when non-negative". `LinearConstraint`/`NonlinearConstraint(g, lb, ub)` state their bounds explicitly, so the dict form is the one that's easy to get backwards.
+
+### `sigma_ratio_constraint(min_ratio, n_components, K, dims, thin_component=0)`
+requires the cocoon to be at least `min_ratio` times **wider** than the thin component. this is a much better handle than bounding the cocoon fraction: bounding `f_cocoon` just clips the answer at whatever wall you put up, so the optimizer reports the bound rather than a fit. what actually goes wrong for a puffy progenitor is that the two components stop being *distinguishable* and the second one soaks up the non-gaussian wings of the thin stream. constraining the **separation** says what you actually mean -- "only call it a cocoon if it's much wider."
+
+it is exactly **linear in theta**, since `ln sigma` is stored there directly: `sigma_cocoon/sigma_thin >= R` is `(ln sigma_cocoon)_k - (ln sigma_thin)_k >= ln R`, one `LinearConstraint` row per dimension, no reparameterization needed.
+
+that row structure is also why the **per-dimension ratio is free**: `LinearConstraint` takes a *vector* lower bound, one entry per row, so `ln R` just stops being a scalar that broadcasts. `min_ratio` is either one number for every requested dimension or a list **aligned elementwise with `dims`**:
+
+    constraint_dims = [0, 3]     # phi2, v_gsr  (keys order is phi2, pm_phi1, pm_phi2, v_gsr)
+    min_ratio       = [10.0, 5.0]
+
+a scalar is expanded to `len(dims)` inside the function rather than left to broadcast, so `len(ratios) == len(rows)` always holds and a wrong-length list raises instead of silently constraining a subset. `ratios <= 0` raises too (it's a width ratio, and `ln R` is the bound).
+
+⚠️ **`thin_component=0` only, which matters if you go back to n=3.** the constraint compares the cocoon against exactly one thin component. with two narrow components the middle one is unconstrained relative to the cocoon, so you'd want a second constraint object with `thin_component=1`, or to apply the ratio against the widest thin component.
+
+### bounding the means near zero (`pack_bounds`)
+the other half of the fix. the sigma-ratio constraint stops the second component from being a slightly-wider copy of the thin stream; bounding `mu` stops it from **wandering off-track instead** and soaking up some *offset* blob of stars -- a diverging tail, the far end of an epicyclic feather -- as if it were a cocoon. the residuals are centred on the orbit track by construction, so a real cocoon shares the thin stream's mean: it is **wider, not displaced**.
+
+`pack_bounds(fracs_bounds, means_bounds, sigmas_bounds, n_components, K)` takes bounds in **natural** parameter space and pushes them through the same monotonic reparameterization `pack_params` applies, so `(lo, hi) -> (T(lo), T(hi))` with no reordering. the three groups are very unequal in how useful they are:
+- **means: the only group where a bound is exactly what it looks like.** `mu` sits in theta unchanged, so the pair passes straight through. nothing to get backwards.
+- **sigmas: free, so this group costs nothing and buys nothing.** `sigma > 0` becomes `ln sigma > -inf`, i.e. unbounded -- positivity is already in the parameterization.
+- **fracs: `logit`, and only honest for n=2.** `alpha_j = ln(Q_j/Q_last)` couples *all* the weights, so a box in Q space is not a box in alpha space for n>2 and `pack_bounds` raises rather than pretending. that n=2 case does cover bounding the cocoon fraction, since `f_cocoon = 1 - f_1` there; for n>2 use `cocoon_fraction_constraint(lo, hi, n_components)`, a `NonlinearConstraint` on `Q_last = 1/(1 + sum_j exp(alpha_j))` which is exact for any n.
+
+the mean box is **+/- 1 sd of the data, per dimension**:
+
+    mu_halfwidth = 1.0 * sd      # sd = x_data.std(axis=0)
+    means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
+                                   (ncomponents, len(sd), 2))
+
+it has to be per-dimension, not one pair broadcast over the group: `sd` is ~0.1 deg in phi2 but ~10 km/s in v_gsr, so a single `(-1, 1)` would be ~10 sd in phi2 and ~0.1 sd in v_gsr. the `(n_components, K, 2)` form is what says "same rule, different number in each coordinate," and `_bound_pairs` reshapes it to `(nK, 2)`.
+
+two sharp edges here:
+- **`()` is not the unbounded spelling.** `_bound_pairs` reads an empty tuple as *zero* pairs and raises `got 0 (lo, hi) pairs, expected 8`. `None` -- either a whole group, or one side of a pair -- is what means unbounded.
+- **an active mean bound is silent.** a `mu` sitting exactly on the wall is not a fitted mean, it's the optimizer reporting the bound, the same failure mode as bounding the cocoon fraction. scipy says nothing about it, so the script now prints a `WARNING mu[comp j, key] is ON its +/-x bound` per offending entry (and otherwise prints `max |mu|/sd`). that warning means the data wanted an offset component, which is the straightening leaving structure behind -- see the m3/pa5 diverging-tail TODO -- rather than evidence of a cocoon. verified on synthetic data both ways: a centred cocoon fits interior at `max |mu|/sd = 0.07`, while a deliberately offset wide blob pins `mu` on the phi2 and v_gsr walls and trips it.
 
 ## initial guesses: this is the part that actually matters
 **do not start any two components identical.** identical components are an exact saddle point: if `p_j == p_k` then every star's responsibility is the prior weight regardless of the weight, the gradient wrt those weights is exactly zero, and the components can never split. confirmed empirically in the 2-component case -- from a `mu=0, sigma=1` both start, L-BFGS-B returns `f_thin = 0.5` with the two sigma vectors bit-identical. `sigma = 1` is also meaningless across mixed units (1 deg in phi2 is the whole stream; 1 km/s in v_gsr is nothing), so scale off `x_data.std(axis=0)`.
 
-what the script does now: `sigma_0 = [0.1, 1.0, 3.0] * sd` in the interactive cell (`10 * sd` for the widest in the grid loop), all `mu = 0`, and equal-ish weights (`f_1 = f_2 = 1/3`). **the symmetry is broken by the width scales rather than by the weights**, which is what makes the near-equal starting fractions safe here.
+what the script does now, in both the interactive cell and the grid loop: `sigma_0 = [0.1, 10.0] * sd`, both `mu = 0`, and `f_1 = 0.9`. so the symmetry is broken **twice over** -- by a 100x gap in the width scales *and* by the starting weight. that 0.9 is doing real work and is not a neutral choice: it's a soft prior that the stream is mostly thin, and starting at `f_1 = 0.5` is the known failure mode below.
 
-⚠️ **the multimodality caveat still stands, it just moved.** in the 2-component fit the failure was concrete and had a rule: starting at `f_1 = 0.5` split *the thin stream itself* in two and called the wider half a cocoon, so `f_1` had to start at 0.9+. with 3 components that particular split is no longer a failure -- it's the point -- but the likelihood surface is still genuinely multimodal, `minimize` still only ever finds a local optimum, and **there is no `success` flag that will warn about it**. so the reported cocoon fraction is still conditional on the starting basin and that should be stated in any writeup.
+⚠️ **the multimodality caveat still stands.** starting at `f_1 = 0.5` splits *the thin stream itself* in two and calls the wider half a cocoon, which is why `f_1` starts at 0.9. the constraints now block the worst version of that (a "cocoon" only 1.5x wider can't satisfy `min_ratio`), but the likelihood surface is still genuinely multimodal, `minimize` still only ever finds a local optimum, and **there is no `success` flag that will warn about it**. so the reported cocoon fraction is still conditional on the starting basin and that should be stated in any writeup.
 
 the independent check is physical, not numerical: cocoon fraction should *decrease* with increasing rvir (decreasing initial cluster density). the grid loop at the bottom of the script plots exactly that (`f_cocoon`, `sigma_phi2,cocoon`, `sigma_vgsr,cocoon` vs rvir, one line per orbit, ordered by pericenter), so a non-monotonic line there is the signal that fits in that row landed in different basins. still worth doing: scan the width-scale / fraction inits over a grid and keep the best `result.fun`.
 
-## optimizer choice
-the script uses `method='Powell'`. benchmarked on synthetic data with 17 free parameters (n=2, K=4), N=30000:
+## optimizer choice: the two-stage recipe
+**SLSQP from a cold start collapses this particular likelihood onto a single component** -- both sigmas equal, thin weight -> 0. so it runs in two stages, and this is the actual recipe:
+
+    # stage 1: Powell, to land in the right basin
+    result_free = minimize(nll_flat, theta0, args=(x_data,), method='Powell',
+                           bounds=bounds, options={'maxiter': 100000, 'maxfev': 100000})
+    # stage 2: re-fit from there, WITH the constraint
+    result = minimize(nll_flat, result_free.x, args=(x_data,), method='SLSQP',
+                      bounds=bounds, constraints=constraints, options={'maxiter': 5000})
+
+Powell finds the basin fast (the benchmark below) but ignores constraints; SLSQP respects them but can't find the basin. bounds and constraints coexist happily in stage 2.
+
+**pass `bounds` to stage 1 as well, even though Powell can't use the constraints.** Powell does honour bounds, and if it isn't bounded it can walk a mean far outside the box -- at which point SLSQP *silently clips* `x0` back into the box and throws away the basin Powell was run to find. that clip is not an error and not a warning.
+
+the constrained nll is necessarily `>=` the free one, and the gap is the useful number: it's how hard the data resist being told the cocoon must be much wider. the script prints both plus the difference.
+
+benchmarked on synthetic data with 17 free parameters (n=2, K=4), N=30000, unconstrained:
 
 | method | wall time | final nll | fitted f_thin (true 0.7495) |
 |---|---|---|---|
@@ -281,7 +353,26 @@ the script uses `method='Powell'`. benchmarked on synthetic data with 17 free pa
 | L-BFGS-B | 64 s | 33168.1 | 0.7492 |
 | Powell | 5 s | 33168.1 | 0.7491 |
 
-**all three returned `success=True`.** Nelder-Mead stopped ~950 nll units short of the optimum with a 6% error in `f_thin` and said it converged -- simplex methods degrade badly above ~10 dimensions, and n=3 has 27 parameters, so this only gets worse. so: **check `result.fun`, never `result.success`.** with the good optimum, recovered sigmas match truth to <1% and per-star label recovery is 99.7%. (the `fatol`/`xatol` options still in the `minimize` call are Nelder-Mead options and are ignored by Powell -- harmless, but they're not doing anything.)
+**all three returned `success=True`.** Nelder-Mead stopped ~950 nll units short of the optimum with a 6% error in `f_thin` and said it converged -- simplex methods degrade badly above ~10 dimensions, and n=3 would be 27 parameters, so it only gets worse. so: **check `result.fun`, never `result.success`.** with the good optimum, recovered sigmas match truth to <1% and per-star label recovery is 99.7%. (the `fatol`/`xatol` options still in the grid loop's `minimize` call are Nelder-Mead options and are ignored by Powell -- harmless, but they're not doing anything.)
+
+`result.success` is now doubly useless: it's `True` for an ignored constraint, `True` for a clipped `x0`, and `True` for a fit pinned against an active mean bound. the three things worth actually reading are `result.fun`, the free-vs-constrained nll gap, and the mean-bound warning.
+
+## model choice: AIC / BIC
+`AIC(lnL0, k, N)` and `BIC(lnL0, k, N)`, with `k = len(theta0)` (i.e. `(n-1) + 2nK`, so 17 for n=2) and `N = len(x_data)`. **note `AIC` is actually AICc** -- it includes the small-sample correction `2k(k+1)/(N-k-1)` on top of `-2lnL + 2k`. with `N ~ 10^4` and `k = 17` that term is ~0.1, so it's numerically irrelevant here, but the name says AIC and the formula says AICc.
+
+they take a **log likelihood**, not the nll, hence the sign flip at the call site (`L0 = -gmm_negative_loglikelihood(...)`). the intended comparison is against the single-gaussian null via `nll_flat(..., min_components=1)` -- see the packing layer section. the "removed stuff testing a single-component model here" comment marks where that used to live, so the null side of the comparison is **not currently wired up**; the printed AIC/BIC is a number for the n=2 fit alone, which on its own says nothing.
+
+## profile likelihood in the cocoon fraction (written, commented out)
+`nll_fixed_cocoon(psi, x_data, f_cocoon, n_components)` and `profile_cocoon_fraction(x_data, f_grid, means_0, sigmas_0, ...)` sit commented out above `sort_components`. they're the honest way to ask *"does the likelihood actually want a big cocoon, or is the optimizer just putting it there?"* -- pin `f_cocoon` on a grid, re-fit every other parameter at each grid point, look at the curve. it is independent of where the fit starts, of the reparameterization, and of the choice of method, so it settles the question a single `result.x` cannot.
+
+`psi` has length `(n-2) + 2nK`: the mu/ln-sigma half is exactly `pack_params`' layout, but the thin components share the remaining `1 - f_cocoon` via their own softmax with `beta_1` pinned at 0, so there are n-2 free weight reals. **for n=2 that is zero** -- nothing left to split -- and `psi` is just the mu/ln-sigma block. `warm_start=True` walks the grid from the best-fitting end outward, seeding each point with the previous solution, which keeps the profile inside one basin (set it `False` to hunt for the second minimum at every point independently).
+
+how to read the curve:
+- **rising monotonically toward `f_cocoon -> 0`**: the data genuinely prefer a big cocoon. not an optimizer problem -- look at the *model* (are the two fitted sigmas actually distinct, or is component 2 soaking up non-gaussian wings?).
+- **flat below some `f_cocoon`**: the cocoon weight is unconstrained down there, any small value fits as well as any other, and the number your fit reports is arbitrary. **report an upper limit, not a value.**
+- **a second local minimum**: the multimodality above, made visible. the delta-nll between minima tells you how much it matters.
+
+delta-nll of ~0.5 is the 1-sigma interval on one parameter, ~2 is 2-sigma.
 
 ## next
 maximum likelihood first, then emcee for posteriors (per the header comment). the pieces are there: `nll_flat` negated is the right sign for `log_prob`, the softmax/log-sigma parameterization is already unconstrained so the sampler doesn't need bounds, and the `-inf` / `+inf` guards are what emcee expects for a rejected step -- add a prior and it's ready. sampling would also expose the multimodality directly, which point estimation hides. note that a sampler needs the label-switching convention applied *per sample* (`sort_components` on each draw) or the marginals come out as mush.
@@ -292,7 +383,10 @@ in rough order of how much they'd hurt:
 - **`get_init_displacements.py` silently produces nothing** -- its `names_to_run` list still uses the long stream names that were renamed out of `FINAL_ics_nolmc.csv`.
 - **anything cached from before the init_displacement units fix is wrong** -- not just the `*_straight` residuals but the intrinsic `coords` themselves, since the progenitor reference position and velocity were both bogus. regenerate.
 - **the GMM likelihood is multimodal** and `minimize` only finds a local optimum -- no warning is emitted and `success=True` either way, so the reported cocoon fraction is conditional on the starting basin. check `result.fun`, and check the `f_cocoon` vs rvir trend for monotonicity. see the GMM section.
-- **the exploratory plotting cells in `develop_GMM.py` cut on `p1 > 0.5` where `p1` is a `component_likelihood` output**, i.e. a log density, not a probability -- that threshold is meaningless. should be a responsibility from `component_membership_probability`. the `ax.scatter(p1, p2)` cell above it is plotting log densities against each other too.
+- **the grid loop at the bottom of `develop_GMM.py` is still bare unconstrained, unbounded Powell** -- no `bounds`, no `constraints`, `n=2` from a cold start. so the `f_cocoon` vs rvir trend plots, which are the one independent physical check on the whole method, are made with the *old* fits and get none of the benefit of the constraint/bound work. the two-stage recipe needs pushing into that loop before those panels mean anything.
+- the grid loop reads the cocoon dispersions as `sigmas_fit[-1]`, with its own inline warning that **this is wrong if >2 components are fit** -- the cocoon could be two of three components. fine at n=2, a trap if n=3 comes back.
+- `unpack_params`' docstring refers to **`nll_flat_anyn`**, which no longer exists -- it's `nll_flat(..., min_components=1)` now (`develop_GMM.py:421`).
+- ~~the exploratory plotting cells cut on `p1 > 0.5` where `p1` is a `component_likelihood` output~~ **fixed** -- those cells now build `p1, p2` from `component_membership_probability` on sorted components, so the 0.5 threshold is a real responsibility. the general warning still stands: `component_likelihood` returns log *densities*, so never threshold its output.
 - `straightened_obscoords_orbit_interp` clamps instead of flagging outside the orbit track's phi1 range.
 - `straighten_stream_polynomial`'s `trim_criteria=None` default is a `TypeError`, not a default.
 - no `else` branch in either `retrieve_sim_info` (`UnboundLocalError`) or `streamframe_coords_observed` (`NameError`) for an unrecognized orbit string.

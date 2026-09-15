@@ -338,7 +338,8 @@ def sigma_ratio_constraint(min_ratio, n_components=2, K=4, dims=None,
                            thin_component=0):
     """
     require the cocoon to be at least min_ratio times WIDER than the thin
-    component, dimension by dimension.
+    component, dimension by dimension -- with a DIFFERENT ratio per dimension
+    if you want one.
 
     this is usually a better handle than bounding the cocoon fraction. bounding
     f_cocoon just clips the answer at whatever wall you put up -- the optimizer
@@ -351,19 +352,46 @@ def sigma_ratio_constraint(min_ratio, n_components=2, K=4, dims=None,
     it is exactly LINEAR in theta -- ln sigma is stored there directly, so
     sigma_cocoon / sigma_thin >= R is
         (ln sigma_cocoon)_k - (ln sigma_thin)_k >= ln R,
-    one row per phase space dimension. no reparameterization needed.
+    one row per phase space dimension. no reparameterization needed. that row
+    structure is also why a per-dimension ratio costs nothing: LinearConstraint
+    takes a VECTOR lower bound, one entry per row, so ln R just stops being a
+    scalar that broadcasts.
 
     dims : which phase space dimensions to apply it to (default all K). the
            keys order is ['phi2','pm_phi1','pm_phi2','v_gsr'], so dims=[0, 3]
            constrains phi2 and v_gsr only.
 
+    min_ratio : either ONE ratio for every requested dimension, or a list with
+           the same length as dims, ALIGNED WITH IT elementwise -- so
+               dims=[0, 3], min_ratio=[10.0, 4.0]
+           demands a cocoon 10x wider in phi2 and 4x wider in v_gsr. this is the
+           physical case: from Jarvis+26 the GD-1 cocoon is ~10x wider in phi2
+           but only ~3x in radial velocity, so a single ratio is either too weak
+           in phi2 or too strong in v_gsr. the lengths are checked, since
+           silently broadcasting a mismatched list would constrain the wrong
+           dimension.
+
     needs 'SLSQP', 'trust-constr' or 'COBYLA' -- Powell ignores constraints.
     """
     from scipy.optimize import LinearConstraint
 
-    dims = range(K) if dims is None else dims
+    dims = list(range(K)) if dims is None else list(dims)
     n_free = n_components - 1
     n_theta = n_free + 2 * n_components * K
+
+    # one ratio per row of the constraint matrix. a scalar is expanded here
+    # rather than left to broadcast, so len(ratios) == len(rows) always holds
+    # and a wrong-length list is an error instead of a partial constraint.
+    ratios = np.asarray(min_ratio, dtype=float)
+    if ratios.ndim == 0:
+        ratios = np.full(len(dims), float(ratios))
+    elif ratios.shape != (len(dims),):
+        raise ValueError("min_ratio has shape %s but %i dims were requested; "
+                         "pass a single ratio or one per dim, in the same order "
+                         "as dims" % (ratios.shape, len(dims)))
+    if np.any(ratios <= 0):
+        raise ValueError("min_ratio must be > 0 (it is a width ratio, and ln R "
+                         "is the bound); got %s" % (ratios,))
 
     def lnsigma_index(j, k):
         # component j's block starts at n_free + j*2K; mus first, then ln sigmas
@@ -376,7 +404,7 @@ def sigma_ratio_constraint(min_ratio, n_components=2, K=4, dims=None,
         row[lnsigma_index(thin_component, k)] = -1.0
         rows.append(row)
 
-    return LinearConstraint(np.array(rows), np.log(min_ratio), np.inf)
+    return LinearConstraint(np.array(rows), np.log(ratios), np.inf)
 
 def unpack_params(theta, K=4, min_components=2):
     """
@@ -463,96 +491,96 @@ def nll_flat(theta, x_data, min_components=2):
 #     visible. delta-nll between the minima tells you how badly it matters.
 # a delta-nll of ~0.5 is the 1-sigma interval on one parameter, ~2 is 2-sigma.
 
-def nll_fixed_cocoon(psi, x_data, f_cocoon, n_components=2):
-    """
-    the objective with the cocoon (LAST component) weight PINNED at f_cocoon.
+# def nll_fixed_cocoon(psi, x_data, f_cocoon, n_components=2):
+#     """
+#     the objective with the cocoon (LAST component) weight PINNED at f_cocoon.
 
-    psi layout, length (n-2) + 2nK:
-      [beta_2 ... beta_{n-1},  mu_1, ln sigma_1,  mu_2, ln sigma_2,  ...]
-    the mu/ln-sigma half is exactly pack_params' layout, unchanged. the weights
-    differ: the thin components share the remaining (1 - f_cocoon) via their own
-    softmax with beta_1 pinned at 0 as the reference, so n-2 free reals. for
-    n_components=2 that is zero free weight parameters -- there is nothing left
-    to split -- and psi is just the mu/ln-sigma block.
-    """
-    psi = np.asarray(psi, dtype=float)
-    K = x_data.shape[1]
-    n_rel = n_components - 2                  # free reals splitting the thin weight
+#     psi layout, length (n-2) + 2nK:
+#       [beta_2 ... beta_{n-1},  mu_1, ln sigma_1,  mu_2, ln sigma_2,  ...]
+#     the mu/ln-sigma half is exactly pack_params' layout, unchanged. the weights
+#     differ: the thin components share the remaining (1 - f_cocoon) via their own
+#     softmax with beta_1 pinned at 0 as the reference, so n-2 free reals. for
+#     n_components=2 that is zero free weight parameters -- there is nothing left
+#     to split -- and psi is just the mu/ln-sigma block.
+#     """
+#     psi = np.asarray(psi, dtype=float)
+#     K = x_data.shape[1]
+#     n_rel = n_components - 2                  # free reals splitting the thin weight
 
-    if not (0 < f_cocoon < 1):
-        return np.inf
-    if len(psi) != n_rel + 2 * n_components * K:
-        raise ValueError("len(psi)=%i, expected %i for n_components=%i, K=%i"
-                         % (len(psi), n_rel + 2 * n_components * K, n_components, K))
+#     if not (0 < f_cocoon < 1):
+#         return np.inf
+#     if len(psi) != n_rel + 2 * n_components * K:
+#         raise ValueError("len(psi)=%i, expected %i for n_components=%i, K=%i"
+#                          % (len(psi), n_rel + 2 * n_components * K, n_components, K))
 
-    beta = np.append(psi[:n_rel], 0.0)        # (n-1,) relative thin weights
-    Q_thin = (1.0 - f_cocoon) * np.exp(beta - logsumexp(beta))
+#     beta = np.append(psi[:n_rel], 0.0)        # (n-1,) relative thin weights
+#     Q_thin = (1.0 - f_cocoon) * np.exp(beta - logsumexp(beta))
 
-    blocks = psi[n_rel:].reshape(n_components, 2 * K)
-    means, sigmas = blocks[:, :K], np.exp(blocks[:, K:])
+#     blocks = psi[n_rel:].reshape(n_components, 2 * K)
+#     means, sigmas = blocks[:, :K], np.exp(blocks[:, K:])
 
-    # gmm_negative_loglikelihood wants the n-1 FREE weights; the implicit last
-    # one is then 1 - sum(Q_thin) = f_cocoon, which is what we pinned.
-    return gmm_negative_loglikelihood(Q_thin, means, sigmas, x_data)
+#     # gmm_negative_loglikelihood wants the n-1 FREE weights; the implicit last
+#     # one is then 1 - sum(Q_thin) = f_cocoon, which is what we pinned.
+#     return gmm_negative_loglikelihood(Q_thin, means, sigmas, x_data)
 
 
-def profile_cocoon_fraction(x_data, f_grid, means_0, sigmas_0, fracs_0=None,
-                            method='Powell', warm_start=True, **min_kw):
-    """
-    profile the negative log likelihood over a grid of FIXED cocoon fractions.
+# def profile_cocoon_fraction(x_data, f_grid, means_0, sigmas_0, fracs_0=None,
+#                             method='Powell', warm_start=True, **min_kw):
+#     """
+#     profile the negative log likelihood over a grid of FIXED cocoon fractions.
 
-    x_data           : (N, K)
-    f_grid           : cocoon fractions to pin, e.g. np.logspace(-4, -0.4, 25)
-    means_0, sigmas_0: (n, K) starting guesses, same convention as the free fit
-    fracs_0          : (n-1,) only used for n > 2, to seed the thin-weight split
-    warm_start       : walk the grid from the best-fitting end outward, seeding
-                       each point with the previous solution. much faster, and
-                       it keeps the profile inside one basin, which is the point
-                       -- set False if you specifically want to hunt for the
-                       second minimum at every grid point independently.
+#     x_data           : (N, K)
+#     f_grid           : cocoon fractions to pin, e.g. np.logspace(-4, -0.4, 25)
+#     means_0, sigmas_0: (n, K) starting guesses, same convention as the free fit
+#     fracs_0          : (n-1,) only used for n > 2, to seed the thin-weight split
+#     warm_start       : walk the grid from the best-fitting end outward, seeding
+#                        each point with the previous solution. much faster, and
+#                        it keeps the profile inside one basin, which is the point
+#                        -- set False if you specifically want to hunt for the
+#                        second minimum at every grid point independently.
 
-    returns (f_grid, nll, params) -- nll is (len(f_grid),), params is a list of
-    the psi vectors, so you can unpack the sigmas at each point and see whether
-    the "cocoon" component stays distinct as you force its weight down.
-    """
-    from scipy.optimize import minimize as _minimize
+#     returns (f_grid, nll, params) -- nll is (len(f_grid),), params is a list of
+#     the psi vectors, so you can unpack the sigmas at each point and see whether
+#     the "cocoon" component stays distinct as you force its weight down.
+#     """
+#     from scipy.optimize import minimize as _minimize
 
-    x_data = np.asarray(x_data, dtype=float)
-    f_grid = np.atleast_1d(np.asarray(f_grid, dtype=float))
-    means_0 = np.asarray(means_0, dtype=float)
-    sigmas_0 = np.asarray(sigmas_0, dtype=float)
-    n_components, K = means_0.shape
-    if K != x_data.shape[1]:
-        raise ValueError("means_0 has K=%i but x_data has K=%i" % (K, x_data.shape[1]))
+#     x_data = np.asarray(x_data, dtype=float)
+#     f_grid = np.atleast_1d(np.asarray(f_grid, dtype=float))
+#     means_0 = np.asarray(means_0, dtype=float)
+#     sigmas_0 = np.asarray(sigmas_0, dtype=float)
+#     n_components, K = means_0.shape
+#     if K != x_data.shape[1]:
+#         raise ValueError("means_0 has K=%i but x_data has K=%i" % (K, x_data.shape[1]))
 
-    blocks = np.hstack([means_0, np.log(sigmas_0)]).ravel()
-    if n_components > 2:
-        if fracs_0 is None:
-            raise ValueError("n_components > 2 needs fracs_0 to seed the thin split")
-        q = np.asarray(fracs_0, dtype=float)
-        beta0 = np.log(q[:-1]) - np.log(q[-1])       # (n-2,), last thin one is ref
-    else:
-        beta0 = np.empty(0)
-    psi0 = np.concatenate([beta0, blocks])
+#     blocks = np.hstack([means_0, np.log(sigmas_0)]).ravel()
+#     if n_components > 2:
+#         if fracs_0 is None:
+#             raise ValueError("n_components > 2 needs fracs_0 to seed the thin split")
+#         q = np.asarray(fracs_0, dtype=float)
+#         beta0 = np.log(q[:-1]) - np.log(q[-1])       # (n-2,), last thin one is ref
+#     else:
+#         beta0 = np.empty(0)
+#     psi0 = np.concatenate([beta0, blocks])
 
-    opts = {'maxiter': 200000, 'maxfev': 200000}
-    opts.update(min_kw.pop('options', {}))
+#     opts = {'maxiter': 200000, 'maxfev': 200000}
+#     opts.update(min_kw.pop('options', {}))
 
-    order = np.argsort(f_grid)[::-1] if warm_start else np.arange(len(f_grid))
-    nll = np.full(len(f_grid), np.nan)
-    params = [None] * len(f_grid)
+#     order = np.argsort(f_grid)[::-1] if warm_start else np.arange(len(f_grid))
+#     nll = np.full(len(f_grid), np.nan)
+#     params = [None] * len(f_grid)
 
-    psi = psi0
-    for idx in order:
-        r = _minimize(nll_fixed_cocoon, psi, args=(x_data, f_grid[idx], n_components),
-                      method=method, options=opts, **min_kw)
-        nll[idx], params[idx] = r.fun, r.x
-        if warm_start:
-            psi = r.x
-        else:
-            psi = psi0
+#     psi = psi0
+#     for idx in order:
+#         r = _minimize(nll_fixed_cocoon, psi, args=(x_data, f_grid[idx], n_components),
+#                       method=method, options=opts, **min_kw)
+#         nll[idx], params[idx] = r.fun, r.x
+#         if warm_start:
+#             psi = r.x
+#         else:
+#             psi = psi0
 
-    return f_grid, nll, params
+#     return f_grid, nll, params
 
 
 def sort_components(component_fractions, means, sigmas, sort_dim=-1):
@@ -737,7 +765,7 @@ copy_options = [0,1,2,3,4]
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 
-ii = 0 # <--- pick orbit. 
+ii = 2 # <--- pick orbit. 
 orbit = orbits[ii]
 ## do the orbit-wise check -- integrate prog orbit and find the pericenter. 
 init_displacement = init_displacements[ii]
@@ -771,6 +799,7 @@ ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a
 use = unbound & ol_clip
 x_data = np.column_stack([sc_straighter[k][use] for k in keys])
 
+
 # %%
 sd = x_data.std(axis=0)
 mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
@@ -785,19 +814,46 @@ sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
 theta0 = pack_params(fracs_0, means_0, sigmas_0)
 
 
-### SPECIFIY BOUNDS; NOTE THIS DID NOT WORK. 
+### SPECIFIY BOUNDS ---------------------------------------------------------#
 # bounds are given in NATURAL parameter space and pack_bounds transforms them
-# into theta space for us. None (or a whole group left as None) = unbounded.
-# f_1 in (0.8, 1.0) == cocoon fraction in (0.0, 0.2), since f_cocoon = 1 - f_1
-# for two components.
-# fracs_bound  = [(0.8, 1.0)]
-# means_bound  = None                      # mu unbounded
-# sigmas_bound = (0, None)                 # sigma > 0 -- already free in ln sigma
+# into theta space for us. None -- the whole group, or one side of a pair --
+# means unbounded. note () is NOT that spelling: _bound_pairs reads an empty
+# tuple as ZERO pairs and raises "got 0 (lo, hi) pairs, expected 8". pass None.
+# f_1 in (0.8, 1.0) would be cocoon fraction in (0.0, 0.2), since
+# f_cocoon = 1 - f_1 for two components; left unbounded for now.
+#
+# the MEANS are the one group where a bound is exactly what it looks like: mu
+# sits in theta unchanged, so pack_bounds passes (lo, hi) straight through --
+# no reparameterization, nothing to get backwards. (contrast fracs, which go
+# through logit and are only honest for n=2, and sigmas, where sigma > 0 is
+# already free because theta holds ln sigma, so that group costs nothing and
+# buys nothing.)
+#
+# bounding mu near zero is the other half of the degeneracy fix. the sigma-ratio
+# constraint stops the second component from being a slightly-wider copy of the
+# thin stream; this stops it from wandering off-track instead and soaking up some
+# OFFSET blob of stars -- a diverging tail, the far end of an epicyclic feather --
+# as if it were a cocoon. the residuals are centred on the orbit track by
+# construction, so a real cocoon shares the thin stream's mean: it is WIDER, not
+# displaced. a component that wants a mean a full sd away is telling you the
+# straightening left structure behind (see the m3/pa5 TODO), not that there's a
+# cocoon out there.
+#
+# it has to be PER DIMENSION, not one pair broadcast over the group: sd is ~0.1
+# deg in phi2 but ~10 km/s in v_gsr, so a single (-1, 1) would be ~10 sd in phi2
+# and ~0.1 sd in v_gsr. the (n_components, K, 2) form is what says "same rule,
+# different number in each coordinate," and _bound_pairs reshapes it to (nK, 2).
+ncomponents = len(fracs_0) + 1
 
-# bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
-#                      n_components=len(fracs_0) + 1, K=x_data.shape[1])
+mu_halfwidth = 1.0 * sd                  # +/- 1 sd of the DATA, per dimension
+means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
+                               (ncomponents, len(sd), 2))
 
-ncomponents = len(fracs_0)+1
+fracs_bound  = None
+sigmas_bound = (0, None)                 # sigma > 0 -- already free in ln sigma
+
+bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
+                     n_components=ncomponents, K=x_data.shape[1])
 
 
 ### CONSTRAINTS --------------------------------------------------------------#
@@ -822,29 +878,62 @@ ncomponents = len(fracs_0)+1
 #     Powell to find the basin, then the constrained method from there.
 #
 # the constraint itself: require the cocoon be at least min_ratio times WIDER
-# than the thin component in every phase space dimension. this is exactly
-# linear in theta, since ln sigma is stored there directly.
-min_ratio = 10.0
+# than the thin component. this is exactly linear in theta, since ln sigma is
+# stored there directly.
+#
+# min_ratio is PER DIMENSION, aligned elementwise with dims, because the
+# physical separation isn't the same in every coordinate: Jarvis+26 have the
+# GD-1 cocoon ~10x wider in phi2 but only ~3x wider in radial velocity. a single
+# ratio has to be either too weak in phi2 or too strong in v_gsr, and 10x in
+# v_gsr would be excluding the real answer rather than excluding the degenerate
+# two-gaussians-on-the-thin-stream fit.
+# dims order is keys = ['phi2','pm_phi1','pm_phi2','v_gsr'], so 0 and 3.
+constraint_dims = [0,2, 3]              # phi2, v_gsr
+min_ratio = [10.0, 5.0, 5.0]               # same order as constraint_dims
 constraints = [sigma_ratio_constraint(min_ratio,
                                       n_components=ncomponents,
-                                      K=x_data.shape[1])]
+                                      K=x_data.shape[1],
+                                      dims=constraint_dims)]
 
-# stage 1: unconstrained Powell, to land in the right basin.
+# stage 1: Powell, to land in the right basin. Powell IGNORES constraints (it
+# only warns) but it does honour bounds, so the mean box applies here -- worth
+# passing, because otherwise stage 1 can walk the mean far outside the box and
+# SLSQP just silently CLIPS x0 back in, which throws away the basin Powell was
+# run to find in the first place.
 result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell',
+                       bounds=bounds,
                        options={'maxiter': 100000, 'maxfev': 100000})
 
 # stage 2: re-fit from there, WITH the constraint.
-result = minimize(nll_flat, x0=result_free.x, args=(x_data,),
+result = minimize(nll_flat, x0=result_free.x, #<-- TODO: 
+                  args=(x_data,),
                   method='SLSQP',          # or 'trust-constr' / 'COBYLA'
-                  # bounds=bounds,         # bounds and constraints can coexist
+                  bounds=bounds,           # bounds and constraints can coexist
                   constraints=constraints,
                   options={'maxiter': 5000})
 
 # check result.fun, never result.success (see the readme). the constrained nll
 # is necessarily >= the free one; how much worse is how hard the data resist.
 print("free  nll = %.2f" % result_free.fun)
-print("cnstr nll = %.2f   (cost of demanding a %gx wider cocoon: %.2f)"
-      % (result.fun, min_ratio, result.fun - result_free.fun))
+_demand = ", ".join("%gx %s" % (r, keys[k])
+                    for k, r in zip(constraint_dims, np.atleast_1d(min_ratio)))
+print("cnstr nll = %.2f   (cost of demanding a wider cocoon [%s]: %.2f)"
+      % (result.fun, _demand, result.fun - result_free.fun))
+
+# and check whether the MEAN BOUND came out ACTIVE -- a mu sitting exactly on
+# the wall is not a fitted mean, it's the optimizer reporting the bound, the
+# same failure mode as bounding the cocoon fraction. it means the data wanted an
+# offset component, which is a straightening problem rather than a cocoon, so it
+# should be looked at and not quietly kept. no warning comes from scipy.
+_fr, _mu, _sg = unpack_params(result.x, K=x_data.shape[1])
+_on_wall = np.abs(np.abs(_mu) - mu_halfwidth) < 1e-6 * np.maximum(mu_halfwidth, 1)
+if _on_wall.any():
+    for j, k in zip(*np.nonzero(_on_wall)):
+        print("  WARNING mu[comp %i, %s] = %+.4g is ON its +/-%.4g bound"
+              % (j, keys[k], _mu[j, k], mu_halfwidth[k]))
+else:
+    print("  means all interior to the +/-1 sd box (max |mu|/sd = %.2f)"
+          % np.max(np.abs(_mu) / mu_halfwidth))
 
 #--- the other two spellings, for reference ----------------------------------#
 # (a) an arbitrary NONLINEAR constraint -- e.g. pinning the cocoon fraction when
@@ -884,6 +973,8 @@ print("cocoon fraction:", cocoon_fraction)
 print("thin stream / cocoon fractions", fracs_fit)
 print("sigma vr", sigmas_fit[:,-1])
 print("sigma phi2", sigmas_fit[:,0])
+print("sigma pmphi2", sigmas_fit[:,2])
+
 
 ## removed stuff testing a single-component model here. 
 # %%
