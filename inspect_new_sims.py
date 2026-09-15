@@ -52,7 +52,7 @@ from pygaia.errors.astrometric import parallax_uncertainty, proper_motion_uncert
 # %%
 
 ### DEFINE STUFF ABOUT THE GRID: 
-grid_info = paf.extended_grid_info(scratch=True) 
+grid_info = paf.extended_grid_info(scratch=False) 
 lm_colors, hm_colors, simcolors = paf.define_simcolors()
 reordered_colors = hm_colors + lm_colors[::-1]
 cc = reordered_colors[:-1]

@@ -62,13 +62,29 @@ class extended_grid_info():
     init displacements
     most info comes from /data/init_displacements.txt
     """
-    def __init__(self, scratch=True):
+    def __init__(self, scratch=False):
+        ### scratch=True is the netscratch copy, which is subject to the 90-day
+        ### retention purge and is ACTIVELY LOSING FILES. the purge goes by mtime:
+        ### the plain all-particle `data.<i>` snapshots were written by the sims in
+        ### late June, whereas `data.<i>.single`/`.binary` were rewritten by
+        ### process_data_array.slurm on Jul 27 -- so the plain files aged out first
+        ### and the .single/.binary siblings are still sitting there, which makes a
+        ### purged directory look populated. as of 2026-09-14 every rvir_index=2,3
+        ### cell of aau/c19/m3/jet has lost ALL its plain snapshots (gd1 and pal5
+        ### have not been reached yet, but their plain files are the same age).
+        ### this surfaces as prepare_nbody_data_anycopy reporting every copy
+        ### "unfinished, missing .../data.<i>" and then raising "no finished copy".
+        ###
+        ### scratch=False is the holystore copy, which is NOT purged and IS complete
+        ### (verified 2026-09-15: the present-day snapshot is present for every cell
+        ### that ever finished, matching the availability table in the readme).
+        ### prefer it. note this is itc_lab/Users, NOT conroy_lab/Lab -- the
+        ### conroy_lab/extended_grid directory exists but is empty, which is what
+        ### the old "STUFF DOES NOT LIVE IN STORAGE YET" warning was about.
         if scratch==True:
             base_path = '/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/'
         if scratch==False:
-            base_path = '/n/holystore01/LABS/conroy_lab/Lab/amphillips/extended_grid/'
-            print("!!! STUFF DOES NOT LIVE IN STORAGE YET !!!")
-            return
+            base_path = '/n/holystore01/LABS/itc_lab/Users/amphillips/extended_grid/'
 
         self.base_path = base_path
 
