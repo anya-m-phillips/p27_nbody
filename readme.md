@@ -401,7 +401,7 @@ in rough order of how much they'd hurt:
 
 # logistics:
 ## simulation data:
-- scratch: `/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/` (stopped keeping track of when my 90 days is up though; will be removed during monthly maintanence eventually)
+- scratch: `/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/` (90 days is running out though, and some sims have started being deleted.)
 - storage: `/n/holystore01/LABS/itc_lab/Users/amphillips/extended_grid/` TODO: add a storage path to `paf.extended_grid_info()` 
 
 note that the circular orbit simulation is from the [Phillips+26](https://iopscience.iop.org/article/10.3847/1538-4357/ae680b) grid, so it is stored at `/n/holystore01/LABS/conroy_lab/Lab/amphillips/finished_grid/` in the directories that begin with 0-7 (see `PETAR_ANALYSIS_FUNCTIONS.py`'s `get_extended_grid_info`)

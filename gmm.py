@@ -1,11 +1,9 @@
 #--------------------------------------------------------------#
 #  clean functions to do the gaussian mixture modeling.        #
-#   the final step of this script will be an                   #
-#   if __name__=="__main__" situation that runs the GMM fit    #
-#   for the full sim grid and saves the parameters to a big    #
-#   table I guess.... maybe it also makes                      #
-#   catalogs with membership likelihoods ???                   #
+#   this script saves cocoon info + data_dicts at the end
+#                                                              #
 #--------------------------------------------------------------#
+# %%
 # %%
 import sys
 repo_path = "/n/home02/amphillips/p27_nbody"
@@ -34,25 +32,26 @@ from gala.dynamics import mockstream as ms
 from gala.units import galactic
 from gala.coordinates import reflex_correct
 
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 # %matplotlib inline
-# from mpl_toolkits.axes_grid1 import make_axes_locatable
-# import matplotlib.colors as mcolors
-# import matplotlib.cm as cm
-# from matplotlib.gridspec import GridSpec
-# from matplotlib.lines import Line2D
-# plt.style.use(script_path+'/vedant.mplstyle')
-# # %config InlineBackend.figure_format='retina'
-# from matplotlib.cm import ScalarMappable
-# from matplotlib.colors import Normalize
-# from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
+from matplotlib.gridspec import GridSpec
+from matplotlib.lines import Line2D
+plt.style.use(script_path+'/vedant.mplstyle')
+# %config InlineBackend.figure_format='retina'
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+from matplotlib.colors import LinearSegmentedColormap
 
 from tqdm import tqdm
 
 sys.path.append(script_path)
 from streamframe import StreamFrame
 import PETAR_ANALYSIS_FUNCTIONS as paf
-import inspect_new_sims as simspect # lol idk. but i need basically all the funcitons. 
+import inspect_new_sims as simspect 
+import pickle
 # %%
 ### helper functions here:
 def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
@@ -536,230 +535,235 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 
 # %%
 
-# if __name__=="__main__":
+if __name__=="__main__":
 
-grid_info = paf.extended_grid_info(scratch=False) 
-lm_colors, hm_colors, simcolors = paf.define_simcolors()
-reordered_colors = hm_colors + lm_colors[::-1]
-cc = reordered_colors[:-1]
-prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+    grid_info = paf.extended_grid_info(scratch=False) 
+    lm_colors, hm_colors, simcolors = paf.define_simcolors()
+    reordered_colors = hm_colors + lm_colors[::-1]
+    cc = reordered_colors[:-1]
+    prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 
-# ordering decided here. 
-orbits = ['gd1','aau','pa5','jet','m3','c19']
-init_displacements = [
-    grid_info.gd1_init_displacement, 
-    grid_info.aau_init_displacement,
-    grid_info.pa5_init_displacement,
-    grid_info.jet_init_displacement,
-    grid_info.m3_init_displacement,
-    grid_info.c19_init_displacement]
-masses = ['lm','hm']
-rvirs = [0.75, 1.5, 3, 6]
-copy_options = [0,1,2,3,4]
-# copy_options = [4,3,2,1,0]
+    # ordering decided here. 
+    orbits = ['gd1','aau','pa5','jet','m3','c19']
+    init_displacements = [
+        grid_info.gd1_init_displacement, 
+        grid_info.aau_init_displacement,
+        grid_info.pa5_init_displacement,
+        grid_info.jet_init_displacement,
+        grid_info.m3_init_displacement,
+        grid_info.c19_init_displacement]
+    masses = ['lm','hm']
+    rvirs = [0.75, 1.5, 3, 6]
+    copy_options = [0,1,2,3,4]
+    # copy_options = [4,3,2,1,0]
 
-keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
-
-dicts = []
-sf_coords_obs = [] # before straightening
-straight_sf_coords_obs = [] 
-
-f_cocoons = []
-vgsr_dispersions = []
-phi2_dispersions = []
+    keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 
 
-pericenters_kpc = []
-apocenters_kpc = []
-present_rs = []
 
-for ii, orbit in enumerate(tqdm(orbits)):
-    # if orbit!="aau":
-    #     continue
-    ## do the orbit-wise check -- integrate prog orbit and find the pericenter. 
-    init_displacement = init_displacements[ii]
-    orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
-    peri = orbit_obj.pericenter()
-    apo = orbit_obj.apocenter()
-    pericenters_kpc.append(peri.to(u.kpc).value)
-    apocenters_kpc.append(apo.to(u.kpc).value)
-
-    x,y,z = init_displacement[:3]
-    r = np.sqrt(x**2 + y**2 + z**2)
-    present_rs.append(r) # kpc
-
-    ### eventually eventually another inner loop will go here for masses.
-    f_cocoons_this_orbit = []
-    vgsr_dispersions_this_orbit = []
-    phi2_dispersions_this_orbit = []
-
-    mass_index = 1 # <-- high mass stellar population... 
-    for rvir_index in range(4):
-        # if rvir_index!=2:
+    for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
+        # if orbit!="aau":
         #     continue
-        (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-            simspect.prepare_nbody_data_anycopy(
-                orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-                include_photometry=False
+        ## do the orbit-wise check -- integrate prog orbit and find the pericenter. 
+        # init_displacement = init_displacements[ii]
+        # orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
+        # peri = orbit_obj.pericenter()
+        # apo = orbit_obj.apocenter()
+        # pericenters_kpc.append(peri.to(u.kpc).value)
+        # apocenters_kpc.append(apo.to(u.kpc).value)
+
+        # x,y,z = init_displacement[:3]
+        # r = np.sqrt(x**2 + y**2 + z**2)
+        # present_rs.append(r) # kpc
+
+
+        mass_index = 1 # <-- high mass stellar population... 
+        for rvir_index in range(4):
+
+            # if rvir_index!=2:
+            #     continue
+            (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+                simspect.prepare_nbody_data_anycopy(
+                    orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+                    include_photometry=False
+                )
+
+            # dicts.append(data_dict)
+
+            coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
+            # sf_coords_obs.append(sf_coords_obs)
+
+            # straightened coords
+            sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+
+            unbound = ~CMdict['in_rtid']
+            unbound = unbound[inMW][trim]
+
+            trimmed_sc = simspect.clip_coords(sc, [inMW, trim]) #<-- this applies inMW, trim to the coordinate dictionary
+            sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
+            ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
+                sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
             )
 
-        # dicts.append(data_dict)
+            use = ol_clip & unbound
 
-        coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
-        # sf_coords_obs.append(sf_coords_obs)
+            #### assemble the data and perform the fit: 
+            x_data = np.column_stack([sc_straighter[k][use] for k in keys])
 
-        # straightened coords
-        sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+            sd = x_data.std(axis=0)
+            mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
+            mu_2, sigma_2 = np.zeros(4), 10.0 * sd  
+            # mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
+            f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
+            # f_2 = 1/3 # - 0.01
 
-        unbound = ~CMdict['in_rtid']
-        unbound = unbound[inMW][trim]
+            fracs_0 = np.array([f_1])#, f_2])
+            means_0 = np.array([mu_1, mu_2])#, mu_3])
+            sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
+            theta0 = pack_params(fracs_0, means_0, sigmas_0)
 
-        trimmed_sc = simspect.clip_coords(sc, [inMW, trim]) #<-- this applies inMW, trim to the coordinate dictionary
-        sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
-        ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
-            sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
-        )
+            ncomponents = len(fracs_0)+1
 
-        use = ol_clip & unbound
+            ### BOUNDS: mean box at +/- 1 sd of the DATA, per dimension. see the
+            # interactive cell above for the full reasoning -- short version is that
+            # a real cocoon shares the thin stream's mean (it is WIDER, not
+            # displaced), so bounding mu near zero stops the second component from
+            # wandering off-track and soaking up a diverging tail or the far end of
+            # an epicyclic feather instead. has to be per dimension: sd is ~0.1 deg
+            # in phi2 but ~10 km/s in v_gsr.
+            # mu_halfwidth = 1.0 * sd
 
-        #### assemble the data and perform the fit: 
-        x_data = np.column_stack([sc_straighter[k][use] for k in keys])
+            ### for this i am not going to bound the mean, but i will save it and 
+            #   use means far from zero to flag fits that might not have worked well. 
+            # means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
+            #                                (ncomponents, len(sd), 2))
+            # fracs_bound  = None
+            # sigmas_bound = (0, None)         # sigma > 0 -- already free in ln sigma
 
-        sd = x_data.std(axis=0)
-        mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
-        mu_2, sigma_2 = np.zeros(4), 10.0 * sd  
-        # mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
-        f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
-        # f_2 = 1/3 # - 0.01
+            # bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
+            #                      n_components=ncomponents, K=x_data.shape[1])
+            bounds=None
 
-        fracs_0 = np.array([f_1])#, f_2])
-        means_0 = np.array([mu_1, mu_2])#, mu_3])
-        sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
-        theta0 = pack_params(fracs_0, means_0, sigmas_0)
+            ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
+            # than the thin component, PER DIMENSION (aligned elementwise with
+            # constraint_dims). keys order is ['phi2','pm_phi1','pm_phi2','v_gsr'].
+            constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
+            min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
+            constraints = [sigma_ratio_constraint(min_ratio,
+                                                n_components=ncomponents,
+                                                K=x_data.shape[1],
+                                                dims=constraint_dims)]
 
-        ncomponents = len(fracs_0)+1
+            # stage 1: Powell, to land in the right basin. it IGNORES constraints
+            # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
+            # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
+            # throwing away the basin Powell was run to find.
+            result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell',
+                                bounds=bounds,
+                                options={'maxiter': 100000, 'maxfev': 100000})
 
-        ### BOUNDS: mean box at +/- 1 sd of the DATA, per dimension. see the
-        # interactive cell above for the full reasoning -- short version is that
-        # a real cocoon shares the thin stream's mean (it is WIDER, not
-        # displaced), so bounding mu near zero stops the second component from
-        # wandering off-track and soaking up a diverging tail or the far end of
-        # an epicyclic feather instead. has to be per dimension: sd is ~0.1 deg
-        # in phi2 but ~10 km/s in v_gsr.
-        mu_halfwidth = 1.0 * sd
+            # stage 2: re-fit from there, WITH the constraint. SLSQP from a cold
+            # start collapses this likelihood onto a single component, hence two stages.
+            result = minimize(nll_flat, x0=result_free.x,
+                            args=(x_data,),
+                            method='SLSQP',
+                            bounds=bounds,          # bounds and constraints coexist
+                            constraints=constraints,
+                            options={'maxiter': 5000})
 
-        ### for this i am not going to bound the mean, but i will save it and 
-        #   use means far from zero to flag fits that might not have worked well. 
-        # means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
-        #                                (ncomponents, len(sd), 2))
-        # fracs_bound  = None
-        # sigmas_bound = (0, None)         # sigma > 0 -- already free in ln sigma
+            # check result.fun, never result.success. the constrained nll is
+            # necessarily >= the free one; the gap is how hard the data resist.
+            _demand = ", ".join("%gx %s" % (r, keys[d])
+                                for d, r in zip(constraint_dims, np.atleast_1d(min_ratio)))
+            print("%s rvir=%.2f: free nll = %.2f | cnstr nll = %.2f "
+                "(cost of demanding a wider cocoon [%s]: %.2f)"
+                % (orbit, rvirs[rvir_index], result_free.fun, result.fun,
+                    _demand, result.fun - result_free.fun))
 
-        # bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
-        #                      n_components=ncomponents, K=x_data.shape[1])
-        bounds=None
+            # an ACTIVE mean bound is silent in scipy: a mu sitting exactly on the
+            # wall is the optimizer reporting the bound, not a fitted mean. it means
+            # the data wanted an OFFSET component, i.e. the straightening left
+            # structure behind (see the m3/pa5 TODO) rather than a cocoon.
+            # _fr, _mu, _sg = unpack_params(result.x, K=x_data.shape[1])
+            # _on_wall = np.abs(np.abs(_mu) - mu_halfwidth) < 1e-6 * np.maximum(mu_halfwidth, 1)
+            # if _on_wall.any():
+            #     for j, d in zip(*np.nonzero(_on_wall)):
+            #         print("  WARNING mu[comp %i, %s] = %+.4g is ON its +/-%.4g bound"
+            #               % (j, keys[d], _mu[j, d], mu_halfwidth[d]))
+            # else:
+            #     print("  means all interior to the +/-1 sd box (max |mu|/sd = %.2f)"
+            #           % np.max(np.abs(_mu) / mu_halfwidth))
 
-        ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
-        # than the thin component, PER DIMENSION (aligned elementwise with
-        # constraint_dims). keys order is ['phi2','pm_phi1','pm_phi2','v_gsr'].
-        constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
-        min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
-        constraints = [sigma_ratio_constraint(min_ratio,
-                                              n_components=ncomponents,
-                                              K=x_data.shape[1],
-                                              dims=constraint_dims)]
+            fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
+            # NB: not `for ii in ...` -- that shadows the orbit-loop index.
+            p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
 
-        # stage 1: Powell, to land in the right basin. it IGNORES constraints
-        # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
-        # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
-        # throwing away the basin Powell was run to find.
-        result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell',
-                               bounds=bounds,
-                               options={'maxiter': 100000, 'maxfev': 100000})
-
-        # stage 2: re-fit from there, WITH the constraint. SLSQP from a cold
-        # start collapses this likelihood onto a single component, hence two stages.
-        result = minimize(nll_flat, x0=result_free.x,
-                          args=(x_data,),
-                          method='SLSQP',
-                          bounds=bounds,          # bounds and constraints coexist
-                          constraints=constraints,
-                          options={'maxiter': 5000})
-
-        # check result.fun, never result.success. the constrained nll is
-        # necessarily >= the free one; the gap is how hard the data resist.
-        _demand = ", ".join("%gx %s" % (r, keys[d])
-                            for d, r in zip(constraint_dims, np.atleast_1d(min_ratio)))
-        print("%s rvir=%.2f: free nll = %.2f | cnstr nll = %.2f "
-              "(cost of demanding a wider cocoon [%s]: %.2f)"
-              % (orbit, rvirs[rvir_index], result_free.fun, result.fun,
-                 _demand, result.fun - result_free.fun))
-
-        # an ACTIVE mean bound is silent in scipy: a mu sitting exactly on the
-        # wall is the optimizer reporting the bound, not a fitted mean. it means
-        # the data wanted an OFFSET component, i.e. the straightening left
-        # structure behind (see the m3/pa5 TODO) rather than a cocoon.
-        _fr, _mu, _sg = unpack_params(result.x, K=x_data.shape[1])
-        _on_wall = np.abs(np.abs(_mu) - mu_halfwidth) < 1e-6 * np.maximum(mu_halfwidth, 1)
-        if _on_wall.any():
-            for j, d in zip(*np.nonzero(_on_wall)):
-                print("  WARNING mu[comp %i, %s] = %+.4g is ON its +/-%.4g bound"
-                      % (j, keys[d], _mu[j, d], mu_halfwidth[d]))
-        else:
-            print("  means all interior to the +/-1 sd box (max |mu|/sd = %.2f)"
-                  % np.max(np.abs(_mu) / mu_halfwidth))
-
-        fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
-        # NB: not `for ii in ...` -- that shadows the orbit-loop index.
-        p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
-
-        if len(fracs_fit)<ncomponents:
-            fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
+            if len(fracs_fit)<ncomponents:
+                fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
 
 
-        p_thin = p1
-        ts = p1>0.5
-        p_cocoon = 1-p_thin
-        f_cocoon = fracs_fit[-1]
+            p_thin = p1
+            ts = p1>0.5
+            p_cocoon = 1-p_thin
+            f_cocoon = fracs_fit[-1]
 
-        # result.success is doubly useless here (True for an ignored constraint,
-        # for a clipped x0, and for a fit pinned on an active mean bound) -- the
-        # nll gap and the mean-bound warning printed above are the real checks.
-        print("  f_cocoon = %.4f" % f_cocoon)
-
-        # f_cocoons_this_orbit.append(f_cocoon)
+            # result.success is doubly useless here (True for an ignored constraint,
+            # for a clipped x0, and for a fit pinned on an active mean bound) -- the
+            # nll gap and the mean-bound warning printed above are the real checks.
+            # print("  f_cocoon = %.4f" % f_cocoon)
 
 
-        ######## THIS IS NOT RIGHT IF >2 components fit, THE COCOON COULD BE TWO OF THE THREE COMPONENTS IN SOME CASES. 
-        if len(sigmas_fit)>2:
-            print("! fix cocoon determination; gmm has >2 components")
-            exit
-        
 
-        ### cocoon params
-        muphi2_c, mupmphi1_c,  mupmphi2_c, muvgsr_c = means_fit[-1]
-        sigphi2_c, sigpmphi1_c, sigpmphi2_c, sigvgsr_c = sigmas_fit[-1] 
+            ### cocoon params
+            # muphi2_c, mupmphi1_c,  mupmphi2_c, muvgsr_c = means_fit[-1]
+            # sigphi2_c, sigpmphi1_c, sigpmphi2_c, sigvgsr_c = sigmas_fit[-1] 
 
-        muphi2_t, mupmphi1_t,  mupmphi2_t, muvgsr_t = means_fit[0]
-        sigphi2_t, sigpmphi1_t, sigpmphi2_t, sigvgsr_t = sigmas_fit[0] 
+            # muphi2_t, mupmphi1_t,  mupmphi2_t, muvgsr_t = means_fit[0]
+            # sigphi2_t, sigpmphi1_t, sigpmphi2_t, sigvgsr_t = sigmas_fit[0] 
 
-        
-        ### modify the data dictionary with model information
-        data_dict['']
+            
+            ### modify the data dictionary with model information
+            cocoon_info = {}
+            cocoon_info['mu_thin'] = means_fit[0]
+            cocoon_info['sigma_thin'] = sigmas_fit[0]
+            cocoon_info['mu_cocoon'] = means_fit[-1]
+            cocoon_info['sigma_cocoon'] = sigmas_fit[-1]
+            cocoon_info['f_cocoon'] = f_cocoon
+
+            ### things that are like per star
+            cocoon_info['p_thin'] = p_thin
+            cocoon_info['sc_straighter'] = sc_straighter #<-- already has [inMW][trim] applied, needs [ol_clip & unbound] applied.
+            cocoon_info['ol_clip'] = ol_clip # <-- with unbound is 'use'
+            cocoon_info['unbound'] = unbound # <-- with ol_clip is 'use'
+
+            data_dict['cocoon_info']= cocoon_info
 
 
-# %%
-pericenters_kpc = np.array(pericenters_kpc)
-# apocenters_kpc = np.array(apocenters_kpc)
-# present_rs = np.array(present_rs)
+            ### pickle the dictionary. 
+            datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/'
+            rvir = rvirs[rvir_index]
+            print("dumping to pkl file...")
+            with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
+                pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-f_cocoons = np.array(f_cocoons)
-vgsr_dispersions = np.array(vgsr_dispersions)
-phi2_dispersions = np.array(phi2_dispersions)
 
-### roughly ~amount of the way through orbit
-orbital_phases = (present_rs - pericenters_kpc) / (apocenters_kpc - pericenters_kpc)
-orbits = np.array(orbits)
+    # %%
 
-eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
-#. %%
+
+
+    # # %%
+    # ### this will go in a different notebook where visualization happens. 
+    # pericenters_kpc = np.array(pericenters_kpc)
+    # # apocenters_kpc = np.array(apocenters_kpc)
+    # # present_rs = np.array(present_rs)
+
+    # f_cocoons = np.array(f_cocoons)
+    # vgsr_dispersions = np.array(vgsr_dispersions)
+    # phi2_dispersions = np.array(phi2_dispersions)
+
+    # ### roughly ~amount of the way through orbit
+    # orbital_phases = (present_rs - pericenters_kpc) / (apocenters_kpc - pericenters_kpc)
+    # orbits = np.array(orbits)
+
+    # eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
+    # #. %%

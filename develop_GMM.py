@@ -1221,71 +1221,71 @@ for ii, orbit in enumerate(tqdm(orbits)):
         phi2_dispersions_this_orbit.append(sigphi2)
 
         ### TODO: add a step that plots everything and saves the folder so that I can visually inspect -- see inspect_new_sims.py for a nice plotting routine. 
-        order = np.argsort(p_cocoon)
-        fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
+        # order = np.argsort(p_cocoon)
+        # fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
 
-        plt.subplots_adjust(hspace=0.03, wspace=0.03)
+        # plt.subplots_adjust(hspace=0.03, wspace=0.03)
 
-        # fig.suptitle(orbits[ii])
+        # # fig.suptitle(orbits[ii])
         
-        key_labels = [
-            r'$\phi_2~[\degree]$',
-            r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
-            r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-            r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
-        ]
-        for jj, key in enumerate(keys):
-            # ax_row = axs[jj]
-            cut = sigmas_fit[-1][jj]
+        # key_labels = [
+        #     r'$\phi_2~[\degree]$',
+        #     r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+        #     r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+        #     r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
+        # ]
+        # for jj, key in enumerate(keys):
+        #     # ax_row = axs[jj]
+        #     cut = sigmas_fit[-1][jj]
 
-            ax = axs[jj,0]
+        #     ax = axs[jj,0]
 
-            ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
-                    sc_straighter[key][use][order], # plot cocoon on top. 
-                    # x_data[:,ii],
-                        c=p_thin[order], s=5, cmap='winter',
-                        rasterized=True) 
+        #     ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
+        #             sc_straighter[key][use][order], # plot cocoon on top. 
+        #             # x_data[:,ii],
+        #                 c=p_thin[order], s=5, cmap='winter',
+        #                 rasterized=True) 
  
 
-            # ax.set_ylim(-3*cut, 3*cut)
-            ax.set_ylabel(key_labels[jj], fontsize=15)
+        #     # ax.set_ylim(-3*cut, 3*cut)
+        #     ax.set_ylabel(key_labels[jj], fontsize=15)
 
 
-            ax = axs[jj,1]
-            bins = np.linspace(-3*cut, 3*cut, 50)
+        #     ax = axs[jj,1]
+        #     bins = np.linspace(-3*cut, 3*cut, 50)
 
-            # tsd, _ = np.histogram(sc_straighter[key][ol_clip & unbound & ~cocoon_selection],
-            #                       bins=bins, density=True)
+        #     # tsd, _ = np.histogram(sc_straighter[key][ol_clip & unbound & ~cocoon_selection],
+        #     #                       bins=bins, density=True)
 
-            cocoon_selection = p_thin<0.5
-            ax.hist(sc_straighter[key][ol_clip & unbound][~cocoon_selection], 
-                    alpha=0.2, density=True, color='k',orientation='horizontal',
-                    bins=bins)
-            ax.hist(sc_straighter[key][ol_clip & unbound][cocoon_selection],
-                    histtype='step', density=True, lw=2, 
-                    color=cc[-1],orientation='horizontal',
-                    bins=bins)
+        #     cocoon_selection = p_thin<0.5
+        #     ax.hist(sc_straighter[key][ol_clip & unbound][~cocoon_selection], 
+        #             alpha=0.2, density=True, color='k',orientation='horizontal',
+        #             bins=bins)
+        #     ax.hist(sc_straighter[key][ol_clip & unbound][cocoon_selection],
+        #             histtype='step', density=True, lw=2, 
+        #             color=cc[-1],orientation='horizontal',
+        #             bins=bins)
 
    
 
-            # too annoying to get the limits to work out. being unrigorous for now...
-            ax.set_xticks([])
-            ax.set_xticklabels([])
-            ax.set_yticks([])
-            ax.set_yticklabels([])
+        #     # too annoying to get the limits to work out. being unrigorous for now...
+        #     ax.set_xticks([])
+        #     ax.set_xticklabels([])
+        #     ax.set_yticks([])
+        #     ax.set_yticklabels([])
 
-            if jj<3:
-                # print("REMOVING TICK LABLES>>>>>")
-                axs[jj,0].set_xticklabels([])
-                axs[jj,1].set_xticklabels([])
+        #     if jj<3:
+        #         # print("REMOVING TICK LABLES>>>>>")
+        #         axs[jj,0].set_xticklabels([])
+        #         axs[jj,1].set_xticklabels([])
 
 
-        axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
-        axs[-1,1].set_xlabel(r'density')
+        # axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
+        # axs[-1,1].set_xlabel(r'density')
 
-        plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-                    bbox_inches='tight')
-        plt.close()
+        # plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
+        #             bbox_inches='tight')
+        # plt.close()
 
     f_cocoons.append(f_cocoons_this_orbit)
     vgsr_dispersions.append(vgsr_dispersions_this_orbit)
@@ -1339,7 +1339,6 @@ axs[1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
 axs[2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
 
 
-plt.savefig("plots/cocoon_separation/gmm_constrained/two_component_summary_orbPhase.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/cocoon_separation/gmm_constrained/two_component_summary_orbPhase.pdf", dpi=300, bbox_inches='tight')
 # %%
-# idk man, that looks rly bad. let's get some MCMC going maybe... ... ... ... ... 
 
