@@ -3,7 +3,7 @@
 #       this notebook                               #
 #---------------------------------------------------#
 # %%
-# import sys
+import sys
 repo_path = "/n/home02/amphillips/p27_nbody"
 script_path = repo_path+"/scripts"
 import petar
@@ -80,10 +80,10 @@ present_rs = []
 
 f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
 
-
-# fig, axs = plt.subplots()
-
+use_constrained = False
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
+    # if orbit=='pa5' or orbit=='m3':
+    #     continue
     # do the orbit-wise check -- integrate prog orbit and find the pericenter. 
     init_displacement = init_displacements[ii]
     orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
@@ -111,6 +111,10 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         ### load dictionary
         data_path = "/n/home02/amphillips/p27_nbody/data/data_dicts/"
+        if use_constrained==True:
+            data_path+='constrained/'
+        else:
+            data_path+='unconstrained/'
         filename = data_path+"%s_%.2f.pickle"%(orbit, rvir)
         with open(filename, 'rb') as handle:
             data_dict = pickle.load(handle)
@@ -145,7 +149,6 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     thin_sigvgsrs.append(thin_sig_vgsr_this_orbit)
     thin_sigphi2s.append(thin_sig_phi2_this_orbit) 
 
-# %%
 pericenters_kpc = np.array(pericenters_kpc)
 apocenters_kpc = np.array(apocenters_kpc)
 present_rs = np.array(present_rs)
@@ -168,13 +171,16 @@ reordered = np.argsort(orbital_phases)
 ccc = cc[1:]
 fig, axs = plt.subplots(2,3,figsize=[21,14])
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
+    # if orbit in ['m3','pa5']:
+    #     continue
+
     f_cocoons_this_orbit = f_cocoons[reordered][ii]
 
 
     x = rvirs
     axs[0,0].plot(x, f_cocoons_this_orbit, 
                 # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
-                label = orbit+r'; $\phi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
+                label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
                 marker='o', color=ccc[ii], markersize=10)
 
@@ -196,10 +202,7 @@ for ax in np.concatenate([axs[0], axs[1]]):
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
     ax.minorticks_off()
     ax.set_xticks([.75, 1.5, 3., 6.])
-# for ax in axs[1]:
-#     ax.set_ylim(bottom=0)
-#     ax.minorticks_off()
-#     ax.set_xticks([.75, 1.5, 3., 6.])
+
 
 
 axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
@@ -215,6 +218,103 @@ axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
 
 axs[1,0].remove()
 
-plt.savefig("plots/cocoon_separation/gmm_constrained/summary_with_thin_cocoon.pdf", dpi=300, bbox_inches='tight')
+filename="plots/gmm_summary"
+if use_constrained==True:
+    filename+="_constrained.pdf"
+else:
+    filename+="_unconstrained.pdf"
+plt.savefig(filename, dpi=300, bbox_inches='tight')
 
+# %%
+
+# c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
+c_labels = ["#CCC9E7", "#2F2F2F"]
+cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+
+orbit = 'gd1'
+rvir_index=0
+rvir = rvirs[rvir_index]
+filename = data_path+"%s_%.2f.pickle"%(orbit, rvir)
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
+
+cocoon_dict = data_dict['cocoon_info']
+
+## for now don't care about this. 
+ol_clip = cocoon_dict['ol_clip']
+unbound = cocoon_dict['unbound']
+use = ol_clip & unbound
+
+p_thin = cocoon_dict['p_thin']
+p_cocoon = 1-p_thin
+order = np.argsort(p_cocoon)
+sc_straighter = cocoon_dict['sc_straighter']
+
+cocoon_sigmas = cocoon_dict['sigma_cocoon']
+
+fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
+
+plt.subplots_adjust(hspace=0.03, wspace=0.03)
+
+key_labels = [
+    r'$\phi_2~[\degree]$',
+    r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+    r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+    r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
+]
+for jj, key in enumerate(keys):
+    # ax_row = axs[jj]
+    cut = 3*cocoon_sigmas[jj]
+
+    ax = axs[jj,0]
+
+    ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
+            sc_straighter[key][use][order], # plot cocoon on top. 
+            # x_data[:,ii],
+                c=p_cocoon[order], s=5, cmap=cocoon_cmap,
+                rasterized=True) 
+    ax.set_ylim(-cut,cut)
+
+
+    # ax.set_ylim(-3*cut, 3*cut)
+    ax.set_ylabel(key_labels[jj], fontsize=15)
+    ax.set_xlim(-100, 15)
+
+
+    ax = axs[jj,1]
+    bins = np.linspace(-cut, cut, 50)
+
+
+
+    cocoon_selection = p_thin<0.5
+    ax.hist(sc_straighter[key][use][~cocoon_selection], 
+            alpha=1., density=False, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
+            color=c_labels[0],orientation='horizontal',
+            bins=bins)
+    ax.hist(sc_straighter[key][use][cocoon_selection],
+            histtype='step', density=False, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
+            lw=2, 
+            color=c_labels[-1],orientation='horizontal',
+            bins=bins)
+    ax.set_ylim(-cut,cut)
+
+
+
+    # too annoying to get the limits to work out. being unrigorous for now...
+    # ax.set_xticks([])
+    # ax.set_xticklabels([])
+    ax.set_xlim(0, 0.4)
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+
+    if jj<3:
+        # print("REMOVING TICK LABLES>>>>>")
+        axs[jj,0].set_xticklabels([])
+        axs[jj,1].set_xticklabels([])
+
+
+axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
+axs[-1,1].set_xlabel(r'fraction in bin', fontsize=15)
+
+plt.savefig("plots/demo_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
 # %%
