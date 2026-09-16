@@ -647,14 +647,17 @@ for ii, orbit in enumerate(tqdm(orbits)):
         # an epicyclic feather instead. has to be per dimension: sd is ~0.1 deg
         # in phi2 but ~10 km/s in v_gsr.
         mu_halfwidth = 1.0 * sd
+
+        ### for this i am not going to bound the mean, but i will save it and 
+        #   use means far from zero to flag fits that might not have worked well. 
         # means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
         #                                (ncomponents, len(sd), 2))
-        means_bound = None
-        fracs_bound  = None
-        sigmas_bound = (0, None)         # sigma > 0 -- already free in ln sigma
+        # fracs_bound  = None
+        # sigmas_bound = (0, None)         # sigma > 0 -- already free in ln sigma
 
-        bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
-                             n_components=ncomponents, K=x_data.shape[1])
+        # bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
+        #                      n_components=ncomponents, K=x_data.shape[1])
+        bounds=None
 
         ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
         # than the thin component, PER DIMENSION (aligned elementwise with
@@ -714,20 +717,6 @@ for ii, orbit in enumerate(tqdm(orbits)):
             fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
 
 
-
-        ##### stuff i was trying out letting either the cocoon or the thin stream have two components:
-        # if fracs_fit[1]+fracs_fit[2]<0.5: #<-- in this case, components 2 and 3 count as cocoon. 
-        #     print("thin stream is only component 1")
-        #     ts = p1>0.5
-        #     p_thin = p1
-        #     f_cocoon = fracs_fit[1] + fracs_fit[2]
-        # if fracs_fit[1]+fracs_fit[2]>=0.5: #<-- in this case, only component 3 counts as cocoon
-        #     print("thin stream is components one and two")
-        #     ts = p3<0.5 #< ie both p1 and p2 count to thin stream. 
-        #     p_thin = p1+p2
-        #     f_cocoon = fracs_fit[2]
-
-
         p_thin = p1
         ts = p1>0.5
         p_cocoon = 1-p_thin
@@ -738,22 +727,25 @@ for ii, orbit in enumerate(tqdm(orbits)):
         # nll gap and the mean-bound warning printed above are the real checks.
         print("  f_cocoon = %.4f" % f_cocoon)
 
-        f_cocoons_this_orbit.append(f_cocoon)
+        # f_cocoons_this_orbit.append(f_cocoon)
 
 
         ######## THIS IS NOT RIGHT IF >2 components fit, THE COCOON COULD BE TWO OF THE THREE COMPONENTS IN SOME CASES. 
         if len(sigmas_fit)>2:
             print("! fix cocoon determination; gmm has >2 components")
             exit
-        sigphi2, sigpmphi1, sigpmphi2, sigvgsr = sigmas_fit[-1] #<-- cocoon component. thin stream is components 0 and 1
-        vgsr_dispersions_this_orbit.append(sigvgsr)
-        phi2_dispersions_this_orbit.append(sigphi2)
+        
 
+        ### cocoon params
+        muphi2_c, mupmphi1_c,  mupmphi2_c, muvgsr_c = means_fit[-1]
+        sigphi2_c, sigpmphi1_c, sigpmphi2_c, sigvgsr_c = sigmas_fit[-1] 
 
+        muphi2_t, mupmphi1_t,  mupmphi2_t, muvgsr_t = means_fit[0]
+        sigphi2_t, sigpmphi1_t, sigpmphi2_t, sigvgsr_t = sigmas_fit[0] 
 
-    f_cocoons.append(f_cocoons_this_orbit)
-    vgsr_dispersions.append(vgsr_dispersions_this_orbit)
-    phi2_dispersions.append(phi2_dispersions_this_orbit)
+        
+        ### modify the data dictionary with model information
+        data_dict['']
 
 
 # %%
