@@ -36,8 +36,12 @@ scripts in top directory for now:
   - `desi_RVerr(zmag, feh)`, `add_noise(...)`: survey error models. `add_noise` is still a stub.
   - everything under `if __name__=='__main__':` loops all orbits and makes the cocoon-separation panels, so the function defs can be imported elsewhere without running it. comment that line out and un-indent if working interactively in the notebook cells. **right now that guard is commented out**, so importing this module runs the whole loop.
 
-- `cocoons.py` summarizing cocoon fractions and properties as a function of progenitor properties. functions are called from `inspect_new_sims.py` as `simspect.[...]`
-- `develop_GMM.py`: replacing the hard cuts in `cocoons.py` with an n-component (narrow ... narrow + cocoon) gaussian mixture, so cocoon membership is a fitted probability per star instead of a by-hand threshold per orbit. this is the point of the whole thing -- the manual cuts didn't standardize across orbits. the fitting layer is n-component general; the script currently runs 3. see the GMM section below.
+- `cocoons.py` summarizing cocoon fractions and properties as a function of progenitor properties. functions are called from `inspect_new_sims.py` as `simspect.[...]`. eyeballing hard boundaries to decide what gets counted as the cocoon. 
+- `develop_GMM.py`: replacing the hard cuts in `cocoons.py` with an n-component (narrow ... narrow + cocoon) gaussian mixture, so cocoon membership is a fitted probability per star instead of a by-hand threshold per orbit. this is the point of the whole thing -- the manual cuts didn't standardize across orbits. the fitting layer is n-component general; the script currently runs 3. see the GMM section below. For messing around in the development stage. 
+
+- `gmm.py`: where we will actually run the GMM. option for whether to constrain the cocoon widths in phi2 and v_gsr or not. Also an option to make plots. TODO: run again and experiment with outlier clipping, e.g., clipping outside 3-5 sigma (of the whole dataset) before fitting rather than picking hard lines of what to cut out. my cuts seem a little arbitrary and are based on looking at GD-1 orbit data. TODO: do the "trimming" step in the observed stream frame. 
+
+- `results.py` making (nice) plots.
 
 - `nfc_plots.py` was used for plotting in preparation for a conference; will likely abandon soon
 
