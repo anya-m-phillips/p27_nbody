@@ -536,7 +536,7 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 # %%
 
 # if __name__=="__main__":
-make_plots=False
+make_plots=True
 constrain_widths=False
 
 
@@ -560,7 +560,7 @@ rvirs = [0.75, 1.5, 3, 6]
 copy_options = [0,1,2,3,4]
 # copy_options = [4,3,2,1,0]
 
-keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
+keys = ['phi2','pm_phi1','pm_phi2','v_gsr'] #<--- EDITING TO INCLUDE DISTANCE !
 
 def trim_obstream_percentile(sc, p=[1,99], 
                             trim_keys=['phi1','phi2','pm_phi1','pm_phi2','v_gsr']):
@@ -574,7 +574,8 @@ def trim_obstream_percentile(sc, p=[1,99],
     return trim_criteria
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-
+    if orbit!='pa5':
+        continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
     for rvir_index in range(4):
@@ -599,7 +600,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
         inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
-        trim_new = trim_obstream_percentile(sc)
+        trim_new = trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
 
 
 
@@ -626,8 +627,8 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         x_data = np.column_stack([sc_straighter[k][use] for k in keys])
 
         sd = x_data.std(axis=0)
-        mu_1, sigma_1 = np.zeros(4), 0.1 * sd  # thin: narrower than the data
-        mu_2, sigma_2 = np.zeros(4), 10.0 * sd  
+        mu_1, sigma_1 = np.zeros(len(keys)), 0.1 * sd  # thin: narrower than the data
+        mu_2, sigma_2 = np.zeros(len(keys)), 10.0 * sd  
         # mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
         f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
         # f_2 = 1/3 # - 0.01
@@ -751,11 +752,15 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         if constrain_widths==False:
             datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/unconstrained/'
         rvir = rvirs[rvir_index]
-        print("dumping to pkl file...")
-        with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
-            pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # print("dumping to pkl file...")
+        # with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
+        #     pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         if make_plots==True:
+            c_labels = ["#CCC9E7", "#2F2F2F"]
+            cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+
+
             order = np.argsort(p_cocoon)
             fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
 
@@ -766,18 +771,18 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                 r'$\phi_2~[\degree]$',
                 r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
                 r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-                r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
+                r'$v_{\rm GSR}~[\rm km~s^{-1}]$',
+                r'$d~[\rm kpc]$'
             ]
             for jj, key in enumerate(keys):
-                # ax_row = axs[jj]
-                cut = sigmas_fit[-1][jj]
+                cut = 3*sigmas_fit[-1][jj]
 
                 ax = axs[jj,0]
 
                 ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
                         sc_straighter[key][use][order], # plot cocoon on top. 
                         # x_data[:,ii],
-                            c=p_thin[order], s=5, cmap='winter',
+                            c=p_cocoon[order], s=5, cmap=cocoon_cmap,
                             rasterized=True) 
                 ax.set_ylim(-cut,cut)
     
@@ -787,18 +792,20 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
 
                 ax = axs[jj,1]
-                bins = np.linspace(-3*cut, 3*cut, 50)
+                bins = np.linspace(-cut, cut, 50)
 
                 # tsd, _ = np.histogram(sc_straighter[key][ol_clip & unbound & ~cocoon_selection],
                 #                       bins=bins, density=True)
 
                 cocoon_selection = p_thin<0.5
-                ax.hist(sc_straighter[key][ol_clip & unbound][~cocoon_selection], 
-                        alpha=0.2, density=True, color='k',orientation='horizontal',
+                ax.hist(sc_straighter[key][use][~cocoon_selection], 
+                        alpha=1., density=True, #, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
+                        color=c_labels[0],orientation='horizontal',
                         bins=bins)
-                ax.hist(sc_straighter[key][ol_clip & unbound][cocoon_selection],
-                        histtype='step', density=True, lw=2, 
-                        color=cc[-1],orientation='horizontal',
+                ax.hist(sc_straighter[key][use][cocoon_selection],
+                        histtype='step', density=True, #, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
+                        lw=2, 
+                        color=c_labels[-1],orientation='horizontal',
                         bins=bins)
                 ax.set_ylim(-cut,cut)
 
@@ -820,13 +827,14 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             axs[-1,1].set_xlabel(r'density')
 
 
-            if constrain_widths==False:
-                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-                            bbox_inches='tight')
-            if constrain_widths==True:
-                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-                            bbox_inches='tight')
+        
+            # if constrain_widths==False:
+            #     plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
+            #                 bbox_inches='tight')
+            # if constrain_widths==True:
+            #     plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
+            #                 bbox_inches='tight')
 
-            plt.close()
+            # plt.close()
 
 # %%

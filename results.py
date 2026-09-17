@@ -80,7 +80,7 @@ present_rs = []
 
 f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
 
-use_constrained = False
+use_constrained = True
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
     # if orbit=='pa5' or orbit=='m3':
     #     continue
@@ -207,6 +207,7 @@ for ax in np.concatenate([axs[0], axs[1]]):
 
 axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
 axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+# axs[0,0].set_ylim(0.0, 0.2)
 
 axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
 axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
@@ -241,9 +242,11 @@ with open(filename, 'rb') as handle:
 cocoon_dict = data_dict['cocoon_info']
 
 ## for now don't care about this. 
-ol_clip = cocoon_dict['ol_clip']
+# ol_clip = cocoon_dict['ol_clip']
+trim_new = cocoon_dict['trim_new']
 unbound = cocoon_dict['unbound']
-use = ol_clip & unbound
+# use = ol_clip & unbound
+use = unbound
 
 p_thin = cocoon_dict['p_thin']
 p_cocoon = 1-p_thin
@@ -263,7 +266,6 @@ key_labels = [
     r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
 ]
 for jj, key in enumerate(keys):
-    # ax_row = axs[jj]
     cut = 3*cocoon_sigmas[jj]
 
     ax = axs[jj,0]
@@ -278,7 +280,8 @@ for jj, key in enumerate(keys):
 
     # ax.set_ylim(-3*cut, 3*cut)
     ax.set_ylabel(key_labels[jj], fontsize=15)
-    ax.set_xlim(-100, 15)
+    ax.set_xlim(-100, 15) #<-- gd1
+    # ax.set_xlim(-20,10) #<-- jet
 
 
     ax = axs[jj,1]
