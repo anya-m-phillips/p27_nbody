@@ -1896,275 +1896,275 @@ def get_streamcoords_ms(stream, i, init_displacement):
 #-----------------------------------------------------------------------------------------#
 #    stuff for final post processing -- getting everything together by combining stuff    #
 #-----------------------------------------------------------------------------------------#
-def GET_INTRINSIC_STREAM_DATA(n, i, core, path, apo, use_core=True, init_displacement=None, file_index=None): 
-    """
-    for simulation index n at time step i load a bunch of stuff about it 
-    and concatenate singles + binary p1 + binary p2 data. <-- so this is a reordered order. 
-    but where binaries have the center of mass coordinate. 
-    NOTE: I return nsingles, nbinaries so that if I just want coordinates and don't want to double count
-    the binaries, I can index only up to [:nsingles+nbinaries]
-    """
-    if file_index is None:
-        file_i = i
-    else:
-        file_i = file_index
+# def GET_INTRINSIC_STREAM_DATA(n, i, core, path, apo, use_core=True, init_displacement=None, file_index=None): 
+#     """
+#     for simulation index n at time step i load a bunch of stuff about it 
+#     and concatenate singles + binary p1 + binary p2 data. <-- so this is a reordered order. 
+#     but where binaries have the center of mass coordinate. 
+#     NOTE: I return nsingles, nbinaries so that if I just want coordinates and don't want to double count
+#     the binaries, I can index only up to [:nsingles+nbinaries]
+#     """
+#     if file_index is None:
+#         file_i = i
+#     else:
+#         file_i = file_index
 
-    paths = define_paths()
-    path = paths[n]
-    ### get + organize petar data. as singles + bp1 + bp2
+#     paths = define_paths()
+#     path = paths[n]
+#     ### get + organize petar data. as singles + bp1 + bp2
 
-    if use_core==True: # only want to use core if the cluster is like *just* dissolved.... could probably not have split this into cases but whatever. 
-        particle_data, streamframe_data = load_coords_v2(path, i, core, tdis_estimate=int(i-1), file_index=file_i,
-                                                        tdis_estimate_index=int(file_i-1))
-    if use_core==False:
-        particle_data, streamframe_data = load_coords_v2(path, i, core=None, 
-                                                         use_core=False, check_dissolved=False,
-                                                         init_displacement=init_displacement, file_index=file_i)
-    all_particles, singles, binaries = particle_data
-    all_coords, single_coords, binary_coords = streamframe_data
-    bp1_coords, bp2_coords = binary_coords, binary_coords ## give bp1 and bp2 both the binary coords
+#     if use_core==True: # only want to use core if the cluster is like *just* dissolved.... could probably not have split this into cases but whatever. 
+#         particle_data, streamframe_data = load_coords_v2(path, i, core, tdis_estimate=int(i-1), file_index=file_i,
+#                                                         tdis_estimate_index=int(file_i-1))
+#     if use_core==False:
+#         particle_data, streamframe_data = load_coords_v2(path, i, core=None, 
+#                                                          use_core=False, check_dissolved=False,
+#                                                          init_displacement=init_displacement, file_index=file_i)
+#     all_particles, singles, binaries = particle_data
+#     all_coords, single_coords, binary_coords = streamframe_data
+#     bp1_coords, bp2_coords = binary_coords, binary_coords ## give bp1 and bp2 both the binary coords
 
-    # positions and velocities in galactocentric frame -- doing the separate single/binary treatment mostly so that the binary IDs get the cm phase space position. 
-    spos, svel = core_to_galcen_frame(path, singles, file_i)
-    bpos, bvel = core_to_galcen_frame(path, binaries, file_i)
-    bp1pos, bp1vel = bpos, bvel
-    bp2pos, bp2vel = bpos, bvel
+#     # positions and velocities in galactocentric frame -- doing the separate single/binary treatment mostly so that the binary IDs get the cm phase space position. 
+#     spos, svel = core_to_galcen_frame(path, singles, file_i)
+#     bpos, bvel = core_to_galcen_frame(path, binaries, file_i)
+#     bp1pos, bp1vel = bpos, bvel
+#     bp2pos, bp2vel = bpos, bvel
 
-    # external potentials
-    s_pot = singles.pot_ext # pc^2/myr^2
-    bp1_pot, bp2_pot = binaries.p1.pot_ext, binaries.p2.pot_ext # not sure if this is reasonable. 
+#     # external potentials
+#     s_pot = singles.pot_ext # pc^2/myr^2
+#     bp1_pot, bp2_pot = binaries.p1.pot_ext, binaries.p2.pot_ext # not sure if this is reasonable. 
 
-    # <- system masses. 
-    smass = singles.mass*u.Msun
-    bp1mass, bp2mass = binaries.mass*u.Msun, binaries.mass*u.Msun
+#     # <- system masses. 
+#     smass = singles.mass*u.Msun
+#     bp1mass, bp2mass = binaries.mass*u.Msun, binaries.mass*u.Msun
     
-    # Ids
-    sid = singles.id
-    bp1id = binaries.p1.id
-    bp2id = binaries.p2.id
+#     # Ids
+#     sid = singles.id
+#     bp1id = binaries.p1.id
+#     bp2id = binaries.p2.id
 
-    ### concatenate everything 
-    IDs = np.concatenate([sid, bp1id, bp2id])
-    # coords = single_coords | bp1_coords | bp2_coords 
-    keys = ['phi1', 'phi2', 'pm_phi1','pm_phi2','r', 'vr']
-    coords = {
-        key:np.concatenate([single_coords[key], bp1_coords[key], bp2_coords[key]]) for key in keys
-    }
-    phi1=coords['phi1']
-    pots = np.concatenate([s_pot, bp1_pot, bp2_pot]) * u.pc**2 / u.Myr**2
-    pos = np.concatenate([spos, bp1pos, bp2pos])
-    vel = np.concatenate([svel, bp1vel, bp2vel])
-    Msys = np.concatenate([smass, bp1mass, bp2mass])
+#     ### concatenate everything 
+#     IDs = np.concatenate([sid, bp1id, bp2id])
+#     # coords = single_coords | bp1_coords | bp2_coords 
+#     keys = ['phi1', 'phi2', 'pm_phi1','pm_phi2','r', 'vr']
+#     coords = {
+#         key:np.concatenate([single_coords[key], bp1_coords[key], bp2_coords[key]]) for key in keys
+#     }
+#     phi1=coords['phi1']
+#     pots = np.concatenate([s_pot, bp1_pot, bp2_pot]) * u.pc**2 / u.Myr**2
+#     pos = np.concatenate([spos, bp1pos, bp2pos])
+#     vel = np.concatenate([svel, bp1vel, bp2vel])
+#     Msys = np.concatenate([smass, bp1mass, bp2mass])
 
-    ### straighten the stream coordinates. 
-    inMW, trim = trim_coords_percentile(coords, low=1, high=99, apo=apo)
-    sc, interp_orbit, orbit_coords, orbit_w, itr = straighten_stream_orbit_interp(
-        coords, ['phi2','r','vr'], core, i, 
-        trim_criteria = [inMW, trim], Dt_start=240,
-        return_orbit_chunk=True, use_core=use_core, init_displacement=init_displacement, file_index=file_index
-    )
-    phi2_straight, r_straight, vr_straight = sc 
+#     ### straighten the stream coordinates. 
+#     inMW, trim = trim_coords_percentile(coords, low=1, high=99, apo=apo)
+#     sc, interp_orbit, orbit_coords, orbit_w, itr = straighten_stream_orbit_interp(
+#         coords, ['phi2','r','vr'], core, i, 
+#         trim_criteria = [inMW, trim], Dt_start=240,
+#         return_orbit_chunk=True, use_core=use_core, init_displacement=init_displacement, file_index=file_index
+#     )
+#     phi2_straight, r_straight, vr_straight = sc 
 
-    nsingles, nbinaries = len(singles.mass), len(binaries.mass)
-    return core, IDs, coords, phi1, pots, pos, vel, phi2_straight, r_straight, vr_straight, Msys, inMW, trim, nsingles, nbinaries
+#     nsingles, nbinaries = len(singles.mass), len(binaries.mass)
+#     return core, IDs, coords, phi1, pots, pos, vel, phi2_straight, r_straight, vr_straight, Msys, inMW, trim, nsingles, nbinaries
 
 
 
-#-----------------------------------------------------------------------------------------#
-#    stuff for final post processing -- getting everything together by combining stuff    #
-#-----------------------------------------------------------------------------------------#
-def intrinsic_stream_data_v2(n, i, 
-                             core, path, apo, 
-                             use_core=True, init_displacement=None, 
-                             file_index=None,
-                             binary_treatments = ["CoM","companions","luminous"] # <-- "CoM" to do the analysis with center of mass values, "companions" to use the values for the more luminous companion. 
-                             ): 
-    """
-    for simulation index n at time step i load a bunch of stuff about it 
-    and concatenate singles + binary p1 + binary p2 data. <-- so this is a reordered order. 
+# #-----------------------------------------------------------------------------------------#
+# #    stuff for final post processing -- getting everything together by combining stuff    #
+# #-----------------------------------------------------------------------------------------#
+# def intrinsic_stream_data_v2(n, i, 
+#                              core, path, apo, 
+#                              use_core=True, init_displacement=None, 
+#                              file_index=None,
+#                              binary_treatments = ["CoM","companions","luminous"] # <-- "CoM" to do the analysis with center of mass values, "companions" to use the values for the more luminous companion. 
+#                              ): 
+#     """
+#     for simulation index n at time step i load a bunch of stuff about it 
+#     and concatenate singles + binary p1 + binary p2 data. <-- so this is a reordered order. 
 
-    notes:
-        binary_treatment=options are 'CoM', 'companions', 'luminous' <--provide as list
+#     notes:
+#         binary_treatment=options are 'CoM', 'companions', 'luminous' <--provide as list
 
-    NOTE: I return nsingles, nbinaries so that if I just want coordinates and don't want to double count
-    the binaries, I can index only up to [:nsingles+nbinaries]
-    """
+#     NOTE: I return nsingles, nbinaries so that if I just want coordinates and don't want to double count
+#     the binaries, I can index only up to [:nsingles+nbinaries]
+#     """
 
-    if file_index is None:
-        file_i = i
-    else:
-        file_i = file_index
+#     if file_index is None:
+#         file_i = i
+#     else:
+#         file_i = file_index
 
-    paths = define_paths()
-    path = paths[n]
+#     paths = define_paths()
+#     path = paths[n]
     
-    data_dict = {} # <-- I will return this. 
-    data_dict["sim_n"] = n
-    data_dict["init_displacement"] = init_displacement #<-- so i don't have to do this later... 
+#     data_dict = {} # <-- I will return this. 
+#     data_dict["sim_n"] = n
+#     data_dict["init_displacement"] = init_displacement #<-- so i don't have to do this later... 
 
-    #### load particle and streamframe data:
-    if use_core==True: # only want to use core if the cluster is like *just* dissolved.... could probably not have split this into cases but whatever. 
-        particle_data, streamframe_data = load_coords_v2(path, i, core, tdis_estimate=int(i-1), file_index=file_i,
-                                                        tdis_estimate_index=int(file_i-1))
-    if use_core==False:
-        particle_data, streamframe_data = load_coords_v2(path, i, core=None, 
-                                                         use_core=False, check_dissolved=False,
-                                                         init_displacement=init_displacement, file_index=file_i)
+#     #### load particle and streamframe data:
+#     if use_core==True: # only want to use core if the cluster is like *just* dissolved.... could probably not have split this into cases but whatever. 
+#         particle_data, streamframe_data = load_coords_v2(path, i, core, tdis_estimate=int(i-1), file_index=file_i,
+#                                                         tdis_estimate_index=int(file_i-1))
+#     if use_core==False:
+#         particle_data, streamframe_data = load_coords_v2(path, i, core=None, 
+#                                                          use_core=False, check_dissolved=False,
+#                                                          init_displacement=init_displacement, file_index=file_i)
 
-    all_particles, singles, binaries = particle_data
-    allpos, allvel = CM_to_galcen_frame(path, all_particles, file_i)
-    nsingles, nbinaries = len(singles.mass), len(binaries.mass)
-    ### number of single and binary stars are stored at the top of the data dictionary. 
-    data_dict['nsingles'] = nsingles
-    data_dict['nbinaries'] = nbinaries
+#     all_particles, singles, binaries = particle_data
+#     allpos, allvel = CM_to_galcen_frame(path, all_particles, file_i)
+#     nsingles, nbinaries = len(singles.mass), len(binaries.mass)
+#     ### number of single and binary stars are stored at the top of the data dictionary. 
+#     data_dict['nsingles'] = nsingles
+#     data_dict['nbinaries'] = nbinaries
 
-    all_coords, single_coords, binary_coords = streamframe_data
-    all_IDs = all_particles.id
+#     all_coords, single_coords, binary_coords = streamframe_data
+#     all_IDs = all_particles.id
 
-    # Ids
-    sid = singles.id
-    bp1id = binaries.p1.id
-    bp2id = binaries.p2.id
-    luminous_mask = binaries.p1.star.lum >= binaries.p2.star.lum # <--- use np.where(luminous_mask, p1 property, p2 property) to index the property of the more luminous companion. 
-    data_dict['IDs'] = np.concatenate([sid, bp1id, bp2id]) # <-- ids will be in the top level of the dictionary
+#     # Ids
+#     sid = singles.id
+#     bp1id = binaries.p1.id
+#     bp2id = binaries.p2.id
+#     luminous_mask = binaries.p1.star.lum >= binaries.p2.star.lum # <--- use np.where(luminous_mask, p1 property, p2 property) to index the property of the more luminous companion. 
+#     data_dict['IDs'] = np.concatenate([sid, bp1id, bp2id]) # <-- ids will be in the top level of the dictionary
 
-    # create a lookup table to index binary p1 and p2 information in the all particles table. (rly just needed for the streamframe coordinate data.)
-    lookup = {v:i for i, v in enumerate(all_IDs)}
-    mask_bp1 = np.array([lookup[x] for x in bp1id])
-    mask_bp2 = np.array([lookup[x] for x in bp2id])
+#     # create a lookup table to index binary p1 and p2 information in the all particles table. (rly just needed for the streamframe coordinate data.)
+#     lookup = {v:i for i, v in enumerate(all_IDs)}
+#     mask_bp1 = np.array([lookup[x] for x in bp1id])
+#     mask_bp2 = np.array([lookup[x] for x in bp2id])
 
-    # external potentials
-    s_pot = singles.pot_ext # pc^2/myr^2
-    #### binary potential values will always just be the two values.... going to assume it's not drastically different between them for actual bound binaries. 
-    bp1_pot, bp2_pot = binaries.p1.pot_ext, binaries.p2.pot_ext 
-    data_dict['pot'] = np.concatenate([s_pot, bp1_pot, bp2_pot]) # <--- potentials will also be at the top of the dictionary
+#     # external potentials
+#     s_pot = singles.pot_ext # pc^2/myr^2
+#     #### binary potential values will always just be the two values.... going to assume it's not drastically different between them for actual bound binaries. 
+#     bp1_pot, bp2_pot = binaries.p1.pot_ext, binaries.p2.pot_ext 
+#     data_dict['pot'] = np.concatenate([s_pot, bp1_pot, bp2_pot]) # <--- potentials will also be at the top of the dictionary
 
-    ###############################################################################
-    #           loop through binary treatments and add data to a dictionary       #
-    ###############################################################################
+#     ###############################################################################
+#     #           loop through binary treatments and add data to a dictionary       #
+#     ###############################################################################
 
-    for binary_treatment in binary_treatments:
-        subdict = {}
+#     for binary_treatment in binary_treatments:
+#         subdict = {}
 
-        # STAR INFO. skip if just doing center of mass. 
-        if binary_treatment=='CoM':
-            pass
-        if binary_treatment=='companions' or binary_treatment=='luminous':
-            s_L = singles.star.lum * u.Lsun
-            s_R = singles.star.rad * u.Rsun
-            s_type = singles.star.type
+#         # STAR INFO. skip if just doing center of mass. 
+#         if binary_treatment=='CoM':
+#             pass
+#         if binary_treatment=='companions' or binary_treatment=='luminous':
+#             s_L = singles.star.lum * u.Lsun
+#             s_R = singles.star.rad * u.Rsun
+#             s_type = singles.star.type
 
-            bp1_L = binaries.p1.star.lum * u.Lsun
-            bp1_R = binaries.p1.star.rad * u.Rsun
-            bp1_type = binaries.p1.star.type
+#             bp1_L = binaries.p1.star.lum * u.Lsun
+#             bp1_R = binaries.p1.star.rad * u.Rsun
+#             bp1_type = binaries.p1.star.type
 
-            bp2_L = binaries.p2.star.lum * u.Lsun
-            bp2_R = binaries.p2.star.rad * u.Rsun
-            bp2_type = binaries.p2.star.type
+#             bp2_L = binaries.p2.star.lum * u.Lsun
+#             bp2_R = binaries.p2.star.rad * u.Rsun
+#             bp2_type = binaries.p2.star.type
 
-            if binary_treatment=='luminous':
-                b_L = np.where(luminous_mask, bp1_L, bp2_L)
-                b_R = np.where(luminous_mask, bp1_R, bp2_R)
-                b_type = np.where(luminous_mask, bp1_type, bp2_type)
-            if binary_treatment=='companions':
-                b_L = np.concatenate([bp1_L, bp2_L])
-                b_R = np.concatenate([bp1_R, bp2_R])
-                b_type = np.concatenate([bp1_type, bp2_type])
+#             if binary_treatment=='luminous':
+#                 b_L = np.where(luminous_mask, bp1_L, bp2_L)
+#                 b_R = np.where(luminous_mask, bp1_R, bp2_R)
+#                 b_type = np.where(luminous_mask, bp1_type, bp2_type)
+#             if binary_treatment=='companions':
+#                 b_L = np.concatenate([bp1_L, bp2_L])
+#                 b_R = np.concatenate([bp1_R, bp2_R])
+#                 b_type = np.concatenate([bp1_type, bp2_type])
 
-            ### concatenate singles/binaries and add to subdict. 
-            subdict["type"] = np.concatenate([s_type, b_type])
-            subdict["L"] = np.concatenate([s_L, b_L])
-            subdict["R"] = np.concatenate([s_R, b_R]) 
+#             ### concatenate singles/binaries and add to subdict. 
+#             subdict["type"] = np.concatenate([s_type, b_type])
+#             subdict["L"] = np.concatenate([s_L, b_L])
+#             subdict["R"] = np.concatenate([s_R, b_R]) 
 
-        # STREAMFRAME COORDINATES:
-        s_coords = single_coords
-        if binary_treatment=="CoM":
-            # bp1_coords, bp2_coords = binary_coords, binary_coords ## give bp1 and bp2 both the center of mass coords
-            b_coords = binary_coords
+#         # STREAMFRAME COORDINATES:
+#         s_coords = single_coords
+#         if binary_treatment=="CoM":
+#             # bp1_coords, bp2_coords = binary_coords, binary_coords ## give bp1 and bp2 both the center of mass coords
+#             b_coords = binary_coords
 
-        if binary_treatment=="companions" or binary_treatment=='luminous':
-            # now i need to lookup the coordinates of all of these guys crom coords. 
-            bp1_coords = {key:all_coords[key][mask_bp1] for key in all_coords.keys()} # i'm a genius lol
-            bp2_coords = {key:all_coords[key][mask_bp2] for key in all_coords.keys()}
+#         if binary_treatment=="companions" or binary_treatment=='luminous':
+#             # now i need to lookup the coordinates of all of these guys crom coords. 
+#             bp1_coords = {key:all_coords[key][mask_bp1] for key in all_coords.keys()} # i'm a genius lol
+#             bp2_coords = {key:all_coords[key][mask_bp2] for key in all_coords.keys()}
 
-            if binary_treatment=='luminous':
-                b_coords = {key:np.where(luminous_mask, bp1_coords[key], bp2_coords[key]) for key in all_coords.keys()}
-            if binary_treatment=='companions':
-                keys = ['phi1', 'phi2', 'pm_phi1','pm_phi2','r', 'vr']
-                b_coords = {
-                    key:np.concatenate([bp1_coords[key], bp2_coords[key]]) for key in keys
-                }
-        ## concatenate singles/binaries and add to subdict. 
-        keys = ['phi1','phi2','pm_phi1','pm_phi2','r','vr']
-        coords = {
-            key:np.concatenate([s_coords[key], b_coords[key]]) for key in keys
-        }
-        subdict["coords"] = coords
-
-
-        # GALACTOCENTRIC PHASE SPACE POSITIONS
-        spos, svel = core_to_galcen_frame(path, singles, file_i, core=core)
-        if binary_treatment=='CoM':
-            bpos, bvel = core_to_galcen_frame(path, binaries, file_i, core=core)
+#             if binary_treatment=='luminous':
+#                 b_coords = {key:np.where(luminous_mask, bp1_coords[key], bp2_coords[key]) for key in all_coords.keys()}
+#             if binary_treatment=='companions':
+#                 keys = ['phi1', 'phi2', 'pm_phi1','pm_phi2','r', 'vr']
+#                 b_coords = {
+#                     key:np.concatenate([bp1_coords[key], bp2_coords[key]]) for key in keys
+#                 }
+#         ## concatenate singles/binaries and add to subdict. 
+#         keys = ['phi1','phi2','pm_phi1','pm_phi2','r','vr']
+#         coords = {
+#             key:np.concatenate([s_coords[key], b_coords[key]]) for key in keys
+#         }
+#         subdict["coords"] = coords
 
 
-        if binary_treatment=='companions' or binary_treatment=='luminous':
-            bp1pos = allpos[mask_bp1]
-            bp1vel = allvel[mask_bp1]
-            bp2pos = allpos[mask_bp2]
-            bp2vel = allvel[mask_bp2]
+#         # GALACTOCENTRIC PHASE SPACE POSITIONS
+#         spos, svel = core_to_galcen_frame(path, singles, file_i, core=core)
+#         if binary_treatment=='CoM':
+#             bpos, bvel = core_to_galcen_frame(path, binaries, file_i, core=core)
 
-            if binary_treatment=='luminous':
-                bpos = np.where(luminous_mask[:, None], bp1pos, bp2pos) # reshape the luminosity mask for position/velocity dimensions. 
-                bvel = np.where(luminous_mask[:, None], bp1vel, bp2vel) # reshape the luminosity mask for position/velocity dimensions. 
-            if binary_treatment=='companions':
-                bpos = np.concatenate([bp1pos, bp2pos])
-                bvel = np.concatenate([bp1vel, bp2vel])
+
+#         if binary_treatment=='companions' or binary_treatment=='luminous':
+#             bp1pos = allpos[mask_bp1]
+#             bp1vel = allvel[mask_bp1]
+#             bp2pos = allpos[mask_bp2]
+#             bp2vel = allvel[mask_bp2]
+
+#             if binary_treatment=='luminous':
+#                 bpos = np.where(luminous_mask[:, None], bp1pos, bp2pos) # reshape the luminosity mask for position/velocity dimensions. 
+#                 bvel = np.where(luminous_mask[:, None], bp1vel, bp2vel) # reshape the luminosity mask for position/velocity dimensions. 
+#             if binary_treatment=='companions':
+#                 bpos = np.concatenate([bp1pos, bp2pos])
+#                 bvel = np.concatenate([bp1vel, bp2vel])
         
-        pos, vel = np.concatenate([spos, bpos]), np.concatenate([svel, bvel])
-        subdict["pos"] = pos
-        subdict["vel"] = vel
+#         pos, vel = np.concatenate([spos, bpos]), np.concatenate([svel, bvel])
+#         subdict["pos"] = pos
+#         subdict["vel"] = vel
 
 
-        # MASSES
-        smass = singles.mass*u.Msun
-        if binary_treatment=='CoM':
-            # bp1mass, bp2mass = binaries.mass*u.Msun, binaries.mass*u.Msun
-            bmass = binaries.mass * u.Msun
-        if binary_treatment=='companions' or binary_treatment=='luminous':
-            bp1mass = binaries.p1.mass * u.Msun
-            bp2mass = binaries.p2.mass * u.Msun
+#         # MASSES
+#         smass = singles.mass*u.Msun
+#         if binary_treatment=='CoM':
+#             # bp1mass, bp2mass = binaries.mass*u.Msun, binaries.mass*u.Msun
+#             bmass = binaries.mass * u.Msun
+#         if binary_treatment=='companions' or binary_treatment=='luminous':
+#             bp1mass = binaries.p1.mass * u.Msun
+#             bp2mass = binaries.p2.mass * u.Msun
 
-            if binary_treatment=='luminous':
-                bmass = np.where(luminous_mask, bp1mass, bp2mass)
-            if binary_treatment=='companions':
-                bmass = np.concatenate([bp1mass, bp2mass])
+#             if binary_treatment=='luminous':
+#                 bmass = np.where(luminous_mask, bp1mass, bp2mass)
+#             if binary_treatment=='companions':
+#                 bmass = np.concatenate([bp1mass, bp2mass])
 
-        mass = np.concatenate([smass, bmass])
-        subdict['mass'] = mass
+#         mass = np.concatenate([smass, bmass])
+#         subdict['mass'] = mass
 
 
-        ### straighten the stream coordinates. 
-        inMW, trim = trim_coords_percentile(coords, low=1, high=99, apo=apo) # <-- do the trimming based on center of mass coordinates ? ? ? 
-        subdict['inMW'] = inMW
-        subdict['trim'] = trim
-        sc, interp_orbit, orbit_coords, orbit_w, itr = straighten_stream_orbit_interp(
-            coords, ['phi2','r','vr', 'pm_phi1','pm_phi2'], core, i, 
-            trim_criteria = [inMW, trim], Dt_start=240,
-            return_orbit_chunk=True, use_core=use_core, init_displacement=init_displacement, file_index=file_index
-        )
-        phi2_straight, r_straight, vr_straight, pm_phi1_straight, pm_phi2_straight = sc 
+#         ### straighten the stream coordinates. 
+#         inMW, trim = trim_coords_percentile(coords, low=1, high=99, apo=apo) # <-- do the trimming based on center of mass coordinates ? ? ? 
+#         subdict['inMW'] = inMW
+#         subdict['trim'] = trim
+#         sc, interp_orbit, orbit_coords, orbit_w, itr = straighten_stream_orbit_interp(
+#             coords, ['phi2','r','vr', 'pm_phi1','pm_phi2'], core, i, 
+#             trim_criteria = [inMW, trim], Dt_start=240,
+#             return_orbit_chunk=True, use_core=use_core, init_displacement=init_displacement, file_index=file_index
+#         )
+#         phi2_straight, r_straight, vr_straight, pm_phi1_straight, pm_phi2_straight = sc 
 
-        subdict['phi2_straight'] = phi2_straight
-        subdict['r_straight'] = r_straight
-        subdict['vr_straight'] = vr_straight
-        subdict['pm_phi1_straight'] = pm_phi1_straight
-        subdict['pm_phi2_straight'] = pm_phi2_straight
+#         subdict['phi2_straight'] = phi2_straight
+#         subdict['r_straight'] = r_straight
+#         subdict['vr_straight'] = vr_straight
+#         subdict['pm_phi1_straight'] = pm_phi1_straight
+#         subdict['pm_phi2_straight'] = pm_phi2_straight
 
-        ##### add the data from this iteration to the giant dictionary. 
-        data_dict[binary_treatment]=subdict
+#         ##### add the data from this iteration to the giant dictionary. 
+#         data_dict[binary_treatment]=subdict
 
-    return data_dict # <--- this won't include the core but like whatever ??? 
+#     return data_dict # <--- this won't include the core but like whatever ??? 
 
 
 

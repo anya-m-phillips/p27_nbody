@@ -536,7 +536,7 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 # %%
 
 # if __name__=="__main__":
-make_plots=True
+make_plots=False
 constrain_widths=False
 
 
@@ -562,9 +562,19 @@ copy_options = [0,1,2,3,4]
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 
+def trim_obstream_percentile(sc, p=[1,99], 
+                            trim_keys=['phi1','phi2','pm_phi1','pm_phi2','v_gsr']):
+    criteria = []
+    for key in trim_keys:
+        key_low, key_high = np.percentile(sc[key], q=p)
+        key_crit = (sc[key]<=key_high) & (sc[key]>=key_low)
+        criteria.append(key_crit)
 
+    trim_criteria = np.logical_and.reduce(criteria)
+    return trim_criteria
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
+
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
     for rvir_index in range(4):
@@ -577,22 +587,40 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         # dicts.append(data_dict)
 
-        coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
+        # coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
         # sf_coords_obs.append(sf_coords_obs)
 
         # straightened coords
-        sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+        sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
 
         unbound = ~CMdict['in_rtid']
-        unbound = unbound[inMW][trim]
+        # unbound = unbound[inMW][trim] # don't care about this. 
 
-        trimmed_sc = simspect.clip_coords(sc, [inMW, trim]) #<-- this applies inMW, trim to the coordinate dictionary
+
+        ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
+        inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
+        trim_new = trim_obstream_percentile(sc)
+
+
+
+        #### apply the trim to all of the coordinates:
+        trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
         sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
-        ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
-            sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
-        )
 
-        use = ol_clip & unbound
+        #### i am less worried about ol_clip now. deleting it since it's ~taken care of by trimming the 1-99th percentile in orbit-subtracted coordinates. 
+        # ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
+        #     sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
+        # )
+
+        # use = ol_clip & unbound
+        unbound = unbound[trim_new]
+        use = unbound
+
+        ### confirming that esp for m3 this straightening is quite a bit better (subjectively)
+        # fig, ax = plt.subplots(figsize=[9,3])
+        # ax.scatter(sc_straighter['phi1'][use], 
+        #            sc_straighter['phi2'][use], c='k', s=1)
+        # ax.set_ylim(-1.5, 1.5)
 
         #### assemble the data and perform the fit: 
         x_data = np.column_stack([sc_straighter[k][use] for k in keys])
@@ -710,8 +738,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         ### things that are like per star
         cocoon_info['p_thin'] = p_thin
         cocoon_info['sc_straighter'] = sc_straighter #<-- already has [inMW][trim] applied, needs [ol_clip & unbound] applied.
-        cocoon_info['ol_clip'] = ol_clip # <-- with unbound is 'use'
+        # cocoon_info['ol_clip'] = ol_clip # <-- with unbound is 'use'
         cocoon_info['unbound'] = unbound # <-- with ol_clip is 'use'
+        cocoon_info['trim_new'] = trim_new #<-- but unbound is already trimmed to the trimmed length... lol
 
         data_dict['cocoon_info']= cocoon_info
 

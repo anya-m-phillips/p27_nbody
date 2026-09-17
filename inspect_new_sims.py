@@ -402,7 +402,7 @@ def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
         scd[key] = data_y[ii] - np.interp(data_x, orbit_x, orbit_y[ii])
     return scd
 
-def outlier_clip(vr, pmphi1, pmphi2):
+def outlier_clip(vr, pmphi1, pmphi2): #<-- NEEDS EDITING !!! THIS SHOULD BE A QUANTILE CHOP OR SOMETHING. 
     """
     i've decided that dvr should be clipped at 100 km/s
     and dpm should be clipped at 1.5 mas/yr
