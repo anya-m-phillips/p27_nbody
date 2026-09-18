@@ -364,9 +364,17 @@ def chop_orbit_track(phi1, jump_threshold=45):
 
 def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
     """
-    should _this_ return a dictionary ??? 
+    THIS RETURNS A DICTIONARY!!!
+    AND ALSO AM ADDING ON VELOCITIES.
     """
+
+    ### get observed stream coordinate frame: 
     coords_obs, obs_streamframe = streamframe_coords_observed(orbit, CMdict, prog_tab)
+    d_phi2 = coords_obs.phi2.to(u.radian).value * coords_obs.distance.to(u.kpc).value
+    v_phi1 = coords_obs.pm_phi1_cosphi2.to(u.radian/u.s).value * coords_obs.distance.to(u.km).value
+    v_phi2 = coords_obs.pm_phi2.to(u.radian/u.s).value * coords_obs.distance.to(u.km).value
+
+    ### get progenitor orbitL 
     row = prog_tab[prog_tab['name']==orbit]
     w0 = gd.PhaseSpacePosition(
         np.array([row['x'][0], row['y'][0], row['z'][0]])*u.kpc,
@@ -374,10 +382,13 @@ def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
         )
     orbit_pos, orbit_vel = prog_orbit_track(w0, Dt)
     orbit_sf = observed_orbit_track(orbit_pos, orbit_vel, obs_streamframe)
+    orbit_d_phi2 = orbit_sf.phi2.to(u.radian).value * orbit_sf.distance.to(u.kpc).value
+    orbit_v_phi1 = orbit_sf.pm_phi1_cosphi2.to(u.radian/u.s).value * orbit_sf.distance.to(u.km).value
+    orbit_v_phi2 = orbit_sf.pm_phi2.to(u.radian/u.s).value * orbit_sf.distance.to(u.km).value
     idx = chop_orbit_track(orbit_sf.phi1.to(u.degree).value)
 
 
-
+    ### assemble the "straight coordinates" dictionary
     scd = {} #<--"straight coord dict"
     scd['phi1'] = coords_obs.phi1.to(u.degree).value
     data_x = scd['phi1']
@@ -385,16 +396,23 @@ def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
               coords_obs.pm_phi1_cosphi2.to(u.mas/u.yr).value,
               coords_obs.pm_phi2.to(u.mas/u.yr).value,
               coords_obs.radial_velocity.to(u.km/u.s).value,
-              coords_obs.distance.to(u.kpc).value
+              coords_obs.distance.to(u.kpc).value,
+              d_phi2,
+              v_phi1,
+              v_phi2
               ]
 
-    keys = ['phi2','pm_phi1','pm_phi2','v_gsr','distance']
+    keys = ['phi2','pm_phi1','pm_phi2','v_gsr','distance', 
+            'd_phi2', 'v_phi1','v_phi2']
     orbit_x = orbit_sf.phi1[idx].to(u.degree).value
     orbit_y = [orbit_sf.phi2[idx].to(u.degree).value,
                orbit_sf.pm_phi1_cosphi2[idx].to(u.mas/u.yr).value,
                orbit_sf.pm_phi2[idx].to(u.mas/u.yr).value,
                orbit_sf.radial_velocity[idx].to(u.km/u.s).value,
-               orbit_sf.distance[idx].to(u.kpc).value
+               orbit_sf.distance[idx].to(u.kpc).value,
+               orbit_d_phi2[idx],
+               orbit_v_phi1[idx],
+               orbit_v_phi2[idx]
                ]
 
     # populate the coordinate dictionary:       
@@ -402,7 +420,7 @@ def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
         scd[key] = data_y[ii] - np.interp(data_x, orbit_x, orbit_y[ii])
     return scd
 
-def outlier_clip(vr, pmphi1, pmphi2): #<-- NEEDS EDITING !!! THIS SHOULD BE A QUANTILE CHOP OR SOMETHING. 
+def outlier_clip(vr, pmphi1, pmphi2): #<-- FALLING OUT OF USE! TRIM IN QUANTILES IN ALL DIMENSIONS INSTEAD.  
     """
     i've decided that dvr should be clipped at 100 km/s
     and dpm should be clipped at 1.5 mas/yr
@@ -416,7 +434,9 @@ def outlier_clip(vr, pmphi1, pmphi2): #<-- NEEDS EDITING !!! THIS SHOULD BE A QU
 def poly_straightening(coords, tc=None): #<-- Q; should i be doing in MW, trim first?
     """
     coords should be in dictionary form, 
-    include phi1, and phi1 should be the first key
+    include phi1, and phi1 should be the first key.
+    apart from that, this function should be 
+    AGNOSTIC TO WHAT THE DICT KEYS ARE OR HOW MANY THERE ARE. 
     also, when in dict form my convention is that 
     things don't have astropy units. 
     phi1/phi2 should be in degrees, 

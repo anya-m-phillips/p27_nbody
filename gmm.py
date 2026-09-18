@@ -534,10 +534,9 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
                                             sort_dim=sort_dim)
 
 # %%
-
 # if __name__=="__main__":
 make_plots=True
-constrain_widths=False
+constrain_widths=True
 
 
 grid_info = paf.extended_grid_info(scratch=False) 
@@ -560,10 +559,11 @@ rvirs = [0.75, 1.5, 3, 6]
 copy_options = [0,1,2,3,4]
 # copy_options = [4,3,2,1,0]
 
-keys = ['phi2','pm_phi1','pm_phi2','v_gsr'] #<--- EDITING TO INCLUDE DISTANCE !
+# keys = ['phi2','pm_phi1','pm_phi2','v_gsr'] #<--- EDITING TO INCLUDE DISTANCE ?
+keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] #<-- i guess like why not do this
 
 def trim_obstream_percentile(sc, p=[1,99], 
-                            trim_keys=['phi1','phi2','pm_phi1','pm_phi2','v_gsr']):
+                            trim_keys=['phi1','d_phi2','v_phi1','v_phi2','v_gsr','distance']):
     criteria = []
     for key in trim_keys:
         key_low, key_high = np.percentile(sc[key], q=p)
@@ -573,12 +573,15 @@ def trim_obstream_percentile(sc, p=[1,99],
     trim_criteria = np.logical_and.reduce(criteria)
     return trim_criteria
 
+# %%
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    if orbit!='pa5':
-        continue
+    # if orbit!='pa5':
+    #     continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
     for rvir_index in range(4):
+        # if orbit!='aau':
+        #     continue
 
         (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
             simspect.prepare_nbody_data_anycopy(
@@ -615,7 +618,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         # use = ol_clip & unbound
         unbound = unbound[trim_new]
-        use = unbound
+
+        # phi1_cut = 20
+        use = unbound #& ((sc_straighter['phi1']>-phi1_cut) & (sc_straighter['phi1']<phi1_cut))
 
         ### confirming that esp for m3 this straightening is quite a bit better (subjectively)
         # fig, ax = plt.subplots(figsize=[9,3])
@@ -752,9 +757,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         if constrain_widths==False:
             datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/unconstrained/'
         rvir = rvirs[rvir_index]
-        # print("dumping to pkl file...")
-        # with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
-        #     pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print("dumping to pkl file...")
+        with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
+            pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
         if make_plots==True:
             c_labels = ["#CCC9E7", "#2F2F2F"]
@@ -768,9 +773,12 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
             
             key_labels = [
-                r'$\phi_2~[\degree]$',
-                r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
-                r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+                # r'$\phi_2~[\degree]$',
+                # r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+                # r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+                r'$d_{\phi_2}~[\rm kpc]$',
+                r'$v_{\phi_1}~[\rm km~s^{-1}]$',
+                r'$v_{\phi_2}~[\rm km~s^{-1}]$',                
                 r'$v_{\rm GSR}~[\rm km~s^{-1}]$',
                 r'$d~[\rm kpc]$'
             ]
@@ -828,13 +836,53 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
 
         
-            # if constrain_widths==False:
-            #     plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-            #                 bbox_inches='tight')
-            # if constrain_widths==True:
-            #     plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-            #                 bbox_inches='tight')
+            if constrain_widths==False:
+                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
+                            bbox_inches='tight')
+            if constrain_widths==True:
+                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
+                            bbox_inches='tight')
 
-            # plt.close()
+            plt.close()
+
 
 # %%
+
+
+#### TESTING STUFF: 
+
+
+
+#### IF I USE PHYSICAL WIDTHS AND SPEEDS ONLY (i.e. all angles get distanced away)
+orbit = 'm3'
+rvir_index=0
+mass_index=1
+(core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+    simspect.prepare_nbody_data_anycopy(
+        orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+        include_photometry=False
+    )
+# %%
+sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
+
+
+unbound = ~CMdict['in_rtid']
+inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
+trim_new = trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
+
+trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
+sc_straighter = simspect.poly_straightening(trimmed_sc)
+
+fig, axs = plt.subplots(2,1, figsize=[8,8])
+
+axs[1].scatter(coords_obs.phi1[trim_new], coords_obs.phi2[trim_new], c='.7', s=1)
+
+axs[0].scatter(sc['phi1'][trim_new], sc['d_phi2'][trim_new], c=sc['distance'][trim_new], s=1)
+axs[1].scatter(sc['phi1'][trim_new], sc['phi2'][trim_new], c=sc['distance'][trim_new], s=1)
+
+axs[0].scatter(sc_straighter['phi1'], sc_straighter['d_phi2'], c='k', s=1)
+axs[1].scatter(sc_straighter['phi1'], sc_straighter['phi2'], c='k', s=1)
+
+# for ax in axs:
+#     ax.set_xlim(-10,10)

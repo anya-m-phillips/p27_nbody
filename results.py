@@ -72,7 +72,7 @@ rvirs = [0.75, 1.5, 3, 6]
 copy_options = [0,1,2,3,4]
 # copy_options = [4,3,2,1,0]
 
-keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
+# keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 
 pericenters_kpc = []
 apocenters_kpc = []
@@ -80,7 +80,7 @@ present_rs = []
 
 f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
 
-use_constrained = True
+use_constrained = False
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
     # if orbit=='pa5' or orbit=='m3':
     #     continue
@@ -127,10 +127,21 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         f_cocoons_this_orbit.append(f_cocoon)
 
-        cocoon_sig_phi2_this_orbit.append(sigma_cocoon[0])
+        sc_straighter = cocoon_dict['sc_straighter']
+        p_thin = cocoon_dict['p_thin']
+        use = cocoon_dict['unbound']
+
+        c = p_thin<0.5
+        phi2s = sc_straighter['phi2'][use]
+
+
+
+        # cocoon_sig_phi2_this_orbit.append(sigma_cocoon[0])
+        cocoon_sig_phi2_this_orbit.append(np.std(phi2s[c]))
         cocoon_sig_vgsr_this_orbit.append(sigma_cocoon[-1])
 
-        thin_sig_phi2_this_orbit.append(sigma_thin[0])
+        # thin_sig_phi2_this_orbit.append(sigma_thin[0])
+        thin_sig_phi2_this_orbit.append(np.std(phi2s[~c]))
         thin_sig_vgsr_this_orbit.append(sigma_thin[-1])
 
 
@@ -166,7 +177,7 @@ orbits = np.array(orbits)
 
 eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
 # %%
-reordered = np.argsort(orbital_phases)
+reordered = np.argsort(pericenters_kpc)
 
 ccc = cc[1:]
 fig, axs = plt.subplots(2,3,figsize=[21,14])
@@ -179,8 +190,8 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
 
     x = rvirs
     axs[0,0].plot(x, f_cocoons_this_orbit, 
-                # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
-                label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
+                label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
+                # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
                 marker='o', color=ccc[ii], markersize=10)
 
@@ -225,6 +236,8 @@ if use_constrained==True:
 else:
     filename+="_unconstrained.pdf"
 plt.savefig(filename, dpi=300, bbox_inches='tight')
+
+# %%
 
 # %%
 
