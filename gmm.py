@@ -456,7 +456,7 @@ def component_responsibilities(x_data, component_fractions, means, sigmas):
     ln_w = np.array([np.log(Qs[j]) + component_likelihood(x_data, means[j], sigmas[j])
                      for j in range(n_components)])
 
-    return np.exp(ln_w - logsumexp(ln_w, axis=0))
+    return np.exp(ln_w - logsumexp(ln_w, axis=0)) 
 
 
 def component_membership_probability(x_data, component_fractions, means, sigmas,
