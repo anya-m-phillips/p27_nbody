@@ -266,8 +266,13 @@ p_cocoon = 1-p_thin
 order = np.argsort(p_cocoon)
 sc_straighter = cocoon_dict['sc_straighter']
 
+
 cocoon_sigmas = cocoon_dict['sigma_cocoon']
 
+
+
+
+keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
 
 plt.subplots_adjust(hspace=0.03, wspace=0.03)
@@ -278,8 +283,14 @@ key_labels = [
     r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
     r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
 ]
+
+
 for jj, key in enumerate(keys):
-    cut = 3*cocoon_sigmas[jj]
+    cocoon_selection = p_thin<0.5
+
+    ydata = sc_straighter[key][use][cocoon_selection]
+    std = np.std(ydata)
+    cut = 3*std #cocoon_sigmas[jj]
 
     ax = axs[jj,0]
 
@@ -302,7 +313,6 @@ for jj, key in enumerate(keys):
 
 
 
-    cocoon_selection = p_thin<0.5
     ax.hist(sc_straighter[key][use][~cocoon_selection], 
             alpha=1., density=False, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
             color=c_labels[0],orientation='horizontal',
