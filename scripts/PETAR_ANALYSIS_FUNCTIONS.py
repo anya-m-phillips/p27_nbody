@@ -2173,7 +2173,9 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
                             binary_treatments = ["CoM","companions","luminous"] # <-- "CoM" to do the analysis with center of mass values, "companions" to use the values for the more luminous companion. 
                              ): 
     """
-    ON 17 AUGUST 2026 I WOULD LIKE TO ADD SOME FUNCTIONALITY TO FLAG WHAT HAS ESCAPED 
+    ON 21 SEPTEMBER 2026 I AM ADDING A BIT THAT SAVES THE _INITIAL_ STELLAR MASSES. 
+
+    ON 17 AUGUST 2026 I ADDED SOME FUNCTIONALITY TO FLAG WHAT HAS ESCAPED 
     THE PROGENITOR (IE REMOVE THINGS INSIDE THE TIDAL RADIUS. )
 
     v3 is different from v2 because it does not rely on a simulation indexing convention with n
@@ -2194,14 +2196,20 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
     data_dict = {} # <-- I will return this. 
     data_dict["init_displacement"] = init_displacement #<-- so i don't have to do this later... 
 
+    #### snapshot 0, for the genuine ZAMS masses. only the id / star.mass0 columns are
+    #    wanted, so load the raw particle file -- no streamframe or core machinery needed.
+    p0 = load_particle(path, 0, file_naming_convention="every integer")
+
     #### load particle and streamframe data:
-    if use_core==True: # only want to use core if the cluster is like *just* dissolved.... could probably not have split this into cases but whatever. 
+    if use_core==True: # only want to use core if the cluster is like *just* dissolved.... could probably not have split this into cases but whatever.
         particle_data, streamframe_data = load_coords_v2(path, i, core, tdis_estimate=int(i-1), file_index=file_index,
                                                         tdis_estimate_index=int(file_index-1))
     if use_core==False:
-        particle_data, streamframe_data = load_coords_v2(path, i, core=None, 
+        particle_data, streamframe_data = load_coords_v2(path, i, core=None,
                                                          use_core=False, check_dissolved=False,
                                                          init_displacement=init_displacement, file_index=file_index)
+
+
 
     all_particles, singles, binaries = particle_data
     allpos, allvel = CM_to_galcen_frame(path, all_particles, file_index)
@@ -2219,6 +2227,9 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
     bp2id = binaries.p2.id
     luminous_mask = binaries.p1.star.lum >= binaries.p2.star.lum # <--- use np.where(luminous_mask, p1 property, p2 property) to index the property of the more luminous companion. 
     data_dict['IDs'] = np.concatenate([sid, bp1id, bp2id]) # <-- ids will be in the top level of the dictionary
+
+
+
 
     # create a lookup table to index binary p1 and p2 information in the all particles table. (rly just needed for the streamframe coordinate data.)
     lookup = {v:i for i, v in enumerate(all_IDs)}
@@ -2242,31 +2253,61 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
         if binary_treatment=='CoM':
             pass
         if binary_treatment=='companions' or binary_treatment=='luminous':
+
+            ### stuff for getting genuine zams mass info.
+            #   note to make this more efficient this could go outside the loop ig. 
+            #   since in practice I am always returning all three dictionaries. 
+            ids0 = p0.id
+            m00 = p0.star.mass0 #<-- AT SNAPSHOT 0 ONLY, star.mass0 really is the ZAMS mass (== p0.mass, exactly).
+            order = np.argsort(ids0)
+
+            s_zams_index = order[np.searchsorted(ids0[order], sid)]
+            assert (ids0[s_zams_index]==sid).all()
+            s_m0_zams = m00[s_zams_index]
+
+            bp1_zams_index = order[np.searchsorted(ids0[order], bp1id)]
+            assert (ids0[bp1_zams_index]==bp1id).all()
+            bp1_m0_zams = m00[bp1_zams_index]
+
+            bp2_zams_index = order[np.searchsorted(ids0[order], bp2id)]
+            assert (ids0[bp2_zams_index]==bp2id).all()
+            bp2_m0_zams = m00[bp2_zams_index]
+
+
             s_L = singles.star.lum * u.Lsun
             s_R = singles.star.rad * u.Rsun
             s_type = singles.star.type
+            s_m0 = singles.star.mass0 #<-- this is an _effective_ m0: which track is BSE currently using, after mass transfer/loss/mergers/etc. 
 
             bp1_L = binaries.p1.star.lum * u.Lsun
             bp1_R = binaries.p1.star.rad * u.Rsun
             bp1_type = binaries.p1.star.type
+            bp1_m0 = binaries.p1.star.mass0 #<-- this is an _effective_ m0: which track is BSE currently using, after mass transfer/loss/mergers/etc. 
 
             bp2_L = binaries.p2.star.lum * u.Lsun
             bp2_R = binaries.p2.star.rad * u.Rsun
             bp2_type = binaries.p2.star.type
+            bp2_m0 = binaries.p2.star.mass0 #<-- this is an _effective_ m0: which track is BSE currently using, after mass transfer/loss/mergers/etc. 
 
             if binary_treatment=='luminous':
                 b_L = np.where(luminous_mask, bp1_L, bp2_L)
                 b_R = np.where(luminous_mask, bp1_R, bp2_R)
                 b_type = np.where(luminous_mask, bp1_type, bp2_type)
+                b_m0 = np.where(luminous_mask, bp1_m0,  bp2_m0)
+                b_m0_zams = np.where(luminous_mask, bp1_m0_zams, bp2_m0_zams)
             if binary_treatment=='companions':
                 b_L = np.concatenate([bp1_L, bp2_L])
                 b_R = np.concatenate([bp1_R, bp2_R])
                 b_type = np.concatenate([bp1_type, bp2_type])
+                b_m0 = np.concatenate([bp1_m0, bp2_m0])
+                b_m0_zams = np.concatenate([bp1_m0_zams, bp2_m0_zams])
 
             ### concatenate singles/binaries and add to subdict. 
             subdict["type"] = np.concatenate([s_type, b_type])
             subdict["L"] = np.concatenate([s_L, b_L])
             subdict["R"] = np.concatenate([s_R, b_R]) 
+            subdict['m0_effective'] = np.concatenate([s_m0, b_m0])
+            subdict['m0_zams'] = np.concatenate([s_m0_zams, b_m0_zams])
 
         # STREAMFRAME COORDINATES:
         s_coords = single_coords

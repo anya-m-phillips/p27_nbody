@@ -45,6 +45,8 @@ scripts in top directory for now:
 
 - `nfc_plots.py` was used for plotting in preparation for a conference; will likely abandon soon
 
+- `noise.py`: adding survey noise and re-fitting the GMM. currently the live place where **MIST isochrone photometry** is being painted onto stars by initial mass, replacing the blackbody + top-hat scheme in `paf` (see the photometry section). reads the isochrone with `read_mist_models.ISOCMD`; `gaia_g_to_lsst_z` / `lsst_z_to_gaia_g` are the RTN-099 sec 1.3.4 polynomial and its exact inverse. the block at the bottom reconstructs the IMF from two snapshots -- **that block only works because it takes `mass0` from snapshot 0**, see the `star.mass0` section. for the per-star photometry use `lumdict['m0_zams']`, which `intrinsic_stream_data_v3` now provides directly.
+
 # notes on `paf` (PETAR_ANALYSIS_FUNCTIONS.py)
 ~2400 lines, a lot of it leftover from the old grid (the `#<-- LEFTOVER FROM OLD GRID` markers are honest -- `define_paths*`, `define_apocenters`, `unpack_escaper_dict` etc. are superseded by `extended_grid_info`). the notes below are for the parts the current pipeline actually touches.
 
@@ -59,6 +61,56 @@ scripts in top directory for now:
 - **`init_displacement` is kpc, km/s** everywhere it is *consumed* (`prog_position`, `integrate_prog_orbit`, `straighten_stream_orbit_interp` all do `init_displacement[:3] * u.kpc`), but `data/init_displacements.txt` *writes* it in pc because that's what petar wants. `extended_grid_info.__init__` now does the pc->kpc conversion once, at the bottom, for the six real orbits (`circ` was always already in kpc). **this was a silent 1000x bug** -- it put the progenitor reference at 16.6 Mpc instead of 16.6 kpc, where the potential is negligible, so the "orbit" free-streamed in a straight line. sanity check if you ever touch it: `paf.prog_position(init_displacement, age)` must reproduce that orbit's row in `FINAL_ics_nolmc.csv` (it does, to 0.0000 kpc, for all six).
 - **potential is `gp.BovyMWPotential2014(units=galactic)` everywhere** -- `prog_position`, `integrate_prog_orbit`, `straighten_stream_orbit_interp`. petar was run with `external_mode='galpy'` to match. don't change one without the others.
 - **`interrupt_mode='bse'`** is assumed by every loader (stellar evolution on).
+- **`star.mass0` is NOT the ZAMS mass except at snapshot 0.** see its own section below -- this one is easy to get wrong silently because the field is literally labelled "initial stellar mass."
+
+## `star.mass0` is an *effective* initial mass, and BSE rewrites it
+if you want the IMF, or want to paint isochrone photometry onto stars by their birth mass, **read `mass0` out of `data.0` and match to the present day by `id`.** the present-day `mass0` is a different quantity.
+
+`mass0` (`M0`/`mass` in the Fortran, `m0` in petar's C++) is the ZAMS mass *whose evolutionary track the star is currently being interpolated along*. SSE is a set of analytic fits parameterized by (M0, Z, age), so whenever the real mass `mt` changes, BSE re-parameterizes the star onto the track of a different initial mass to keep the fitting formulae valid. `mt` (petar's `mass`) is the real current mass; `mass0` is a fitting coordinate.
+
+this is stock Hurley, not a petar quirk:
+- Hurley, Pols & Tout (2000), MNRAS 315, 543 -- SSE. the mass-loss section is where M0 gets reset for MS/HG stars so they follow a lower-mass track.
+- Hurley, Tout & Pols (2002), MNRAS 329, 897 -- BSE, for the mass-transfer / rejuvenation case.
+
+the actual rewrite sites, in `~/software/PeTar/bse-interface/bse/`:
+
+| site | trigger |
+|---|---|
+| `evolv1.f:152-157`, `evolv1.f:213-215` | wind mass loss, single star: `if(kw.le.2.or.kw.eq.7) mass = mt` |
+| `evolv2.f:712-717` | same, in the binary evolver |
+| `evolv2.f:2041-2043` | Roche-lobe mass transfer -- **both** donor and accretor, if MS or naked-He MS |
+| `evolv2.f:2047-2063` | HG stars, with a revert if the reduced M0 would leave the core too massive for the new track |
+| `hrdiag.f:787` | **remnant formation: at WD birth `mass = mt`, i.e. M0 is overwritten with the remnant mass.** this is the big one |
+| `hrdiag.f:446` | core exposed -> naked He star |
+| `mix.f`, `merge.f` | collisions/mergers; M0 is passed by reference and rewritten |
+
+petar just passes `m0` by reference into `evolv1_`/`evolv2_`/`merge_`/`mix_` (`bse_interface.h:1423, 1529, 1649`) and writes back whatever comes out. the field comment `///> Initial stellar mass in solar units` (`bse_interface.h:259`) is true only at t=0.
+
+measured on `gd1/hm/rvir=6/copy 0`, snapshot 0 vs. 2700 Myr (14999 -> 14839 particles):
+
+| present-day type | N | N with changed `mass0` | median delta |
+|---|---|---|---|
+| 0 (low-mass MS) | 12714 | 1661 | 0.0000 |
+| 1 (MS) | 1050 | 1050 | -0.0007 |
+| 2-6 (giants) | 37 | 37 | -0.060 |
+| 10-14 (remnants) | 1038 | 1038 | **-1.098** |
+
+3786 of 14839 survivors changed (3589 down, 197 up). summed `mass0` over survivors falls 9022 -> 7094 Msun and the count above 1 Msun falls 1618 -> 841, so the present-day `mass0` histogram is depleted at the high-mass end and piled up at low mass -- it does not look like an IMF, and no amount of adding merged stars back fixes it.
+
+**ID bookkeeping is fine, so the ID match works.** checked on the same run: IDs are unique in both snapshots, nothing is renumbered, and there are **zero** present-day IDs absent from snapshot 0 -- 160 IDs disappear (mergers) and none appear. so
+
+```python
+order = np.argsort(ids0)
+zams_index = order[np.searchsorted(ids0[order], ids1)]
+assert (ids0[zams_index] == ids1).all()
+m0_zams = m00[zams_index]
+```
+
+recovers the birth mass of every surviving star, and `np.concatenate([m0_zams, m00[~np.isin(ids0, ids1)]])` reproduces `m00` exactly (verified with `np.sort`). this is what `noise.py` does when it reconstructs the IMF from two snapshots.
+
+**as of 21 Sep 2026 you mostly don't have to do this by hand.** `intrinsic_stream_data_v3` now does the lookup internally and hands back *both* columns on the `luminous` and `companions` subdicts -- `m0_zams` (genuine birth mass) and `m0_effective` (the BSE-modified one). see the "two initial-mass columns" section under `intrinsic_stream_data_v3`. the hand-rolled version above is still what you want if you're working straight off `load_particle` output, or if you need the stars that have *disappeared*, which the subdicts by construction don't contain.
+
+⚠️ naming: the field is **`star.mass0`** in the petar python reader (`petar/bse.py`) and **`m0`** in the C++ (`bse_interface.h`). there is no `star.m0` and no top-level `particle.mass0` -- both are `AttributeError`.
 
 ## `extended_grid_info(scratch=True)`
 holds paths, apocenters, stream ages (Vedant's), and init displacements as attributes. grid axes are orbit x stellar_pop (`lm`/`hm`) x rvir (`0.75, 1.5, 3, 6` pc, indexed 0-3) x copy. use `retrieve_sim_info(orbit, stellar_pop, rvir_index, copy) -> path, apo, age, init_displacement` rather than assembling paths by hand.
@@ -119,11 +171,27 @@ top level: `init_displacement`, `nsingles`, `nbinaries`, `IDs`, `pot`, plus one 
 **ordering gotcha:** top-level `IDs` and `pot` are concatenated as `[singles, binary_p1, binary_p2]`, so they always have length `nsingles + 2*nbinaries`. the subdict arrays are concatenated as `[singles, binaries]`, where "binaries" is one row per binary for `CoM`/`luminous` but two for `companions`. so **`IDs` only lines up with the `companions` subdict**; for `CoM`/`luminous` you have to slice `[:nsingles+nbinaries]` (this is what the docstring note is getting at).
 
 the three treatments:
-- `CoM` -- each binary as a single center-of-mass point. no `L`/`R`/`type`.
+- `CoM` -- each binary as a single center-of-mass point. no `L`/`R`/`type`/`m0_*`.
 - `luminous` -- each binary represented by its brighter component (`binaries.p1.star.lum >= binaries.p2.star.lum`).
 - `companions` -- both components kept separately; this is the only one that double-counts.
 
-each subdict has: `coords` (the `StreamFrame` dict), `pos`/`vel` (galactocentric, with units), `mass`, `inMW`, `trim`, `in_rtid`, and `phi2_straight`/`r_straight`/`vr_straight`/`pm_phi1_straight`/`pm_phi2_straight`. `luminous`/`companions` also get `L`, `R`, `type`.
+each subdict has: `coords` (the `StreamFrame` dict), `pos`/`vel` (galactocentric, with units), `mass`, `inMW`, `trim`, `in_rtid`, and `phi2_straight`/`r_straight`/`vr_straight`/`pm_phi1_straight`/`pm_phi2_straight`. `luminous`/`companions` also get `L`, `R`, `type`, `m0_zams`, `m0_effective`.
+
+### the two initial-mass columns (added 21 Sep 2026)
+`luminous` and `companions` carry **both** flavours of initial mass, so you can pick:
+
+- **`m0_zams`** -- the genuine birth mass. read out of `data.0` (`p0.star.mass0`, which at t=0 is exactly `p0.mass`) and matched to the present-day particle by `id`. **this is the one you want for the IMF and for isochrone photometry.**
+- **`m0_effective`** -- the present-day `star.mass0`, i.e. whichever ZAMS track BSE is currently interpolating the star along. use it if you want to reproduce what BSE itself thinks the star is, e.g. when cross-checking `L`/`R`/`type` against an SSE track.
+
+both are bare floats in Msun (no astropy units, unlike `mass`). neither is the *current* mass -- that's `mass`.
+
+the two are genuinely different: on `gd1/hm/rvir=6/copy 0` at 2700 Myr, the `companions` subdict has 3786 of 14839 entries where they disagree, 1489 vs 841 above 1 Msun, and max 111.1 vs 61.0 Msun. see the `star.mass0` section for why.
+
+implementation notes:
+- **the ID match is done per component, before the `luminous` selection** (`sid`, `bp1id`, `bp2id` each get their own `searchsorted`, then `np.where(luminous_mask, ...)`), so the `IDs` ordering gotcha above does *not* bite here -- binaries get the right ZAMS mass regardless of which component is brighter. don't "simplify" this by slicing top-level `IDs`.
+- each lookup `assert`s `ids0[index] == id`, so a present-day particle with no snapshot-0 counterpart fails loudly rather than silently grabbing a neighbour's mass. (there are none in the runs checked: IDs are unique, nothing is renumbered, and no new IDs appear -- only mergers remove them.)
+- it costs one extra read of `data.0` per call, via `load_particle(path, 0, file_naming_convention="every integer")` -- deliberately not `load_coords_v2`, since only the `id` and `star.mass0` columns are wanted and the streamframe/core machinery is irrelevant at t=0.
+- the lookup is rebuilt inside the `binary_treatment` loop, so it runs twice when both `luminous` and `companions` are requested. it's an argsort of ~15k ints, so it doesn't matter, but the source comment noting it is correct.
 
 ### `in_rtid` (for cutting the progenitor out)
 `in_rtid` = distance from the core <= `tidal.rtid[file_index]`, i.e. still bound-ish, so `~in_rtid` is the "remove the progenitor" mask. it is computed on the **core-frame** `singles.pos`/`binaries.pos` (which is the frame those files are already in, and the frame `rtid` is measured in), and it is applied **before** `inMW`/`trim` -- so the usage is `in_rtid[inMW][trim]`, same as everything else.
@@ -155,7 +223,7 @@ two fixes went in here:
 `straighten_stream_polynomial(phi1, y, degree=5, trim_criteria=[inMW, trim], return_poly_fn=True)` is the polynomial alternative. note `trim_criteria` has no working default -- it unpacks `inMW, trim = trim_criteria` unconditionally, so leaving it `None` is a `TypeError`.
 
 ## photometry stuff [MAJOR WIP ⚠️]
-TODO: i think it would be way easier to just pull a MIST isochrone with gaia + the z-band to grab photometry given masses. would not be totally honest since a caveat of this project is that the stellar+dynamical ages of the streams are the same, however all of the massive stellar evolution stuff should be over by a few Gyr. the tophat photometric bandbass integration is easy to add bugs to. 
+TODO: i think it would be way easier to just pull a MIST isochrone with gaia + the z-band to grab photometry given masses. would not be totally honest since a caveat of this project is that the stellar+dynamical ages of the streams are the same, however all of the massive stellar evolution stuff should be over by a few Gyr. the tophat photometric bandbass integration is easy to add bugs to. **this is what `noise.py` is doing now** -- and the thing it wants is the ZAMS mass, so interpolate against the isochrone's `initial_mass` column (not `star_mass`) using `lumdict['m0_zams']`, NOT `lumdict['m0_effective']` and NOT `lumdict['mass']` (current mass). see the `star.mass0` section above.
 
 synthetic photometry from a **blackbody**, with **top-hat filters** -- no real Gaia/SDSS response curves, so treat colors as approximate.
 - `define_photometric_bands()` -- Gaia G (330-1050 nm), BP (330-680), RP (630-1050) from the DR2 paper, plus a 100 nm-wide z centered at 900 nm.
@@ -383,6 +451,7 @@ maximum likelihood first, then emcee for posteriors (per the header comment). th
 
 # bugs / stale things that remain
 in rough order of how much they'd hurt:
+- **`star.mass0` at the present day is not the ZAMS mass** -- BSE rewrites it on mass loss, mass transfer and especially remnant formation. it fails *silently*: you get a plausible-looking mass array that just isn't an IMF. use `m0_zams` off the `luminous`/`companions` subdicts, not `m0_effective`; if you're working off raw `load_particle` output, read `star.mass0` from snapshot 0 and match by `id` yourself. see its own section above.
 - **`in_rtid` is the wrong length for the `companions` subdict**, so `in_rtid[inMW]` raises `IndexError` there. fine for `CoM` and `luminous`. details above.
 - **`get_init_displacements.py` silently produces nothing** -- its `names_to_run` list still uses the long stream names that were renamed out of `FINAL_ics_nolmc.csv`.
 - **anything cached from before the init_displacement units fix is wrong** -- not just the `*_straight` residuals but the intrinsic `coords` themselves, since the progenitor reference position and velocity were both bogus. regenerate.
