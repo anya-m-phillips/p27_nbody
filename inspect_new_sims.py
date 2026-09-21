@@ -473,27 +473,10 @@ def clip_coords(coords, tc):
         out[key] = coords[key][inMW][trim]
     return out
 
-def desi_RVerr(zmag, feh=-2.0):
-    """
-    get RV error for desi data model, which 
-    depends on z magnitude and metallicity
-    """
-    log_err = -0.47 + 0.27*(zmag-16) - 0.23*feh
-    return 10**log_err
+
 
 ### TODO: define Via RVerr(mag, metallicity) #<-- from viamock; will need to add to this env (?) check my machine.  
 
-def add_noise(icrs_coords, survey='DESI'):
-    """
-    TODO: write this function lol. 
-    i think in detail the transformation of proper motion errors (and phi1/phi2 errors if we have those)
-    is non-trivial and Gala might have functions for transforming the covariance matrix or something. 
-    will want to have "DESI" and "Via" options 
-    for the survey velocity errors. 
-    For Desi these will come from a Koposov paper, 
-    for Via they will come from viamock. 
-    """
-    return
 
 
 def get_cocoon_selection(coords, cuts):

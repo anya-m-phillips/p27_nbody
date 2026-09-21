@@ -494,5 +494,8 @@ if __name__=='__main__': #### basically I do not want this part to run when I im
                                     add_noise=False)
     plt.savefig("fig/noiseless_comparison_%i.pdf"%n, dpi=300, bbox_inches='tight')
 # %%
-
-# %%
+    grid_info = paf.extended_grid_info(scratch=False) 
+    lm_colors, hm_colors, simcolors = paf.define_simcolors()
+    reordered_colors = hm_colors + lm_colors[::-1]
+    cc = reordered_colors[:-1]
+    prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
