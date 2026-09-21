@@ -52,12 +52,13 @@ import inspect_new_sims as simspect
 import pickle
 import gmm as gmm #<-- functions from gmm
 import read_mist_models
+sys.path.append(repo_path+"/old/")
 # %%
 # np.log10(12e9) #<-- print the log(age) isochrone i want. 
 # 10**10.07918 / 1e9
 
-np.log10(2700e6)
-10**( 9.43136) / 1e9 #<-- roughly 2.7 Gyr. 
+# np.log10(2700e6)
+# 10**( 9.43136) / 1e9 #<-- roughly 2.7 Gyr. 
 # %%
 ### 12 Gyr isochrone
 isocmd = read_mist_models.ISOCMD('/n/home02/amphillips/data/MIST_12Gyr_fehn2_ubvraplus/MIST_iso_6ab1420039622.iso.UBVRIplus')
@@ -75,6 +76,9 @@ mass_iso = isocmd.isocmds[age_ind]['star_mass']
 Teff_iso = 10**isocmd.isocmds[age_ind]['log_Teff']
 L_iso = 10**isocmd.isocmds[age_ind]['log_L']
 
+
+plt.hist(isocmd.isocmds[age_ind]['initial_mass'], bins=10)
+plt.xlabel(r'$M_{ini}$')
 # print info
     # print(isocmd.photo_sys)
     # print(isocmd.ages)
@@ -163,8 +167,35 @@ def desi_RVerr(zmag, feh=-2.0):
     """
     log_err = -0.47 + 0.27*(zmag-16) - 0.23*feh
     return 10**log_err
+
+nus = paf.define_photometric_bands()
+nu_G_min, nu_G_max, nu_BP_min, nu_BP_max, nu_RP_min, nu_RP_max, nu_z_min, nu_z_max = nus
+def get_gaia_photometry(Teff, Radius, distance):
+    # frequencies = [nu_G.to(u.Hz).value, nu_BP.to(u.Hz).value, nu_RP.to(u.Hz).value]
+    f_min = [nu_G_min.to(u.Hz).value, nu_BP_min.to(u.Hz).value, nu_RP_min.to(u.Hz).value]
+    f_max = [nu_G_max.to(u.Hz).value, nu_BP_max.to(u.Hz).value, nu_RP_max.to(u.Hz).value]
+
+    mags = []
+    for nu_min, nu_max in zip(f_min, f_max):
+        mag = paf.integrated_mag(nu_min, nu_max, Teff, Radius, distance)
+        mags.append(mag)
+    return mags
+
+### add the BB curve integration step: 
+def g_phot(T, R, dpc):
+    ### T, R just need astropy units. 
+    R_cgs = R.cgs.value
+    Teff_cgs = T.cgs.value
+    G, BP, RP = [],[],[]
+    for Tval, Rval in tqdm(zip(Teff_cgs, R_cgs)):
+        Gval, BPval, RPval = get_gaia_photometry(Tval, Rval, dpc) # 10 pc. 
+        G.append(Gval)
+        BP.append(BPval)
+        RP.append(RPval)   
+    return np.array(G), np.array(BP), np.array(RP)    
+
 ### test whether z CMD looks reasonable. 
-# z_iso = gaia_g_to_lsst_z(G_iso, BP_iso-RP_iso)
+z_iso = gaia_g_to_lsst_z(G_iso, BP_iso-RP_iso)
 # fig, ax = plt.subplots()
 # ax.scatter(BP_iso - RP_iso, z_iso, c=np.log10(mass_iso))
 # ax.invert_yaxis()
@@ -220,50 +251,50 @@ stellar_types = lumdict['type']
 nonrem = stellar_types < 10 # <-- i think 10 starts to be WD. 
 
 L, R = lumdict['L'].to(u.Lsun), lumdict['R'].to(u.Rsun)
-Teff = get_Teff(R, L)
+Teff = get_Teff(R, L).to(u.K)
+G, BP, RP = g_phot(Teff, R, dpc=10)
 
 ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
 inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
 trim_new = gmm.trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
 
 usePhot = nonrem & unbound & trim_new
-
-
-
 # %%
+BP_RP = BP - RP
+z = gaia_g_to_lsst_z(G, BP_RP)
 fig, ax = plt.subplots()
-ax.scatter(Teff.to(u.K)[usePhot], L[usePhot],
-           edgecolor='k', lw=.5, s=30, 
-           c= stellar_masses[usePhot], vmin=0.01, vmax=2)
-        #    c='cornflowerblue')
+## CMD
+ax.scatter(BP_RP[usePhot], z[usePhot], c=stellar_masses[usePhot],
+           edgecolor='k', lw=.5, s=30,vmin=0.1, vmax=2)
+
 iso_cutoff = -700
-ax.scatter(Teff_iso[:iso_cutoff], L_iso[:iso_cutoff], zorder=0, 
-           c = mass_iso[:iso_cutoff], vmin=0.01, vmax=2)
-        #    c='k')
-ax.set_xscale('log')
-ax.set_yscale('log')
-ax.set_xticks([1e4, 1e3])
-ax.invert_xaxis()
-# sel = Teff_iso<1e4
-ax.set_xlabel(r'$T_{\rm eff}~[\rm K]$')
-ax.set_ylabel(r'$L~[L_{\odot}]$')
-# ax.scatter(mass_iso[sel], L_iso[sel])
-# ax.scatter(stellar_masses[usePhot], L[usePhot].to(u.Lsun))
+ax.scatter(BP_iso[:iso_cutoff]-RP_iso[:iso_cutoff], z_iso[:iso_cutoff],
+           c=mass_iso[:iso_cutoff], vmin=0.1, vmax=2, zorder=0)
+ax.set_xlabel(r'$G_{\rm BP} - G_{\rm RP}$')
+ax.set_ylabel(r'$z$')
+ax.invert_yaxis()
+
+
+
+########## Kiel diagram
+# ax.scatter(Teff.to(u.K)[usePhot], L[usePhot],
+#            edgecolor='k', lw=.5, s=30, 
+#            c= stellar_masses[usePhot], vmin=0.01, vmax=2)
+#         #    c='cornflowerblue')
+# ax.scatter(Teff_iso[:iso_cutoff], L_iso[:iso_cutoff], zorder=0, 
+#            c = mass_iso[:iso_cutoff], vmin=0.01, vmax=2)
+#         #    c='k')
+# ax.set_xscale('log')
+# ax.set_yscale('log')
+# ax.set_xticks([1e4, 1e3])
+# ax.invert_xaxis()
+# # sel = Teff_iso<1e4
+# ax.set_xlabel(r'$T_{\rm eff}~[\rm K]$')
+# ax.set_ylabel(r'$L~[L_{\odot}]$')
+
 
 
 # bins = np.linspace(0, 2, 50)
 # ax.hist(mass_iso, bins=bins, color='k', alpha=0.2)
 # ax.hist(stellar_masses[nonrem], bins=bins, color='k', histtype='step', lw=3)
 # %%
-# stellar_masses
-# plt.hist(mass_iso, bins=10)
-# plt.hist(isocmd.isocmds[age_ind]['initial_mass'], bins=10, histtype='step', lw=3)
-
-# # %%    
-# # print(isocmd.hdr_list)
-# isocmd.isocmds[age_ind]['log10_isochrone_age_yr']
-# # %%
-# iii = np.argmax(stellar_masses[nonrem])
-# stellar_types[iii]
-# max(stellar_masses[nonrem])
-# # max(stellar_masses)
