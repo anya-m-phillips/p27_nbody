@@ -441,7 +441,7 @@ iso_cutoff = -700
 ax.set_xlabel(r'$G_{\rm BP} - G_{\rm RP}$')
 ax.set_ylabel(r'$G$')
 ax.invert_yaxis()
-ax.set_ylim(bottom=21o)
+ax.set_ylim(bottom=21)
 ax.set_xlim(right=1.5)
 
 

@@ -45,7 +45,7 @@ scripts in top directory for now:
 
 - `nfc_plots.py` was used for plotting in preparation for a conference; will likely abandon soon
 
-- `noise.py`: adding survey noise and re-fitting the GMM. currently the live place where **MIST isochrone photometry** is being painted onto stars by initial mass, replacing the blackbody + top-hat scheme in `paf` (see the photometry section). reads the isochrone with `read_mist_models.ISOCMD`; `gaia_g_to_lsst_z` / `lsst_z_to_gaia_g` are the RTN-099 sec 1.3.4 polynomial and its exact inverse. the block at the bottom reconstructs the IMF from two snapshots -- **that block only works because it takes `mass0` from snapshot 0**, see the `star.mass0` section. for the per-star photometry use `lumdict['m0_zams']`, which `intrinsic_stream_data_v3` now provides directly.
+- `noise.py`: adding survey noise and re-fitting the GMM. currently the live place where **MIST isochrone photometry** is being painted onto stars by initial mass, replacing the blackbody + top-hat scheme in `paf` (see the photometry section). reads the isochrone with `read_mist_models.ISOCMD`; `gaia_g_to_lsst_z` / `lsst_z_to_gaia_g` are the RTN-099 sec 1.3.4 polynomial and its exact inverse. the interpolation itself is `build_isochrone_table` / `isochrone_photometry` / `gaia_from_isochrone`, defined here rather than in `paf` -- **read the precision subsection before touching them**, the post-turnoff sequence spans 0.017 Msun and the tightest node spacing is 1.6e-11. `USE_ISOCHRONE = False` in the main block reverts to the blackbody path for comparison. the block at the bottom reconstructs the IMF from two snapshots -- **that block only works because it takes `mass0` from snapshot 0**, see the `star.mass0` section. for the per-star photometry use `lumdict['m0_zams']`, which `intrinsic_stream_data_v3` now provides directly.
 
 # notes on `paf` (PETAR_ANALYSIS_FUNCTIONS.py)
 ~2400 lines, a lot of it leftover from the old grid (the `#<-- LEFTOVER FROM OLD GRID` markers are honest -- `define_paths*`, `define_apocenters`, `unpack_escaper_dict` etc. are superseded by `extended_grid_info`). the notes below are for the parts the current pipeline actually touches.
@@ -225,6 +225,45 @@ two fixes went in here:
 ## photometry stuff [MAJOR WIP ⚠️]
 TODO: i think it would be way easier to just pull a MIST isochrone with gaia + the z-band to grab photometry given masses. would not be totally honest since a caveat of this project is that the stellar+dynamical ages of the streams are the same, however all of the massive stellar evolution stuff should be over by a few Gyr. the tophat photometric bandbass integration is easy to add bugs to. **this is what `noise.py` is doing now** -- and the thing it wants is the ZAMS mass, so interpolate against the isochrone's `initial_mass` column (not `star_mass`) using `lumdict['m0_zams']`, NOT `lumdict['m0_effective']` and NOT `lumdict['mass']` (current mass). see the `star.mass0` section above.
 
+**as of 21 Sep 2026 that TODO is done** -- the isochrone interpolation lives in `noise.py` and is what the CMDs are made from now. the blackbody functions below are still in `paf` and still reachable (`USE_ISOCHRONE = False`), but nothing current uses them. see the next section; the `paf` bullets after it are the fallback path.
+
+### isochrone interpolation: ZAMS mass -> Gaia mags (`noise.py`)
+three functions, no state, all float64. the point of doing it this way rather than by blackbody is that **the isochrone is a free parameter**: swap the file + `age_index` at the top of `noise.py` and the whole stellar population changes, which is the thing the blackbody scheme couldn't do.
+
+- `build_isochrone_table(iso, bands=ISO_BANDS, max_phase=5, mass_col='initial_mass')` -> `(m0_grid, {band: mags})`. `iso` is one age's rows, i.e. `isocmd.isocmds[age_ind]`. it sorts on `mass_col` and **drops any non-increasing node** rather than trusting the file, because `np.interp` requires increasing `xp` and does not check -- same trap as `straighten_stream_orbit_interp`, and it fails silently in exactly the same way. it prints if it drops anything (it drops nothing on the 12 Gyr file).
+- `isochrone_photometry(m0_query, m0_grid, table)` -> `(phot, on_iso)`. **off-isochrone stars get `NaN`, not a clamped edge value**, and `on_iso` flags them. deliberate: a forgotten mask then shows up as a hole in the CMD rather than a fake pile-up at the tip of the AGB (contrast `straightened_obscoords_orbit_interp`, which *does* silently clamp).
+- `gaia_from_isochrone(m0_query, iso, ...)` -> `(G, BP, RP, on_iso)`, the one-call wrapper.
+
+mags are **absolute**, same convention as `g_phot(..., dpc=10)`, so `gaia_g_to_lsst_z` / `m_from_M` downstream need no change.
+
+**`alive` is now two-sided.** it used to be `m0s <= max(m0_iso)`; it's `on_iso` now, because the sim's IMF reaches below the isochrone's low-mass end (0.102 Msun) as well as above its turnoff.
+
+#### precision: this is the part with no headroom
+the whole reason to be careful is that the evolved sequence is nearly degenerate in initial mass. on the 12 Gyr, [Fe/H]=-2 file (1460 rows, `initial_mass` strictly increasing over all of them, float64 in the file already):
+
+| phase | N | m0 range |
+|---|---|---|
+| 0 MS | 203 | 0.1022 - 0.7884 |
+| 2 RGB | 151 | 0.7887 - 0.8025 |
+| 3 CHeB | 102 | 0.80249 - 0.80416 |
+| 4 EAGB | 101 | 0.80416 - 0.80438 |
+| 5 TPAGB | 601 | 0.804376 - 0.804398 |
+| 6 post-AGB | 302 | 0.804398 - 0.80521 |
+
+so **everything above the turnoff occupies 0.0168 Msun**, and the tightest node spacing is **1.58e-11 Msun**, on the TP-AGB. that is ~1e5 x float64 eps at 0.8 Msun, so it is resolvable, but:
+- **never round, bin, or cast to float32 anywhere on the mass path.** interpolate against the raw `initial_mass` column and query with the raw `m0_zams` floats.
+- **linear, not cubic.** on the RGB/AGB segments dM/dmag is ~1e-9; a spline overshoots enormously between nodes and invents points off the isochrone. linear is monotonic and can't.
+- `initial_mass`, not `star_mass`, is also what makes the map invertible at all -- `star_mass` turns over once winds start.
+
+checked: interpolation at the nodes reproduces the table **bit-exactly** (max |err| = 0 in all three bands), and the tightest node pair (1.58e-11 Msun apart) differs by 0.012 mag in G and 0.013 in BP-RP and comes back cleanly distinguished, with the midpoint strictly between. also verified shuffle-invariant, and NaN/`on_iso` correct on both sides of the range.
+
+#### two things that are features, not bugs
+- **interpolating in mass gets the relative numbers of giants right for free.** a phase is sampled in proportion to the initial-mass interval it occupies, which is exactly its lifetime x IMF weight. no extra weighting needed -- and it's why the giants come out rare despite the RGB having 151 of the 1460 rows.
+- **`max_phase=5` is the default**, dropping post-AGB (phase 6, 302 rows). those are the proto-WD tail, and they're already cut from the sim side by `nonrem` (`type < 10`). set `ISO_MAX_PHASE = None` to keep them. note this moves `max_m0` from 0.80521 to 0.80440, so the `alive` count depends on it.
+
+⚠️ the old `iso_cutoff = -700` magic number in the plotting cells is a *crude* stand-in for this -- index 760 of 1460 corresponds to m0 = 0.804388, i.e. partway through the TP-AGB, so it throws away most of phase 5 and all of 6 but keeps some. use `max_phase` instead; the `iso_cutoff` lines are only still there for overplotting the raw isochrone.
+
+### the blackbody fallback (in `paf`, no longer the live path)
 synthetic photometry from a **blackbody**, with **top-hat filters** -- no real Gaia/SDSS response curves, so treat colors as approximate.
 - `define_photometric_bands()` -- Gaia G (330-1050 nm), BP (330-680), RP (630-1050) from the DR2 paper, plus a 100 nm-wide z centered at 900 nm.
 - `integrated_mag(nu_min, nu_max, T, R, d=10)` -- AB magnitude (the -48.60 zero point), `d` in pc, so `d=10` gives an absolute mag. **T and R must be cgs bare numbers** (K and cm) since `B(nu,T)` uses cgs constants -- this is why `inspect_new_sims.py` does `.cgs.value` first. note the 1/nu weighting normalization at the `np.trapezoid` lines is marked "suggestion that idk why works. " in the source and has not been validated against a real photometric zero point; worth checking against a known star before trusting absolute mags (colors are probably safer).
@@ -468,7 +507,8 @@ in rough order of how much they'd hurt:
 - `core_to_galcen_frame` still adds the raw `core.vel` rather than the `fix_core_vel` version (see above).
 - `correct_core` is dead code that also strips units.
 - the `m3` great circle still doesn't describe the whole stream (see the gala gotchas section); the phi2 residual std of 0.786 vs ~0.2 for everything else is that showing up.
-- photometry is still blackbody + top-hat filters with an unvalidated normalization.
+- ~~photometry is still blackbody + top-hat filters with an unvalidated normalization~~ **fixed** -- `noise.py` interpolates a MIST isochrone in `initial_mass` now, and MIST mags come with real response curves and a real zero point. the blackbody path in `paf` is still there behind `USE_ISOCHRONE = False` and still has the unvalidated 1/nu normalization, so don't trust *that* one's absolute mags if you go back to it. the live caveat is different now: the isochrone age is a free parameter that does **not** match the dynamical age, which is the whole reason it's swappable.
+- the isochrone is old, so it stops at ~0.805 Msun and every more massive sim star is thrown out (`alive` / `on_iso`). that's a real selection, not a rounding detail -- at `hm` the discarded stars are the luminous ones, so quote how many got dropped alongside any luminosity-weighted number.
 - `straighten_stream_orbit_interp_arbitrary_frame` in `paf` is a commented-out stub.
 - `add_noise` is a stub, and `viamock` isn't in the env yet.
 
