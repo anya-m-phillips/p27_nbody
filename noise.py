@@ -56,8 +56,7 @@ import read_mist_models
 
 ### stuff to add errors. 
 from pygaia.errors.astrometric import parallax_uncertainty, proper_motion_uncertainty, total_proper_motion_uncertainty, total_position_uncertainty
-from viamock import errors as via_errors
-
+import viamock
 # %%
 # np.log10(12e9) #<-- print the log(age) isochrone i want. 
 # 10**10.07918 / 1e9
@@ -144,10 +143,25 @@ def desi_RVerr(zmag, feh=-2.0):
     log_err = -0.47 + 0.27*(zmag-16) - 0.23*feh
     return 10**log_err
 
-def via_RVerr(G, log_Teff, feh=-2.0, ehr=10.0):
-    erv = via_errors.get_viaspec_errors(G=G, feh=feh, logteff = log_Teff, exptime_ehr=ehr)
-    return erv[0] #<-- ?? indexing??
+############# decided i don't need a wrapper function for via errors. 
+def via_RVerr(G, log_Teff, feh=-2.0, exptime_s = 3600, nexp=1, **kwargs):
+    """
+    maybe a little silly to wrap tbh. 
+    kwargs might be seeing, moon %, airmass, idk. 
+    """
+    erv, _, _ = viamock.get_viaspec_errors(
+        G = G, 
+        feh = feh,
+        logteff = log_Teff, 
+        exptime_s = exptime_s,
+        nexp=nexp,
+        **kwargs
+    )
+    return erv
 
+
+########## also deciding against blackbody integration... 
+#    but keeping the functions perhaps to illustrate the difference in stellar populations. 
 nus = paf.define_photometric_bands()
 nu_G_min, nu_G_max, nu_BP_min, nu_BP_max, nu_RP_min, nu_RP_max, nu_z_min, nu_z_max = nus
 def get_gaia_photometry(Teff, Radius, distance):
@@ -173,6 +187,8 @@ def g_phot(T, R, dpc):
         BP.append(BPval)
         RP.append(RPval)   
     return np.array(G), np.array(BP), np.array(RP)    
+###########################
+
 
 ### ------------------------------------------------------------------------ ###
 ###  isochrone interpolation: ZAMS mass --> synthetic Gaia photometry        ###
@@ -289,272 +305,275 @@ def gaia_from_isochrone(m0_query, iso, bands=ISO_BANDS, max_phase=5):
 
 
 
-### isochrone stuff:
-### 12 Gyr isochrone
-isocmd = read_mist_models.ISOCMD('/n/home02/amphillips/data/MIST_12Gyr_fehn2_ubvraplus/MIST_iso_6ab1420039622.iso.UBVRIplus')
-age_ind = isocmd.age_index(10.07918)
-
-
-### 2700 Myr (dynamical age) isochrone
-# isocmd = read_mist_models.ISOCMD('/n/home02/amphillips/data/MIST_2700Myr_fehn2_ubvraplus/MIST_iso_6ab14f0410dce.iso.UBVRIplus')
-# age_ind = isocmd.age_index(9.43136)
-
-G_iso = isocmd.isocmds[age_ind]['Gaia_G_EDR3']
-BP_iso = isocmd.isocmds[age_ind]['Gaia_BP_EDR3']
-RP_iso = isocmd.isocmds[age_ind]['Gaia_RP_EDR3']
-z_iso = gaia_g_to_lsst_z(G_iso, BP_iso-RP_iso)
-
-mass_iso = isocmd.isocmds[age_ind]['star_mass']
-m0_iso = isocmd.isocmds[age_ind]['initial_mass']
-Teff_iso = 10**isocmd.isocmds[age_ind]['log_Teff']
-L_iso = 10**isocmd.isocmds[age_ind]['log_L']
-
-
-# plt.hist(isocmd.isocmds[age_ind]['initial_mass'], bins=10)
-# plt.xlabel(r'$M_{ini}$')
-# print info
-    # print(isocmd.photo_sys)
-    # print(isocmd.ages)
-    # print(isocmd.hdr_list)
-# fig, ax = plt.subplots()
-# ax.scatter(BP_iso - RP_iso, G_iso, c=np.log10(mass_iso))
-# ax.invert_yaxis()
-
-### load Jarvis+26 table 7
-# tt = Table.read('/n/home02/amphillips/data/jarvis26_Table7.fits', format='fits')
-# tt.colnames
-
-### test whether z CMD looks reasonable.
-# fig, ax = plt.subplots()
-# ax.scatter(BP_iso - RP_iso, z_iso, c=np.log10(mass_iso))
-# ax.invert_yaxis()
 # %%
-
 ###### MAIN PROGRAM BELOW 
-### okay... now i guess go about painting mags onto my stars...
-#   a ~12 Gyr isochrone is not quite fair, since my simulated stars are not 
-#   that old. hmmm..... idk 
-grid_info = paf.extended_grid_info(scratch=False) 
-lm_colors, hm_colors, simcolors = paf.define_simcolors()
-reordered_colors = hm_colors + lm_colors[::-1]
-cc = reordered_colors[:-1]
-prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+if __name__=="__main__":
+    ############# LOAD ISOCHRONES
+    ### 2700 Myr (dynamical age) isochrone
+    # isocmd = read_mist_models.ISOCMD('/n/home02/amphillips/data/MIST_2700Myr_fehn2_ubvraplus/MIST_iso_6ab14f0410dce.iso.UBVRIplus')
+    # age_ind = isocmd.age_index(9.43136)
 
-# ordering decided here. 
-orbits = ['gd1','aau','pa5','jet','m3','c19']
-init_displacements = [
-    grid_info.gd1_init_displacement, 
-    grid_info.aau_init_displacement,
-    grid_info.pa5_init_displacement,
-    grid_info.jet_init_displacement,
-    grid_info.m3_init_displacement,
-    grid_info.c19_init_displacement]
-masses = ['lm','hm']
-rvirs = [0.75, 1.5, 3, 6]
-copy_options = [0,1,2,3,4]
-# copy_options = [4,3,2,1,0]
+    ### 12 Gyr isochrone
+    isocmd = read_mist_models.ISOCMD('/n/home02/amphillips/data/MIST_12Gyr_fehn2_ubvraplus/MIST_iso_6ab1420039622.iso.UBVRIplus')
+    age_ind = isocmd.age_index(10.07918)
 
-keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] 
+    G_iso = isocmd.isocmds[age_ind]['Gaia_G_EDR3']
+    BP_iso = isocmd.isocmds[age_ind]['Gaia_BP_EDR3']
+    RP_iso = isocmd.isocmds[age_ind]['Gaia_RP_EDR3']
+    z_iso = gaia_g_to_lsst_z(G_iso, BP_iso-RP_iso)
 
-ii=0
-orbit = orbits[ii]
+    mass_iso = isocmd.isocmds[age_ind]['star_mass']
+    m0_iso = isocmd.isocmds[age_ind]['initial_mass']
+    Teff_iso = 10**isocmd.isocmds[age_ind]['log_Teff']
+    L_iso = 10**isocmd.isocmds[age_ind]['log_L']
 
-rvir_index=0
-rvir = rvirs[rvir_index]
+    ##### plots showing what masses we have... 
+    # plt.hist(isocmd.isocmds[age_ind]['initial_mass'], bins=10)
+    # plt.xlabel(r'$M_{ini}$')
+    # print info
+        # print(isocmd.photo_sys)
+        # print(isocmd.ages)
+        # print(isocmd.hdr_list)
+    # fig, ax = plt.subplots()
+    # ax.scatter(BP_iso - RP_iso, G_iso, c=np.log10(mass_iso))
+    # ax.invert_yaxis()
 
-mass_index=1
+    ### load Jarvis+26 table 7
+    # tt = Table.read('/n/home02/amphillips/data/jarvis26_Table7.fits', format='fits')
+    # tt.colnames
+
+    ### test whether z CMD looks reasonable.
+    # fig, ax = plt.subplots()
+    # ax.scatter(BP_iso - RP_iso, z_iso, c=np.log10(mass_iso))
+    # ax.invert_yaxis()
 
 
-(core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-    simspect.prepare_nbody_data_anycopy(
-        orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-        include_photometry=False, N_rtid_boundary=2.0 #<-- increase tidal boundary... will this work?
+    ### okay... now i guess go about painting mags onto my stars...
+    #   a ~12 Gyr isochrone is not quite fair, since my simulated stars are not 
+    #   that old. hmmm..... idk 
+    grid_info = paf.extended_grid_info(scratch=False) 
+    lm_colors, hm_colors, simcolors = paf.define_simcolors()
+    reordered_colors = hm_colors + lm_colors[::-1]
+    cc = reordered_colors[:-1]
+    prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+
+    # ordering decided here. 
+    orbits = ['gd1','aau','pa5','jet','m3','c19']
+    init_displacements = [
+        grid_info.gd1_init_displacement, 
+        grid_info.aau_init_displacement,
+        grid_info.pa5_init_displacement,
+        grid_info.jet_init_displacement,
+        grid_info.m3_init_displacement,
+        grid_info.c19_init_displacement]
+    masses = ['lm','hm']
+    rvirs = [0.75, 1.5, 3, 6]
+    copy_options = [0,1,2,3,4]
+    # copy_options = [4,3,2,1,0]
+
+    keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] 
+
+    ii=0
+    orbit = orbits[ii]
+
+    rvir_index=0
+    rvir = rvirs[rvir_index]
+
+    mass_index=1
+
+
+    (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+        simspect.prepare_nbody_data_anycopy(
+            orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+            include_photometry=False, N_rtid_boundary=2.0 #<-- increase tidal boundary... will this work?
+        )
+
+    # get distances also:
+    coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
+    distances = coords_obs.distance
+    sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
+
+    unbound = ~CMdict['in_rtid']
+    # unbound = unbound[inMW][trim] # don't care about this. 
+
+    stellar_masses = lumdict['mass'].to(u.Msun).value
+    stellar_types = lumdict['type']
+    nonrem = stellar_types < 10 # <-- i think 10 starts to be WD. 
+
+    ### the genuine birth mass -- NOT m0_effective (BSE's fitting coordinate) and
+    ### NOT mass (current mass). see the star.mass0 section of the readme.
+    m0s = np.asarray(lumdict['m0_zams'], dtype=np.float64)
+
+    L, R = lumdict['L'].to(u.Lsun), lumdict['R'].to(u.Rsun)
+    Teff = get_Teff(R, L).to(u.K)
+
+    USE_ISOCHRONE = True   # False falls back to the blackbody + top-hat scheme
+    ISO_MAX_PHASE = 5      # drop post-AGB(6); see build_isochrone_table
+
+    if USE_ISOCHRONE:
+        ### paint photometry by interpolating the isochrone in INITIAL mass.
+        m0_grid, iso_table = build_isochrone_table(isocmd.isocmds[age_ind],
+                                                max_phase=ISO_MAX_PHASE)
+        min_m0, max_m0 = m0_grid[0], m0_grid[-1]
+
+        iso_phot, on_iso = isochrone_photometry(m0s, m0_grid, iso_table)
+        G  = iso_phot['Gaia_G_EDR3']
+        BP = iso_phot['Gaia_BP_EDR3']
+        RP = iso_phot['Gaia_RP_EDR3']
+        log_Teff = iso_phot['log_Teff']
+
+
+        ### the isochrone is old, so it stops at the turnoff: everything more
+        ### massive than max_m0 has to be thrown out. (a handful of sim stars can
+        ### also sit below the isochrone's low-mass end, so this is two-sided.)
+        alive = on_iso
+        n_hi = int(np.count_nonzero(m0s > max_m0))
+        n_lo = int(np.count_nonzero(m0s < min_m0))
+        print(f'isochrone m0 range [{min_m0:.10f}, {max_m0:.10f}] Msun, '
+            f'{len(m0_grid)} nodes (min spacing {np.diff(m0_grid).min():.3e})')
+        print(f'painted {alive.sum()}/{len(m0s)} stars; dropped {n_hi} above and '
+            f'{n_lo} below the isochrone')
+    else:
+        max_m0 = m0_iso.max()
+        min_m0 = m0_iso.min()
+        alive = (m0s <= max_m0) & (m0s >= min_m0)
+        G, BP, RP = g_phot(Teff, R, dpc=10)
+
+
+
+    ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
+    inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
+    trim_new = gmm.trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
+
+    #### apply the trim to all of the coordinates:
+    trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
+    sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
+
+
+
+    ### distance things, get RV uncertainties
+    BP_RP = BP - RP
+    z = gaia_g_to_lsst_z(G, BP_RP)
+
+    mz = paf.m_from_M(z, dist=distances)# 10*u.kpc)
+    mG = paf.m_from_M(G, dist=distances)# 10*u.kpc)
+
+    rverr_desi = desi_RVerr(zmag=mz, feh=-2.0)
+    rverr_via = viamock.get_viaspec_errors(
+        G = mG, 
+        log_Teff=log_Teff, 
+        feh=-2.0, 
+        exptime_s=3600,
+        nexp=1 #<--- ** WHETHER TO BREAK UP THE EXPOSURES IS A CHOICE TO BE MADE; IT DOES MAKE A SLIGHT DiFFERENCE IN THE NOISE 
+        # could add seeing, moon %, ...
     )
 
-# get distances also:
-coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
-distances = coords_obs.distance
-sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
 
-unbound = ~CMdict['in_rtid']
-# unbound = unbound[inMW][trim] # don't care about this. 
+    pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
+    pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
 
-stellar_masses = lumdict['mass'].to(u.Msun).value
-stellar_types = lumdict['type']
-nonrem = stellar_types < 10 # <-- i think 10 starts to be WD. 
-
-### the genuine birth mass -- NOT m0_effective (BSE's fitting coordinate) and
-### NOT mass (current mass). see the star.mass0 section of the readme.
-m0s = np.asarray(lumdict['m0_zams'], dtype=np.float64)
-
-L, R = lumdict['L'].to(u.Lsun), lumdict['R'].to(u.Rsun)
-Teff = get_Teff(R, L).to(u.K)
-
-USE_ISOCHRONE = True   # False falls back to the blackbody + top-hat scheme
-ISO_MAX_PHASE = 5      # drop post-AGB(6); see build_isochrone_table
-
-if USE_ISOCHRONE:
-    ### paint photometry by interpolating the isochrone in INITIAL mass.
-    m0_grid, iso_table = build_isochrone_table(isocmd.isocmds[age_ind],
-                                               max_phase=ISO_MAX_PHASE)
-    min_m0, max_m0 = m0_grid[0], m0_grid[-1]
-
-    iso_phot, on_iso = isochrone_photometry(m0s, m0_grid, iso_table)
-    G  = iso_phot['Gaia_G_EDR3']
-    BP = iso_phot['Gaia_BP_EDR3']
-    RP = iso_phot['Gaia_RP_EDR3']
-    log_Teff = iso_phot['log_Teff']
+    rng = np.random.default_rng(seed=42)
+    pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+    pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+    phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+    phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
 
 
 
 
-    ### the isochrone is old, so it stops at the turnoff: everything more
-    ### massive than max_m0 has to be thrown out. (a handful of sim stars can
-    ### also sit below the isochrone's low-mass end, so this is two-sided.)
-    alive = on_iso
-    n_hi = int(np.count_nonzero(m0s > max_m0))
-    n_lo = int(np.count_nonzero(m0s < min_m0))
-    print(f'isochrone m0 range [{min_m0:.10f}, {max_m0:.10f}] Msun, '
-          f'{len(m0_grid)} nodes (min spacing {np.diff(m0_grid).min():.3e})')
-    print(f'painted {alive.sum()}/{len(m0s)} stars; dropped {n_hi} above and '
-          f'{n_lo} below the isochrone')
-else:
-    max_m0 = m0_iso.max()
-    min_m0 = m0_iso.min()
-    alive = (m0s <= max_m0) & (m0s >= min_m0)
-    G, BP, RP = g_phot(Teff, R, dpc=10)
+    usePos = nonrem[trim_new] & unbound[trim_new] & alive[trim_new] #<-- sc_straighter already has trim_new applied. 
+    usePhot = nonrem & unbound & alive & trim_new
+
+
+    ### DECIDE ON AN RV THRESHOLD AND WHICH SURVEY TO EMULATE
+    RV_thresh = 1. # km/s
+    errs_used = rverr_via # <rverr_desi or via
+    vgsr_noise = rng.normal(0, errs_used)
+
+    noise_dict = {
+        'phi1': phi1_noise.to(u.degree).value,
+        'phi2': phi2_noise.to(u.degree).value,
+        'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
+        'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
+        'v_gsr': vgsr_noise #<-- already in km/s ig. 
+    }
+
+
+    noisey_selection_pos = errs_used[trim_new] < RV_thresh
+    noisey_selection_phot = errs_used < RV_thresh
+
+
+    ### idK guys.... .....
+    fig, ax = plt.subplots()
+    # ax.hist(rverr_via, bins=30)
+    ax.hist(mG[usePhot & noisey_selection_phot])
 
 
 
-### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
-inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
-trim_new = gmm.trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
+    keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
+    fig, axs = plt.subplots(len(keys), figsize=[8, 10])
 
-#### apply the trim to all of the coordinates:
-trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
-sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
+    plt.subplots_adjust(hspace=0.03, wspace=0.03)
 
-
-
-### distance things, get RV uncertainties
-BP_RP = BP - RP
-z = gaia_g_to_lsst_z(G, BP_RP)
-
-mz = paf.m_from_M(z, dist=distances)# 10*u.kpc)
-mG = paf.m_from_M(G, dist=distances)# 10*u.kpc)
-
-rverr_desi = desi_RVerr(zmag=mz, feh=-2.0)
-rverr_via = via_RVerr(G = mG, log_Teff=log_Teff, feh=-2.0, ehr=1.0)
-pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
-pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
-
-rng = np.random.default_rng(seed=42)
-pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
-phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+    key_labels = [
+        r'$\phi_2~[\degree]$',
+        r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+        r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+        r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
+    ]
 
 
+    for jj, key in enumerate(keys):
+        # cocoon_selection = p_thin<0.5
+
+        ydata = sc_straighter[key][usePos] 
+        std = np.std(ydata)
+        cut = 3*std #cocoon_sigmas[jj]
+
+        ax = axs[jj]#,0]
+
+        ax.scatter(sc_straighter['phi1'][usePos & noisey_selection_pos] + noise_dict['phi1'][usePhot & noisey_selection_phot],  # plot cocoon on top. 
+                sc_straighter[key][usePos & noisey_selection_pos] + noise_dict[key][usePhot & noisey_selection_phot], # plot cocoon on top. 
+                # x_data[:,ii],
+                    c='k', s=5, 
+                    rasterized=True) 
+        # ax.set_ylim(-cut,cut)
 
 
-usePos = nonrem[trim_new] & unbound[trim_new] & alive[trim_new] #<-- sc_straighter already has trim_new applied. 
-usePhot = nonrem & unbound & alive & trim_new
-
-
-
-
-
-# %%
-
-### DECIDE ON AN RV THRESHOLD AND WHICH SURVEY TO EMULATE
-RV_thresh = 1. # km/s
-errs_used = rverr_via # <rverr_desi or via
-vgsr_noise = rng.normal(0, errs_used)
-
-noise_dict = {
-    'phi1': phi1_noise.to(u.degree).value,
-    'phi2': phi2_noise.to(u.degree).value,
-    'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
-    'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
-    'v_gsr': vgsr_noise #<-- already in km/s ig. 
-}
-
-noisey_selection_pos = errs_used[trim_new] < RV_thresh
-noisey_selection_phot = errs_used < RV_thresh
-
-
-### idK guys.... .....
-fig, ax = plt.subplots()
-# ax.hist(rverr_via, bins=30)
-ax.hist(mG[usePhot & noisey_selection_phot])
-
-
-# %%
-keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
-fig, axs = plt.subplots(len(keys), figsize=[8, 10])
-
-plt.subplots_adjust(hspace=0.03, wspace=0.03)
-
-key_labels = [
-    r'$\phi_2~[\degree]$',
-    r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
-    r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-    r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
-]
-
-
-for jj, key in enumerate(keys):
-    # cocoon_selection = p_thin<0.5
-
-    ydata = sc_straighter[key][usePos] 
-    std = np.std(ydata)
-    cut = 3*std #cocoon_sigmas[jj]
-
-    ax = axs[jj]#,0]
-
-    ax.scatter(sc_straighter['phi1'][usePos & noisey_selection_pos] + noise_dict['phi1'][usePhot & noisey_selection_phot],  # plot cocoon on top. 
-            sc_straighter[key][usePos & noisey_selection_pos] + noise_dict[key][usePhot & noisey_selection_phot], # plot cocoon on top. 
-            # x_data[:,ii],
-                c='k', s=5, 
-                rasterized=True) 
-    # ax.set_ylim(-cut,cut)
-
-
-    # ax.set_ylim(-3*cut, 3*cut)
-    ax.set_ylabel(key_labels[jj], fontsize=15)
-    ax.set_xlim(-80, 0) #<-- gd1
-    # ax.set_xlim(-20,10) #<-- jet
+        # ax.set_ylim(-3*cut, 3*cut)
+        ax.set_ylabel(key_labels[jj], fontsize=15)
+        ax.set_xlim(-80, 0) #<-- gd1
+        # ax.set_xlim(-20,10) #<-- jet
 
 
 
-    # too annoying to get the limits to work out. being unrigorous for now...
-    # ax.set_xticks([])
-    # ax.set_xticklabels([])
-    # ax.set_xlim(0, 0.4)
-    # ax.set_yticks([])
-    # ax.set_yticklabels([])
+        # too annoying to get the limits to work out. being unrigorous for now...
+        # ax.set_xticks([])
+        # ax.set_xticklabels([])
+        # ax.set_xlim(0, 0.4)
+        # ax.set_yticks([])
+        # ax.set_yticklabels([])
 
-    if jj<3:
-        # print("REMOVING TICK LABLES>>>>>")
-        axs[jj].set_xticklabels([])
-
-
-axs[-1].set_xlabel(r'$\phi_1~[\degree]$')
+        if jj<3:
+            # print("REMOVING TICK LABLES>>>>>")
+            axs[jj].set_xticklabels([])
 
 
-### CHECK CMD
-# fig, ax = plt.subplots()
-# time_cmap = paf.define_time_cmap()
-# ax.scatter(BP_RP[usePhot], mG[usePhot], 
-#            c=np.log10(m0s[usePhot]),
-#         #    c=log_Teff[usePhot],
-#         cmap=time_cmap.reversed(),
-#            edgecolor='k', lw=.5, s=30)
-# # iso_cutoff = -700
-# # ax.scatter(BP_iso[:iso_cutoff]-RP_iso[:iso_cutoff], mz_iso[:iso_cutoff],
-# #            c=np.log10(m0_iso[:iso_cutoff]), vmin=-1, vmax=np.log10(max_m0), zorder=0)
-# ax.set_xlabel(r'$G_{\rm BP} - G_{\rm RP}$')
-# ax.set_ylabel(r'$G$')
-# ax.invert_yaxis()
-# %%
-sc_straighter
+    axs[-1].set_xlabel(r'$\phi_1~[\degree]$')
+
+
+    ### CHECK CMD
+    # fig, ax = plt.subplots()
+    # time_cmap = paf.define_time_cmap()
+    # ax.scatter(BP_RP[usePhot], mG[usePhot], 
+    #            c=np.log10(m0s[usePhot]),
+    #         #    c=log_Teff[usePhot],
+    #         cmap=time_cmap.reversed(),
+    #            edgecolor='k', lw=.5, s=30)
+    # # iso_cutoff = -700
+    # # ax.scatter(BP_iso[:iso_cutoff]-RP_iso[:iso_cutoff], mz_iso[:iso_cutoff],
+    # #            c=np.log10(m0_iso[:iso_cutoff]), vmin=-1, vmax=np.log10(max_m0), zorder=0)
+    # ax.set_xlabel(r'$G_{\rm BP} - G_{\rm RP}$')
+    # ax.set_ylabel(r'$G$')
+    # ax.invert_yaxis()
+    # %%
