@@ -2170,9 +2170,13 @@ def get_streamcoords_ms(stream, i, init_displacement):
 
 def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
                             use_core=False,
-                            binary_treatments = ["CoM","companions","luminous"] # <-- "CoM" to do the analysis with center of mass values, "companions" to use the values for the more luminous companion. 
-                             ): 
+                            binary_treatments = ["CoM","companions","luminous"], # <-- "CoM" to do the analysis with center of mass values, "companions" to use the values for the more luminous companion. 
+                             N_rtid_boundary = 1.): 
     """
+    ON 22 SEPTEMBER, adding N_rtid_boundary as an argument -- can increase past 1, so that 
+    "in_rtid" selects stuff within [N]x the petar tidal radius. good for removing 
+    stuff that will get recaptured as rtid re-expands. 
+
     ON 21 SEPTEMBER 2026 I AM ADDING A BIT THAT SAVES THE _INITIAL_ STELLAR MASSES. 
 
     ON 17 AUGUST 2026 I ADDED SOME FUNCTIONALITY TO FLAG WHAT HAS ESCAPED 
@@ -2340,7 +2344,7 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
         s_r = np.sqrt(np.sum(np.array([spos_core[:,i]**2 for i in range(3)]), axis=0))
         b_r = np.sqrt(np.sum(np.array([bpos_core[:,i]**2 for i in range(3)]), axis=0))
         tidal = load_tidal(path)
-        rtid = tidal.rtid[file_index]
+        rtid = N_rtid_boundary * tidal.rtid[file_index]
         in_rtid_s = s_r<=rtid
         in_rtid_b = b_r<=rtid
         in_rtid = np.concatenate([in_rtid_s, in_rtid_b])

@@ -368,7 +368,7 @@ mass_index=1
 (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
     simspect.prepare_nbody_data_anycopy(
         orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-        include_photometry=False
+        include_photometry=False, N_rtid_boundary=2.0 #<-- increase tidal boundary... will this work?
     )
 
 # get distances also:
@@ -444,7 +444,7 @@ mz = paf.m_from_M(z, dist=distances)# 10*u.kpc)
 mG = paf.m_from_M(G, dist=distances)# 10*u.kpc)
 
 rverr_desi = desi_RVerr(zmag=mz, feh=-2.0)
-rverr_via = via_RVerr(G = mG, log_Teff=log_Teff, feh=-2.0, ehr=10.0)
+rverr_via = via_RVerr(G = mG, log_Teff=log_Teff, feh=-2.0, ehr=1.0)
 pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
 pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
 
@@ -465,7 +465,9 @@ usePhot = nonrem & unbound & alive & trim_new
 
 
 # %%
-RV_thresh = 1 # km/s
+
+### DECIDE ON AN RV THRESHOLD AND WHICH SURVEY TO EMULATE
+RV_thresh = 1. # km/s
 errs_used = rverr_via # <rverr_desi or via
 vgsr_noise = rng.normal(0, errs_used)
 
@@ -480,12 +482,14 @@ noise_dict = {
 noisey_selection_pos = errs_used[trim_new] < RV_thresh
 noisey_selection_phot = errs_used < RV_thresh
 
-# %%
+
+### idK guys.... .....
 fig, ax = plt.subplots()
 # ax.hist(rverr_via, bins=30)
 ax.hist(mG[usePhot & noisey_selection_phot])
-# %%
 
+
+# %%
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 fig, axs = plt.subplots(len(keys), figsize=[8, 10])
 
@@ -508,8 +512,8 @@ for jj, key in enumerate(keys):
 
     ax = axs[jj]#,0]
 
-    ax.scatter(sc_straighter['phi1'][usePos & noisey_selection_pos], #+ noise_dict['phi1'][usePhot & noisey_selection_phot],  # plot cocoon on top. 
-            sc_straighter[key][usePos & noisey_selection_pos], #+ noise_dict[key][usePhot & noisey_selection_phot], # plot cocoon on top. 
+    ax.scatter(sc_straighter['phi1'][usePos & noisey_selection_pos] + noise_dict['phi1'][usePhot & noisey_selection_phot],  # plot cocoon on top. 
+            sc_straighter[key][usePos & noisey_selection_pos] + noise_dict[key][usePhot & noisey_selection_phot], # plot cocoon on top. 
             # x_data[:,ii],
                 c='k', s=5, 
                 rasterized=True) 

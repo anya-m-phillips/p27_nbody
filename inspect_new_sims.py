@@ -65,7 +65,7 @@ def prepare_nbody_data(path = grid_info.gd1_lm_paths[0]+"0/",
                        i=grid_info.gd1_age,
                        apo = grid_info.gd1_apo,
                        init_displacement = grid_info.gd1_init_displacement,
-                       ):
+                       **kwargs):
     """
     this is expecting N-body data that outputs every 10 Myr. 
     """
@@ -75,7 +75,8 @@ def prepare_nbody_data(path = grid_info.gd1_lm_paths[0]+"0/",
     data_dict = paf.intrinsic_stream_data_v3(
         path, i, core, apo, init_displacement,
         use_core=False,
-        binary_treatments=['CoM','companions','luminous']
+        binary_treatments=['CoM','companions','luminous'],
+        **kwargs
     )
 
     CMdict = data_dict['CoM']
