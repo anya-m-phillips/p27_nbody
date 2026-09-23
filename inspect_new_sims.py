@@ -184,6 +184,7 @@ def rotation_matrix(a,b,c):
 # %%
 def streamframe_coords_observed(orbit, data_dict, prog_tab):
     """
+
     orbit options are:
     gd1, pa5, jet, aau, m3, c19, circ
     
@@ -200,11 +201,12 @@ def streamframe_coords_observed(orbit, data_dict, prog_tab):
 
     returns a coordinate object, since all frames can be constructed in gala with great circles. 
     """
+    row = prog_tab[prog_tab['name']==orbit]
+
     pos, vel = data_dict['pos'], data_dict['vel']
     coords_ICRS = paf.galcen_to_ICRS(pos, vel) 
     coords_ICRS = reflex_correct(coords_ICRS) #<-- correct for solar reflex motion
-    row = prog_tab[prog_tab['name']==orbit]
-    
+
 
     if orbit=='gd1': #<-- pre-defined frame in gala. 
         # sc=coords_ICRS.transform_to(gc.GD1Koposov10)
@@ -294,6 +296,8 @@ def streamframe_coords_observed(orbit, data_dict, prog_tab):
     
     sc = coords_ICRS.transform_to(selected_streamframe)
 
+
+
     # coords_stream = {} #<-- a dictionary, like Jake', but will have v_gsr instead of vr, and distance instead of r (different keys. )
     # coords_stream['phi1'] = sc.phi1.to(u.degree).value
     # coords_stream['phi2'] = sc.phi2.to(u.degree).value
@@ -363,19 +367,46 @@ def chop_orbit_track(phi1, jump_threshold=45):
         idx = idx[::-1]   # so it can go straight into np.interp
     return idx
 
-def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
+def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500, lumdict=None, PM_treatment='CoM'):
     """
     THIS RETURNS A DICTIONARY!!!
     AND ALSO AM ADDING ON VELOCITIES.
+    
+    ALSO ALSO I'm adding an option to provide the lumdict.
+    if the lumdict is provided you're definitely getting v_gsr of the _primaries_
+    and PM_treatment is either 'CoM' (just use com proper motions) or 'primary' (binary orb motions get included in pm)
     """
 
-    ### get observed stream coordinate frame: 
-    coords_obs, obs_streamframe = streamframe_coords_observed(orbit, CMdict, prog_tab)
+    if lumdict is not None:
+        binaries = True
+        coords_obs_primary, obs_streamframe = streamframe_coords_observed(orbit, lumdict, prog_tab)
+
+        if PM_treatment=='primary':
+            binary_PMs = True
+            coords_obs = coords_obs_primary
+
+        else:
+            binary_PMs = False
+            coords_obs, obs_streamframe = streamframe_coords_observed(orbit, CMdict, prog_tab)
+
+
+    if lumdict is None:
+        binaries = False
+        binary_PMs = False
+        if PM_treatment!='CoM':
+            print("warning -- using CoM assumption for PM treatment; specified otherwise")
+
+        coords_obs, obs_streamframe = streamframe_coords_observed(orbit, CMdict, prog_tab)
+
+
+    ##### if binary PMs = False, this will give cM coords. if True, this is binary PMs, 
     d_phi2 = coords_obs.phi2.to(u.radian).value * coords_obs.distance.to(u.kpc).value
     v_phi1 = coords_obs.pm_phi1_cosphi2.to(u.radian/u.s).value * coords_obs.distance.to(u.km).value
     v_phi2 = coords_obs.pm_phi2.to(u.radian/u.s).value * coords_obs.distance.to(u.km).value
 
-    ### get progenitor orbitL 
+
+
+    ### get progenitor orbit -- always do based on cm
     row = prog_tab[prog_tab['name']==orbit]
     w0 = gd.PhaseSpacePosition(
         np.array([row['x'][0], row['y'][0], row['z'][0]])*u.kpc,
@@ -393,14 +424,21 @@ def straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab, Dt=500):
     scd = {} #<--"straight coord dict"
     scd['phi1'] = coords_obs.phi1.to(u.degree).value
     data_x = scd['phi1']
-    data_y = [coords_obs.phi2.to(u.degree).value,
-              coords_obs.pm_phi1_cosphi2.to(u.mas/u.yr).value,
-              coords_obs.pm_phi2.to(u.mas/u.yr).value,
-              coords_obs.radial_velocity.to(u.km/u.s).value,
-              coords_obs.distance.to(u.kpc).value,
-              d_phi2,
-              v_phi1,
-              v_phi2
+
+
+    if binaries==True:
+        coords_to_use = coords_obs_primary
+    if binaries==False:
+        coords_to_use = coords_obs
+
+    data_y = [coords_to_use.phi2.to(u.degree).value, #<-- if binaries==true, want to use the primary coords. if binaries==false want to use CoMs. 
+              coords_obs.pm_phi1_cosphi2.to(u.mas/u.yr).value, #<-- already taken care of. should be coords_obs whether or not binaries==True. (in the binary pms case they've been overwritten, in the cm pms case they haven't )
+              coords_obs.pm_phi2.to(u.mas/u.yr).value, #<-- already taken care of. should be coords_obs whether or not binaries==True. (in the binary pms case they've been overwritten, in the cm pms case they haven't )
+              coords_to_use.radial_velocity.to(u.km/u.s).value, #<-- if binaries==true, want to use the primary coords. if binaries==false want to use CoMs. 
+              coords_to_use.distance.to(u.kpc).value, #<-- if binaries==true, want to use the primary coords. if binaries==false want to use CoMs. 
+              d_phi2, #<-- already taken care of. should always be coords_obs whether or not binaries==True. (in the binary pms case they've been overwritten, in the cm pms case they haven't )
+              v_phi1, #<-- already taken care of. should always be coords_obs whether or not binaries==True. (in the binary pms case they've been overwritten, in the cm pms case they haven't )
+              v_phi2 #<-- already taken care of. should always be coords_obs whether or not binaries==True. (in the binary pms case they've been overwritten, in the cm pms case they haven't )
               ]
 
     keys = ['phi2','pm_phi1','pm_phi2','v_gsr','distance', 

@@ -534,357 +534,362 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
                                             sort_dim=sort_dim)
 
 
-def trim_obstream_percentile(sc, p=[1,99], 
-                            trim_keys=['phi1','d_phi2','v_phi1','v_phi2','v_gsr','distance']):
-    criteria = []
-    for key in trim_keys:
-        key_low, key_high = np.percentile(sc[key], q=p)
-        key_crit = (sc[key]<=key_high) & (sc[key]>=key_low)
-        criteria.append(key_crit)
 
-    trim_criteria = np.logical_and.reduce(criteria)
-    return trim_criteria
 # %%
-if __name__=="__main__":
-    make_plots=True
-    constrain_widths=True
+# if __name__=="__main__":
+datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
+
+make_plots=True
+constrain_widths=True
+noise = None #<-- None or 'via' or 'desi'
+include_binaries=False
 
 
-    grid_info = paf.extended_grid_info(scratch=False) 
-    lm_colors, hm_colors, simcolors = paf.define_simcolors()
-    reordered_colors = hm_colors + lm_colors[::-1]
-    cc = reordered_colors[:-1]
-    prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+grid_info = paf.extended_grid_info(scratch=False) 
+lm_colors, hm_colors, simcolors = paf.define_simcolors()
+reordered_colors = hm_colors + lm_colors[::-1]
+cc = reordered_colors[:-1]
+prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 
-    # ordering decided here. 
-    orbits = ['gd1','aau','pa5','jet','m3','c19']
-    init_displacements = [
-        grid_info.gd1_init_displacement, 
-        grid_info.aau_init_displacement,
-        grid_info.pa5_init_displacement,
-        grid_info.jet_init_displacement,
-        grid_info.m3_init_displacement,
-        grid_info.c19_init_displacement]
-    masses = ['lm','hm']
-    rvirs = [0.75, 1.5, 3, 6]
-    copy_options = [0,1,2,3,4]
-    # copy_options = [4,3,2,1,0]
+# ordering decided here. 
+orbits = ['gd1','aau','pa5','jet','c19']
+init_displacements = [
+    grid_info.gd1_init_displacement, 
+    grid_info.aau_init_displacement,
+    grid_info.pa5_init_displacement,
+    grid_info.jet_init_displacement,
+    grid_info.c19_init_displacement]
+masses = ['lm','hm']
+rvirs = [0.75, 1.5, 3, 6]
+copy_options = [0,1,2,3,4]
+# copy_options = [4,3,2,1,0]
 
-    # keys = ['phi2','pm_phi1','pm_phi2','v_gsr'] #<--- EDITING TO INCLUDE DISTANCE ?
-    keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] #<-- i guess like why not do this
+keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] #<-- for GMM fitting. 
 
 
+for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
 
-    # %%
-    for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-        # if orbit!='pa5':
-        #     continue
+    mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
 
-        mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
-        for rvir_index in range(4):
-            # if orbit!='aau':
-            #     continue
-
-            (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-                simspect.prepare_nbody_data_anycopy(
-                    orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-                    include_photometry=False
-                )
-
-            # dicts.append(data_dict)
-
-            # coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
-            # sf_coords_obs.append(sf_coords_obs)
-
-            # straightened coords
-            sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
-
-            unbound = ~CMdict['in_rtid']
-            # unbound = unbound[inMW][trim] # don't care about this. 
+    f_cocoons_this_orbit = []
+    cocoon_means_this_orbit = []
+    cocoon_sigmas_this_orbit = []
+    ts_means_this_orbit = []
+    ts_sigmas_this_orbit = []
 
 
-            ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
-            inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
-            trim_new = trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
+    for rvir_index in range(4):
+        rvir = rvirs[rvir_index]
+
+        filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
+        with open(filename, 'rb') as handle:
+            data_dict = pickle.load(handle)
+
+        CMdict, lumdict = data_dict['CoM'], data_dict['luminous']
+        coords_obs = data_dict['coords_obs'] #<-- coordinate object
+
+        if include_binaries==False:
+            sc_straighter = data_dict['sc_straighter'] #<-- dictionary
+        if include_binaries==True:
+            sc_straighter = data_dict['sc_straighter_primaries'] #<-- dictionary
+
+
+        phot = data_dict['phot']
+
+################## HELLO ME ON 9/24! START HERE!!! ###########
+
+        if noise is not None:
+            noise_dict = data_dict['noise']
+            noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+
+            ### TRANSLATE THE PM NOISE TO v_phi NOISE HERRE
+
+            raise ValueError("u forgot to translate the pm-> v_phi noise. ")
 
 
 
-            #### apply the trim to all of the coordinates:
-            trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
-            sc_straighter = simspect.poly_straightening(trimmed_sc) #< subtract a polynomial on top of the orbit subtraction
+        ### boolean masks :p
+        unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
+        inMW_na, trim_new = data_dict['inMW_na'], data_dict['trim_new']
 
-            #### i am less worried about ol_clip now. deleting it since it's ~taken care of by trimming the 1-99th percentile in orbit-subtracted coordinates. 
-            # ol_clip = simspect.outlier_clip( #<-- avoid biasing the cocoon dispersion with a few crazy outliers. 
-            #     sc_straighter['v_gsr'], sc_straighter['pm_phi1'], sc_straighter['pm_phi2'] 
-            # )
+        alive = data_dict['alive']
+        acceptable_G = data_dict['acceptable_G']
 
-            # use = ol_clip & unbound
-            unbound = unbound[trim_new]
 
-            # phi1_cut = 20
-            use = unbound #& ((sc_straighter['phi1']>-phi1_cut) & (sc_straighter['phi1']<phi1_cut))
 
-            ### confirming that esp for m3 this straightening is quite a bit better (subjectively)
-            # fig, ax = plt.subplots(figsize=[9,3])
-            # ax.scatter(sc_straighter['phi1'][use], 
-            #            sc_straighter['phi2'][use], c='k', s=1)
-            # ax.set_ylim(-1.5, 1.5)
 
-            #### assemble the data and perform the fit: 
+        if noise is None: #<-- raw N-body case; only care that stuff is within the percentile trim and unbound from the cluster
+            use = trim_new & unbound
+        if noise is not None: #<-- semi-realistic observations case; throw out remnants, things outside a painted on stellar population, with unacceptable viamock errors ...
+            
+            if noise=='via':
+                use = trim_new & unbound & alive & nonrem & acceptable_G
+            else:
+                use = trim_new & unbound & alive & nonrem #<-- no acceptable G range for DESI errors. 
+            raise ValueError("Yikes!!! still need to apply a mag-dependent selection within the [use] mask!!")
+    
+
+        #### assemble the data and perform the fit: 
+        if noise is None:
             x_data = np.column_stack([sc_straighter[k][use] for k in keys])
 
-            sd = x_data.std(axis=0)
-            mu_1, sigma_1 = np.zeros(len(keys)), 0.1 * sd  # thin: narrower than the data
-            mu_2, sigma_2 = np.zeros(len(keys)), 10.0 * sd  
-            # mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
-            f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
-            # f_2 = 1/3 # - 0.01
+        if noise is not None:
+            x_data = np.column_stack(
+                [sc_straighter[k][use]+noise_dict[k][use] for k in keys]
+            )
 
-            fracs_0 = np.array([f_1])#, f_2])
-            means_0 = np.array([mu_1, mu_2])#, mu_3])
-            sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
-            theta0 = pack_params(fracs_0, means_0, sigmas_0)
+        sd = x_data.std(axis=0)
+        mu_1, sigma_1 = np.zeros(len(keys)), 0.1 * sd  # thin: narrower than the data
+        mu_2, sigma_2 = np.zeros(len(keys)), 10.0 * sd  
+        # mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
+        f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
+        # f_2 = 1/3 # - 0.01
 
-            ncomponents = len(fracs_0)+1
+        fracs_0 = np.array([f_1])#, f_2])
+        means_0 = np.array([mu_1, mu_2])#, mu_3])
+        sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
+        theta0 = pack_params(fracs_0, means_0, sigmas_0)
 
-            ### BOUNDS: mean box at +/- 1 sd of the DATA, per dimension. see the
-            # interactive cell above for the full reasoning -- short version is that
-            # a real cocoon shares the thin stream's mean (it is WIDER, not
-            # displaced), so bounding mu near zero stops the second component from
-            # wandering off-track and soaking up a diverging tail or the far end of
-            # an epicyclic feather instead. has to be per dimension: sd is ~0.1 deg
-            # in phi2 but ~10 km/s in v_gsr.
-            # mu_halfwidth = 1.0 * sd
+        ncomponents = len(fracs_0)+1
 
-            ### for this i am not going to bound the mean, but i will save it and 
-            #   use means far from zero to flag fits that might not have worked well. 
-            # means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
-            #                                (ncomponents, len(sd), 2))
-            # fracs_bound  = None
-            # sigmas_bound = (0, None)         # sigma > 0 -- already free in ln sigma
+        ### BOUNDS: mean box at +/- 1 sd of the DATA, per dimension. see the
+        # interactive cell above for the full reasoning -- short version is that
+        # a real cocoon shares the thin stream's mean (it is WIDER, not
+        # displaced), so bounding mu near zero stops the second component from
+        # wandering off-track and soaking up a diverging tail or the far end of
+        # an epicyclic feather instead. has to be per dimension: sd is ~0.1 deg
+        # in phi2 but ~10 km/s in v_gsr.
+        # mu_halfwidth = 1.0 * sd
 
-            # bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
-            #                      n_components=ncomponents, K=x_data.shape[1])
-            bounds=None
+        ### for this i am not going to bound the mean, but i will save it and 
+        #   use means far from zero to flag fits that might not have worked well. 
+        # means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
+        #                                (ncomponents, len(sd), 2))
+        # fracs_bound  = None
+        # sigmas_bound = (0, None)         # sigma > 0 -- already free in ln sigma
 
-            ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
-            # than the thin component, PER DIMENSION (aligned elementwise with
-            # constraint_dims). keys order is ['phi2','pm_phi1','pm_phi2','v_gsr'].
-            constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
-            min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
-            constraints = [sigma_ratio_constraint(min_ratio,
-                                                n_components=ncomponents,
-                                                K=x_data.shape[1],
-                                                dims=constraint_dims)]
+        # bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
+        #                      n_components=ncomponents, K=x_data.shape[1])
+        bounds=None
 
-
-            # stage 1: Powell, to land in the right basin. it IGNORES constraints
-            # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
-            # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
-            # throwing away the basin Powell was run to find.
-            result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell',
-                                bounds=bounds,
-                                options={'maxiter': 100000, 'maxfev': 100000})
-
-            if constrain_widths==True:
-                # stage 2: re-fit from there, WITH the constraint. SLSQP from a cold
-                # start collapses this likelihood onto a single component, hence two stages.
-                result = minimize(nll_flat, x0=result_free.x,
-                                args=(x_data,),
-                                method='SLSQP',
-                                bounds=bounds,          # bounds and constraints coexist
-                                constraints=constraints,
-                                options={'maxiter': 5000})
-            else:
-                result=result_free
-
-            # check result.fun, never result.success. the constrained nll is
-            # necessarily >= the free one; the gap is how hard the data resist.
-            # _demand = ", ".join("%gx %s" % (r, keys[d])
-            #                     for d, r in zip(constraint_dims, np.atleast_1d(min_ratio)))
-            # print("%s rvir=%.2f: free nll = %.2f | cnstr nll = %.2f "
-            #     "(cost of demanding a wider cocoon [%s]: %.2f)"
-            #     % (orbit, rvirs[rvir_index], result_free.fun, result.fun,
-            #         _demand, result.fun - result_free.fun))
-
-            # an ACTIVE mean bound is silent in scipy: a mu sitting exactly on the
-            # wall is the optimizer reporting the bound, not a fitted mean. it means
-            # the data wanted an OFFSET component, i.e. the straightening left
-            # structure behind (see the m3/pa5 TODO) rather than a cocoon.
-            # _fr, _mu, _sg = unpack_params(result.x, K=x_data.shape[1])
-            # _on_wall = np.abs(np.abs(_mu) - mu_halfwidth) < 1e-6 * np.maximum(mu_halfwidth, 1)
-            # if _on_wall.any():
-            #     for j, d in zip(*np.nonzero(_on_wall)):
-            #         print("  WARNING mu[comp %i, %s] = %+.4g is ON its +/-%.4g bound"
-            #               % (j, keys[d], _mu[j, d], mu_halfwidth[d]))
-            # else:
-            #     print("  means all interior to the +/-1 sd box (max |mu|/sd = %.2f)"
-            #           % np.max(np.abs(_mu) / mu_halfwidth))
-
-            fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
-            # NB: not `for ii in ...` -- that shadows the orbit-loop index.
-            p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
-
-            if len(fracs_fit)<ncomponents:
-                fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
+        ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
+        # than the thin component, PER DIMENSION (aligned elementwise with
+        # constraint_dims). keys order is ['phi2','pm_phi1','pm_phi2','v_gsr'].
+        constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
+        min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
+        constraints = [sigma_ratio_constraint(min_ratio,
+                                            n_components=ncomponents,
+                                            K=x_data.shape[1],
+                                            dims=constraint_dims)]
 
 
-            p_thin = p1
-            ts = p1>0.5
-            p_cocoon = 1-p_thin
-            f_cocoon = fracs_fit[-1]
+        # stage 1: Powell, to land in the right basin. it IGNORES constraints
+        # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
+        # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
+        # throwing away the basin Powell was run to find.
+        result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell',
+                            bounds=bounds,
+                            options={'maxiter': 100000, 'maxfev': 100000})
+
+        if constrain_widths==True:
+            # stage 2: re-fit from there, WITH the constraint. SLSQP from a cold
+            # start collapses this likelihood onto a single component, hence two stages.
+            result = minimize(nll_flat, x0=result_free.x,
+                            args=(x_data,),
+                            method='SLSQP',
+                            bounds=bounds,          # bounds and constraints coexist
+                            constraints=constraints,
+                            options={'maxiter': 5000})
+        else:
+            result=result_free
+
+        # check result.fun, never result.success. the constrained nll is
+        # necessarily >= the free one; the gap is how hard the data resist.
+        # _demand = ", ".join("%gx %s" % (r, keys[d])
+        #                     for d, r in zip(constraint_dims, np.atleast_1d(min_ratio)))
+        # print("%s rvir=%.2f: free nll = %.2f | cnstr nll = %.2f "
+        #     "(cost of demanding a wider cocoon [%s]: %.2f)"
+        #     % (orbit, rvirs[rvir_index], result_free.fun, result.fun,
+        #         _demand, result.fun - result_free.fun))
+
+        # an ACTIVE mean bound is silent in scipy: a mu sitting exactly on the
+        # wall is the optimizer reporting the bound, not a fitted mean. it means
+        # the data wanted an OFFSET component, i.e. the straightening left
+        # structure behind (see the m3/pa5 TODO) rather than a cocoon.
+        # _fr, _mu, _sg = unpack_params(result.x, K=x_data.shape[1])
+        # _on_wall = np.abs(np.abs(_mu) - mu_halfwidth) < 1e-6 * np.maximum(mu_halfwidth, 1)
+        # if _on_wall.any():
+        #     for j, d in zip(*np.nonzero(_on_wall)):
+        #         print("  WARNING mu[comp %i, %s] = %+.4g is ON its +/-%.4g bound"
+        #               % (j, keys[d], _mu[j, d], mu_halfwidth[d]))
+        # else:
+        #     print("  means all interior to the +/-1 sd box (max |mu|/sd = %.2f)"
+        #           % np.max(np.abs(_mu) / mu_halfwidth))
+
+        fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
+        # NB: not `for ii in ...` -- that shadows the orbit-loop index.
+        p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+
+        if len(fracs_fit)<ncomponents:
+            fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
 
 
-            ### modify the data dictionary with model information
-            cocoon_info = {}
-            cocoon_info['mu_thin'] = means_fit[0]
-            cocoon_info['sigma_thin'] = sigmas_fit[0]
-            cocoon_info['mu_cocoon'] = means_fit[-1]
-            cocoon_info['sigma_cocoon'] = sigmas_fit[-1]
-            cocoon_info['f_cocoon'] = f_cocoon
-
-            ### things that are like per star
-            cocoon_info['p_thin'] = p_thin
-            cocoon_info['sc_straighter'] = sc_straighter #<-- already has [inMW][trim] applied, needs [ol_clip & unbound] applied.
-            # cocoon_info['ol_clip'] = ol_clip # <-- with unbound is 'use'
-            cocoon_info['unbound'] = unbound # <-- with ol_clip is 'use'
-            cocoon_info['trim_new'] = trim_new #<-- but unbound is already trimmed to the trimmed length... lol
-
-            data_dict['cocoon_info']= cocoon_info
+        p_thin = p1
+        ts = p1>0.5
+        p_cocoon = 1-p_thin
+        f_cocoon = fracs_fit[-1]
 
 
-            ### pickle the dictionary. 
-            if constrain_widths==True:
-                datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/constrained/'
-            if constrain_widths==False:
-                datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/unconstrained/'
-            rvir = rvirs[rvir_index]
-            print("dumping to pkl file...")
-            with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
-                pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        ### modify the data dictionary with model information
+        cocoon_info = {}
+        cocoon_info['mu_thin'] = means_fit[0]
+        cocoon_info['sigma_thin'] = sigmas_fit[0]
+        cocoon_info['mu_cocoon'] = means_fit[-1]
+        cocoon_info['sigma_cocoon'] = sigmas_fit[-1]
+        cocoon_info['f_cocoon'] = f_cocoon
 
-            if make_plots==True:
-                c_labels = ["#CCC9E7", "#2F2F2F"]
-                cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+        ### things that are like per star
+        cocoon_info['p_thin'] = p_thin
+        cocoon_info['sc_straighter'] = sc_straighter #<-- already has [inMW][trim] applied, needs [ol_clip & unbound] applied.
+        # cocoon_info['ol_clip'] = ol_clip # <-- with unbound is 'use'
+        cocoon_info['unbound'] = unbound # <-- with ol_clip is 'use'
+        cocoon_info['trim_new'] = trim_new #<-- but unbound is already trimmed to the trimmed length... lol
 
-
-                order = np.argsort(p_cocoon)
-                fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
-
-                plt.subplots_adjust(hspace=0.03, wspace=0.03)
-
-                
-                key_labels = [
-                    # r'$\phi_2~[\degree]$',
-                    # r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
-                    # r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-                    r'$d_{\phi_2}~[\rm kpc]$',
-                    r'$v_{\phi_1}~[\rm km~s^{-1}]$',
-                    r'$v_{\phi_2}~[\rm km~s^{-1}]$',                
-                    r'$v_{\rm GSR}~[\rm km~s^{-1}]$',
-                    r'$d~[\rm kpc]$'
-                ]
-                for jj, key in enumerate(keys):
-                    cut = 3*sigmas_fit[-1][jj]
-
-                    ax = axs[jj,0]
-
-                    ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
-                            sc_straighter[key][use][order], # plot cocoon on top. 
-                            # x_data[:,ii],
-                                c=p_cocoon[order], s=5, cmap=cocoon_cmap,
-                                rasterized=True) 
-                    ax.set_ylim(-cut,cut)
-        
-
-                    # ax.set_ylim(-3*cut, 3*cut)
-                    ax.set_ylabel(key_labels[jj], fontsize=15)
+        data_dict['cocoon_info']= cocoon_info
 
 
-                    ax = axs[jj,1]
-                    bins = np.linspace(-cut, cut, 50)
+        ### pickle the dictionary. 
+        if constrain_widths==True:
+            datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/constrained/'
+        if constrain_widths==False:
+            datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/unconstrained/'
+        rvir = rvirs[rvir_index]
+        print("dumping to pkl file...")
+        with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
+            pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-                    # tsd, _ = np.histogram(sc_straighter[key][ol_clip & unbound & ~cocoon_selection],
-                    #                       bins=bins, density=True)
-
-                    cocoon_selection = p_thin<0.5
-                    ax.hist(sc_straighter[key][use][~cocoon_selection], 
-                            alpha=1., density=True, #, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
-                            color=c_labels[0],orientation='horizontal',
-                            bins=bins)
-                    ax.hist(sc_straighter[key][use][cocoon_selection],
-                            histtype='step', density=True, #, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
-                            lw=2, 
-                            color=c_labels[-1],orientation='horizontal',
-                            bins=bins)
-                    ax.set_ylim(-cut,cut)
-
-        
-
-                    # too annoying to get the limits to work out. being unrigorous for now...
-                    ax.set_xticks([])
-                    ax.set_xticklabels([])
-                    ax.set_yticks([])
-                    ax.set_yticklabels([])
-
-                    if jj<3:
-                        # print("REMOVING TICK LABLES>>>>>")
-                        axs[jj,0].set_xticklabels([])
-                        axs[jj,1].set_xticklabels([])
+        if make_plots==True:
+            c_labels = ["#CCC9E7", "#2F2F2F"]
+            cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
 
-                axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
-                axs[-1,1].set_xlabel(r'density')
+            order = np.argsort(p_cocoon)
+            fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
 
+            plt.subplots_adjust(hspace=0.03, wspace=0.03)
 
             
-                if constrain_widths==False:
-                    plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-                                bbox_inches='tight')
-                if constrain_widths==True:
-                    plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-                                bbox_inches='tight')
+            key_labels = [
+                # r'$\phi_2~[\degree]$',
+                # r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+                # r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+                r'$d_{\phi_2}~[\rm kpc]$',
+                r'$v_{\phi_1}~[\rm km~s^{-1}]$',
+                r'$v_{\phi_2}~[\rm km~s^{-1}]$',                
+                r'$v_{\rm GSR}~[\rm km~s^{-1}]$',
+                r'$d~[\rm kpc]$'
+            ]
+            for jj, key in enumerate(keys):
+                cut = 3*sigmas_fit[-1][jj]
 
-                plt.close()
+                ax = axs[jj,0]
 
+                ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
+                        sc_straighter[key][use][order], # plot cocoon on top. 
+                        # x_data[:,ii],
+                            c=p_cocoon[order], s=5, cmap=cocoon_cmap,
+                            rasterized=True) 
+                ax.set_ylim(-cut,cut)
+    
 
-    # %%
-
-
-    #### TESTING STUFF: 
-
-
-
-    #### IF I USE PHYSICAL WIDTHS AND SPEEDS ONLY (i.e. all angles get distanced away)
-    orbit = 'm3'
-    rvir_index=0
-    mass_index=1
-    (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-        simspect.prepare_nbody_data_anycopy(
-            orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-            include_photometry=False
-        )
-    # %%
-    sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
-    coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
+                # ax.set_ylim(-3*cut, 3*cut)
+                ax.set_ylabel(key_labels[jj], fontsize=15)
 
 
-    unbound = ~CMdict['in_rtid']
-    inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
-    trim_new = trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
+                ax = axs[jj,1]
+                bins = np.linspace(-cut, cut, 50)
 
-    trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
-    sc_straighter = simspect.poly_straightening(trimmed_sc)
+                # tsd, _ = np.histogram(sc_straighter[key][ol_clip & unbound & ~cocoon_selection],
+                #                       bins=bins, density=True)
 
-    fig, axs = plt.subplots(2,1, figsize=[8,8])
+                cocoon_selection = p_thin<0.5
+                ax.hist(sc_straighter[key][use][~cocoon_selection], 
+                        alpha=1., density=True, #, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
+                        color=c_labels[0],orientation='horizontal',
+                        bins=bins)
+                ax.hist(sc_straighter[key][use][cocoon_selection],
+                        histtype='step', density=True, #, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
+                        lw=2, 
+                        color=c_labels[-1],orientation='horizontal',
+                        bins=bins)
+                ax.set_ylim(-cut,cut)
 
-    axs[1].scatter(coords_obs.phi1[trim_new], coords_obs.phi2[trim_new], c='.7', s=1)
+    
 
-    axs[0].scatter(sc['phi1'][trim_new], sc['d_phi2'][trim_new], c=sc['distance'][trim_new], s=1)
-    axs[1].scatter(sc['phi1'][trim_new], sc['phi2'][trim_new], c=sc['distance'][trim_new], s=1)
+                # too annoying to get the limits to work out. being unrigorous for now...
+                ax.set_xticks([])
+                ax.set_xticklabels([])
+                ax.set_yticks([])
+                ax.set_yticklabels([])
 
-    axs[0].scatter(sc_straighter['phi1'], sc_straighter['d_phi2'], c='k', s=1)
-    axs[1].scatter(sc_straighter['phi1'], sc_straighter['phi2'], c='k', s=1)
+                if jj<3:
+                    # print("REMOVING TICK LABLES>>>>>")
+                    axs[jj,0].set_xticklabels([])
+                    axs[jj,1].set_xticklabels([])
 
-    # for ax in axs:
-    #     ax.set_xlim(-10,10)
+
+            axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
+            axs[-1,1].set_xlabel(r'density')
+
+
+        
+            if constrain_widths==False:
+                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
+                            bbox_inches='tight')
+            if constrain_widths==True:
+                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
+                            bbox_inches='tight')
+
+            plt.close()
+
+
+# %%
+
+
+#### TESTING STUFF: 
+
+
+
+#### IF I USE PHYSICAL WIDTHS AND SPEEDS ONLY (i.e. all angles get distanced away)
+orbit = 'm3'
+rvir_index=0
+mass_index=1
+(core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+    simspect.prepare_nbody_data_anycopy(
+        orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+        include_photometry=False
+    )
+# %%
+sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
+coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
+
+
+unbound = ~CMdict['in_rtid']
+inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
+trim_new = trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
+
+trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
+sc_straighter = simspect.poly_straightening(trimmed_sc)
+
+fig, axs = plt.subplots(2,1, figsize=[8,8])
+
+axs[1].scatter(coords_obs.phi1[trim_new], coords_obs.phi2[trim_new], c='.7', s=1)
+
+axs[0].scatter(sc['phi1'][trim_new], sc['d_phi2'][trim_new], c=sc['distance'][trim_new], s=1)
+axs[1].scatter(sc['phi1'][trim_new], sc['phi2'][trim_new], c=sc['distance'][trim_new], s=1)
+
+axs[0].scatter(sc_straighter['phi1'], sc_straighter['d_phi2'], c='k', s=1)
+axs[1].scatter(sc_straighter['phi1'], sc_straighter['phi2'], c='k', s=1)
+
+# for ax in axs:
+#     ax.set_xlim(-10,10)
