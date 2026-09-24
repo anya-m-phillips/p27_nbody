@@ -622,30 +622,34 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         ### boolean masks :p
         unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
-        inMW_na, trim_new = data_dict['inMW_na'], data_dict['trim_new']
+        inMW_na = data_dict['inMW_na']
+
+        if include_binaries==True:
+            trim_new = data_dict['trim_new_primaries']
+        if include_binaries==False:
+            trim_new = data_dict['trim_new']
 
         alive = data_dict['alive']
         acceptable_G = data_dict['acceptable_G']
 
 
-
-
         if noise is None: #<-- raw N-body case; only care that stuff is within the percentile trim and unbound from the cluster
             use = trim_new & unbound
+        
+        
         if noise is not None: #<-- semi-realistic observations case; throw out remnants, things outside a painted on stellar population, with unacceptable viamock errors ...
             
             cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
             good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
+            
             if noise=='via':
                 good_RV = rverr<1.0 #km/s #<--- pretty happy with how this mag distribution comes out...
-                
                 use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
             else:
                 good_RV = rverr<10. #km/s
-                
                 use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
-            # raise ValueError("Yikes!!! still need to apply a mag-dependent selection within the [use] mask!!")
-    
+
+            
         #### a second for troubleshooting what the best cuts to make are to ~match the DESI mag distribution...
         # ### get a sense of what the DESI RV uncertainties are: 
         # tt = Table.read('/n/home02/amphillips/data/jarvis26_Table7.fits', format='fits')
@@ -667,7 +671,6 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         # # ax.hist(noise_dict['pm_phi2'][use])
         #####################################################
 
-# %%
 
         #### assemble the data and perform the fit: 
         if noise is None:
@@ -678,12 +681,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                 [sc_straighter[k][use]+noise_dict[k][use] for k in keys]
             )
 
+        ## set initial guesses for the mixture models: 
         sd = x_data.std(axis=0)
         mu_1, sigma_1 = np.zeros(len(keys)), 0.1 * sd  # thin: narrower than the data
         mu_2, sigma_2 = np.zeros(len(keys)), 10.0 * sd  
-        # mu_3, sigma_3 = np.zeros(4), 10 * sd   # cocoon: broader than the data
         f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
-        # f_2 = 1/3 # - 0.01
 
         fracs_0 = np.array([f_1])#, f_2])
         means_0 = np.array([mu_1, mu_2])#, mu_3])
@@ -726,40 +728,23 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         else:
             result=result_free
 
-        # check result.fun, never result.success. the constrained nll is
-        # necessarily >= the free one; the gap is how hard the data resist.
-        # _demand = ", ".join("%gx %s" % (r, keys[d])
-        #                     for d, r in zip(constraint_dims, np.atleast_1d(min_ratio)))
-        # print("%s rvir=%.2f: free nll = %.2f | cnstr nll = %.2f "
-        #     "(cost of demanding a wider cocoon [%s]: %.2f)"
-        #     % (orbit, rvirs[rvir_index], result_free.fun, result.fun,
-        #         _demand, result.fun - result_free.fun))
 
-        # an ACTIVE mean bound is silent in scipy: a mu sitting exactly on the
-        # wall is the optimizer reporting the bound, not a fitted mean. it means
-        # the data wanted an OFFSET component, i.e. the straightening left
-        # structure behind (see the m3/pa5 TODO) rather than a cocoon.
-        # _fr, _mu, _sg = unpack_params(result.x, K=x_data.shape[1])
-        # _on_wall = np.abs(np.abs(_mu) - mu_halfwidth) < 1e-6 * np.maximum(mu_halfwidth, 1)
-        # if _on_wall.any():
-        #     for j, d in zip(*np.nonzero(_on_wall)):
-        #         print("  WARNING mu[comp %i, %s] = %+.4g is ON its +/-%.4g bound"
-        #               % (j, keys[d], _mu[j, d], mu_halfwidth[d]))
-        # else:
-        #     print("  means all interior to the +/-1 sd box (max |mu|/sd = %.2f)"
-        #           % np.max(np.abs(_mu) / mu_halfwidth))
-
+        # get/save fit parameters: 
         fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
         # NB: not `for ii in ...` -- that shadows the orbit-loop index.
-        p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+
+        ##### This will be re-calculated later, in results.py using the parameters that i save to a table now. 
+        # ncomponents = 2
+        # p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+        # p_thin = p1
+        # ts = p1>0.5
+        # p_cocoon = 1-p_thin
+
 
         if len(fracs_fit)<ncomponents:
             fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
 
 
-        p_thin = p1
-        ts = p1>0.5
-        p_cocoon = 1-p_thin
         f_cocoon = fracs_fit[-1]
 
 
@@ -771,25 +756,23 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         cocoon_info['sigma_cocoon'] = sigmas_fit[-1]
         cocoon_info['f_cocoon'] = f_cocoon
 
-        ### things that are like per star
-        cocoon_info['p_thin'] = p_thin
-        cocoon_info['sc_straighter'] = sc_straighter #<-- already has [inMW][trim] applied, needs [ol_clip & unbound] applied.
-        # cocoon_info['ol_clip'] = ol_clip # <-- with unbound is 'use'
-        cocoon_info['unbound'] = unbound # <-- with ol_clip is 'use'
-        cocoon_info['trim_new'] = trim_new #<-- but unbound is already trimmed to the trimmed length... lol
 
-        data_dict['cocoon_info']= cocoon_info
+
+
+
+
 
 
         ### pickle the dictionary. 
-        if constrain_widths==True:
-            datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/constrained/'
-        if constrain_widths==False:
-            datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/unconstrained/'
-        rvir = rvirs[rvir_index]
-        print("dumping to pkl file...")
-        with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
-            pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # if constrain_widths==True:
+        #     datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/constrained/'
+        # if constrain_widths==False:
+        #     datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/unconstrained/'
+        # rvir = rvirs[rvir_index]
+        # print("dumping to pkl file...")
+        # with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
+        #     pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
 
         if make_plots==True:
             c_labels = ["#CCC9E7", "#2F2F2F"]
@@ -877,42 +860,3 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
 
 # %%
-
-
-#### TESTING STUFF: 
-
-
-
-#### IF I USE PHYSICAL WIDTHS AND SPEEDS ONLY (i.e. all angles get distanced away)
-orbit = 'm3'
-rvir_index=0
-mass_index=1
-(core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-    simspect.prepare_nbody_data_anycopy(
-        orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-        include_photometry=False
-    )
-# %%
-sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab)
-coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
-
-
-unbound = ~CMdict['in_rtid']
-inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. 
-trim_new = trim_obstream_percentile(sc) # & ((sc['phi1']>5) & (sc['phi1']<15))
-
-trimmed_sc = simspect.clip_coords(sc, [inMW_na, trim_new]) #<-- this applies inMW, trim to the coordinate dictionary
-sc_straighter = simspect.poly_straightening(trimmed_sc)
-
-fig, axs = plt.subplots(2,1, figsize=[8,8])
-
-axs[1].scatter(coords_obs.phi1[trim_new], coords_obs.phi2[trim_new], c='.7', s=1)
-
-axs[0].scatter(sc['phi1'][trim_new], sc['d_phi2'][trim_new], c=sc['distance'][trim_new], s=1)
-axs[1].scatter(sc['phi1'][trim_new], sc['phi2'][trim_new], c=sc['distance'][trim_new], s=1)
-
-axs[0].scatter(sc_straighter['phi1'], sc_straighter['d_phi2'], c='k', s=1)
-axs[1].scatter(sc_straighter['phi1'], sc_straighter['phi2'], c='k', s=1)
-
-# for ax in axs:
-#     ax.set_xlim(-10,10)
