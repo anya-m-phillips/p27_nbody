@@ -31,7 +31,7 @@ from gala.dynamics import mockstream as ms
 from gala.units import galactic
 from gala.coordinates import reflex_correct
 
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 # %matplotlib inline
 # from mpl_toolkits.axes_grid1 import make_axes_locatable
 # import matplotlib.colors as mcolors
@@ -112,11 +112,13 @@ copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice th
 
 print("beginning loop...")
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-
+    if orbit !='gd1':
+        continue
 
     mass_index = 1 # <-- HIGH mass stellar population... should maximize cocoon contributions from stellar evolution-related kicks i think. 
     for rvir_index in range(4):
-
+        if rvir_index!=3:
+            continue
 
         (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
             simspect.prepare_nbody_data_anycopy(
@@ -145,9 +147,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
 
         # straightened coords with primaries 
+        PM_treatment = 'CoM'#<-- DECISION ABOUT PROPER MOTIONS BEING MADE HERE!!! 'CoM' or 'primary
         sc_primaries = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab,
-                                                                    lumdict=lumdict, PM_treatment='CoM') #<-- DECISION ABOUT PROPER MOTIONS BEING MADE HERE!!!@
-
+                                                                    lumdict=lumdict, 
+                                                                    PM_treatment=PM_treatment 
+                                                                    )
 
 
         unbound = ~CMdict['in_rtid'] #<-- flag what's unbound from the cluster. 
@@ -165,6 +169,34 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         sc_straighter = simspect.poly_straightening(sc, tc=[inMW_na, trim_new]) #<-- provide tc (trim criteria) so that the fitter doesn't lock to outliers but they're still included in the dataset. can exclude them later. 
         sc_straighter_primaries = simspect.poly_straightening(sc_primaries, tc=[inMW_na, trim_new_primaries])
+
+
+
+        ##### GETTING A HANDLE ON THE CM VS PRIMARY TREATMENT FOR WHAT PROPER MOTIONS 
+        #   THE BINARIES GET: 
+        # fig, ax = plt.subplots()
+        # nsin = data_dict['nsingles']
+
+        # ## plot binaries
+        # ts = trim_new[:nsin] #<-- note that the "trim" criteria with primary treatment will be different from the CM treatment and therefore also change depending on the PM treatment. 
+        # tb = trim_new[nsin:] #<-- note that the "trim" criteria with primary treatment will be different from the CM treatment and therefore also change depending on the PM treatment. 
+
+        # if PM_treatment=='primary':
+        #     ax.set_title("binaries have instantaneous proper motion")
+        # if PM_treatment=='CoM':
+        #     ax.set_title("binaries have cm proper motion")
+        # ax.scatter(sc_straighter_primaries['v_gsr'][nsin:][tb], sc_straighter_primaries['pm_phi2'][nsin:][tb],
+        #            c='k', label='binaries')
+
+        # ## plot singles
+        # ax.scatter(sc_straighter_primaries['v_gsr'][:nsin][ts], sc_straighter_primaries['pm_phi2'][:nsin][ts],
+        #            c='tomato', label='single stars')
+        # ax.set_xlabel(r'$\Delta v_{\rm GSR}~[\rm km~s^{-1}]$')
+        # ax.set_ylabel(r'$\Delta \mu_{\phi_2}~[\rm mas~yr^{-1}]$')
+        # ax.set_ylim(-0.45, 0.45)
+        # ax.set_xlim(-20,20)
+        # ax.legend(loc='upper left', bbox_to_anchor=(1,1))
+
 
         data_dict['sc_straighter'] = sc_straighter # <--- same length as coords_obs. 
         data_dict['sc_straighter_primaries'] = sc_straighter_primaries
@@ -209,8 +241,12 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             ### could also add seeing, airmass, moon, etc. 
         ) #<-- if G is out of the viamock table range (5-30) I will just have nan values. 
 
+
+
         vgsr_noise_via = rng.normal(0, rverr_via)
         vgsr_noise_desi = rng.normal(0, rverr_desi)
+
+
 
         pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
         pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
@@ -226,8 +262,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             'phi2': phi2_noise.to(u.degree).value,
             'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
             'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
-            'v_gsr_via': vgsr_noise_via,
-            'v_gsr_desi':vgsr_noise_desi
+            'v_gsr_via': vgsr_noise_via,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+            'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+            'rverr_via': rverr_via, #<-- the rv uncertainties
+            'rverr_desi': rverr_desi, #<-- the rv uncertainties
+            'pm_err_gaia': pm_err #<-- pm uncertainty ( total / sqrt2 )
             }
 
         data_dict['noise'] = noise_dict

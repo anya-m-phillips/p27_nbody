@@ -539,9 +539,9 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 # if __name__=="__main__":
 datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 
-make_plots=True
-constrain_widths=True
-noise = None #<-- None or 'via' or 'desi'
+make_plots=False
+constrain_widths=False
+noise = 'desi' #<-- None or 'via' or 'desi'
 include_binaries=False
 
 
@@ -568,6 +568,8 @@ keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] #<-- for GMM fitting.
 
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
+    if orbit!='gd1':
+        continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
 
@@ -579,6 +581,8 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
 
     for rvir_index in range(4):
+        if rvir_index!=3:
+            continue
         rvir = rvirs[rvir_index]
 
         filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
@@ -587,7 +591,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         CMdict, lumdict = data_dict['CoM'], data_dict['luminous']
         coords_obs = data_dict['coords_obs'] #<-- coordinate object
+        distances = coords_obs.distance
 
+
+        ### when deciding whether to include binaries, the decision is between 
+        #   
         if include_binaries==False:
             sc_straighter = data_dict['sc_straighter'] #<-- dictionary
         if include_binaries==True:
@@ -596,17 +604,21 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         phot = data_dict['phot']
 
-################## HELLO ME ON 9/24! START HERE!!! ###########
+
 
         if noise is not None:
             noise_dict = data_dict['noise']
             noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
 
-            ### TRANSLATE THE PM NOISE TO v_phi NOISE HERRE
+            rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
 
-            raise ValueError("u forgot to translate the pm-> v_phi noise. ")
-
-
+            # in a perfect world, we'd fold in a mag-dependent parallax uncertainty -> distance uncertainty 
+            #   -> quadrature summed pm + distance uncertainty would give the velocity fractional uncertainty.
+            #   however actual distances to stream stars should be a little better than gaia parallax-based distances
+            #   and their determination is less straightforward. assuming I know the distances perfectly for now. 
+            noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+            noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+            noise_dict['d_phi2'] = distances.to(u.kpc).value * (noise_dict['phi2']*u.degree).to(u.radian).value
 
         ### boolean masks :p
         unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
@@ -622,12 +634,40 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             use = trim_new & unbound
         if noise is not None: #<-- semi-realistic observations case; throw out remnants, things outside a painted on stellar population, with unacceptable viamock errors ...
             
+            cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+            good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
             if noise=='via':
-                use = trim_new & unbound & alive & nonrem & acceptable_G
+                good_RV = rverr<1.0 #km/s #<--- pretty happy with how this mag distribution comes out...
+                
+                use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
             else:
-                use = trim_new & unbound & alive & nonrem #<-- no acceptable G range for DESI errors. 
-            raise ValueError("Yikes!!! still need to apply a mag-dependent selection within the [use] mask!!")
+                good_RV = rverr<10. #km/s
+                
+                use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
+            # raise ValueError("Yikes!!! still need to apply a mag-dependent selection within the [use] mask!!")
     
+        #### a second for troubleshooting what the best cuts to make are to ~match the DESI mag distribution...
+        # ### get a sense of what the DESI RV uncertainties are: 
+        # tt = Table.read('/n/home02/amphillips/data/jarvis26_Table7.fits', format='fits')
+        # # plt.scatter(tt['GMAG0']-tt['RMAG0'], tt['GMAG0'], c=tt['V_ERR'], cmap='cool')
+        # # plt.gca().invert_yaxis()
+        # fig, ax = plt.subplots()
+        # ax.hist(phot['mG'][use], histtype='step', lw=3)
+        # ax.hist(tt['GMAG0'], zorder=0)
+        # plt.hist(noise_dict['v_phi2'][use], bins=30)
+
+
+        # # ax.hist(noise_dict['pm_err_gaia'][use]*cf, bins=20, density=True)
+        # # ax.hist(noise_dict['pm_phi2'][use], bins=20, density=True)
+        # # ax.hist(noise_dict['pm_phi2'][use], bins=100)
+        # # ax.hist(rverr[use], histtype='step', lw=3)
+        # # ax.hist(tt['V_ERR'], zorder=0)
+
+        # # ax.hist(rverr[use])
+        # # ax.hist(noise_dict['pm_phi2'][use])
+        #####################################################
+
+# %%
 
         #### assemble the data and perform the fit: 
         if noise is None:
@@ -652,24 +692,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         ncomponents = len(fracs_0)+1
 
-        ### BOUNDS: mean box at +/- 1 sd of the DATA, per dimension. see the
-        # interactive cell above for the full reasoning -- short version is that
-        # a real cocoon shares the thin stream's mean (it is WIDER, not
-        # displaced), so bounding mu near zero stops the second component from
-        # wandering off-track and soaking up a diverging tail or the far end of
-        # an epicyclic feather instead. has to be per dimension: sd is ~0.1 deg
-        # in phi2 but ~10 km/s in v_gsr.
-        # mu_halfwidth = 1.0 * sd
 
-        ### for this i am not going to bound the mean, but i will save it and 
-        #   use means far from zero to flag fits that might not have worked well. 
-        # means_bound  = np.broadcast_to(np.column_stack([-mu_halfwidth, mu_halfwidth]),
-        #                                (ncomponents, len(sd), 2))
-        # fracs_bound  = None
-        # sigmas_bound = (0, None)         # sigma > 0 -- already free in ln sigma
-
-        # bounds = pack_bounds(fracs_bound, means_bound, sigmas_bound,
-        #                      n_components=ncomponents, K=x_data.shape[1])
         bounds=None
 
         ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
@@ -678,9 +701,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
         min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
         constraints = [sigma_ratio_constraint(min_ratio,
-                                            n_components=ncomponents,
-                                            K=x_data.shape[1],
-                                            dims=constraint_dims)]
+                                              n_components=ncomponents,
+                                              K=x_data.shape[1],
+                                              dims=constraint_dims)]
 
 
         # stage 1: Powell, to land in the right basin. it IGNORES constraints
