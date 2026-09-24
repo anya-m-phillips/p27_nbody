@@ -537,12 +537,33 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 
 # %%
 # if __name__=="__main__":
-datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
+datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
+table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
-make_plots=False
+make_plots=True
 constrain_widths=False
-noise = 'desi' #<-- None or 'via' or 'desi'
+noise = None #<-- None or 'via' or 'desi'
 include_binaries=False
+
+if noise is None:
+    cd0 = 'noiseless'
+if noise is not None:
+    cd0 = noise+"_noise" #< so via_noise or desi_noise
+
+if include_binaries==True:
+    cd1 = 'binaries'
+if include_binaries==False:
+    cd1 = 'CoM'
+
+if constrain_widths==True:
+    cd2 = '_constrained'
+if constrain_widths==False:
+    cd2 = ''
+
+case_name = cd0+"_"+cd1+cd2
+
+print("running case:", case_name)
+
 
 
 grid_info = paf.extended_grid_info(scratch=False) 
@@ -567,22 +588,20 @@ copy_options = [0,1,2,3,4]
 keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] #<-- for GMM fitting. 
 
 
+tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], []
+
+
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    if orbit!='gd1':
+    if orbit!='aau':
         continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
 
-    f_cocoons_this_orbit = []
-    cocoon_means_this_orbit = []
-    cocoon_sigmas_this_orbit = []
-    ts_means_this_orbit = []
-    ts_sigmas_this_orbit = []
-
-
     for rvir_index in range(4):
-        if rvir_index!=3:
+
+        if rvir_index!=1:
             continue
+
         rvir = rvirs[rvir_index]
 
         filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
@@ -602,11 +621,12 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             sc_straighter = data_dict['sc_straighter_primaries'] #<-- dictionary
 
 
-        phot = data_dict['phot']
+
 
 
 
         if noise is not None:
+            phot = data_dict['phot']
             noise_dict = data_dict['noise']
             noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
 
@@ -649,7 +669,6 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                 good_RV = rverr<10. #km/s
                 use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
 
-            
         #### a second for troubleshooting what the best cuts to make are to ~match the DESI mag distribution...
         # ### get a sense of what the DESI RV uncertainties are: 
         # tt = Table.read('/n/home02/amphillips/data/jarvis26_Table7.fits', format='fits')
@@ -733,12 +752,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
         # NB: not `for ii in ...` -- that shadows the orbit-loop index.
 
-        ##### This will be re-calculated later, in results.py using the parameters that i save to a table now. 
-        # ncomponents = 2
-        # p1, p2 = [component_membership_probability(x_data, fracs_fit, means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
-        # p_thin = p1
-        # ts = p1>0.5
-        # p_cocoon = 1-p_thin
+
 
 
         if len(fracs_fit)<ncomponents:
@@ -748,33 +762,30 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         f_cocoon = fracs_fit[-1]
 
 
-        ### modify the data dictionary with model information
-        cocoon_info = {}
-        cocoon_info['mu_thin'] = means_fit[0]
-        cocoon_info['sigma_thin'] = sigmas_fit[0]
-        cocoon_info['mu_cocoon'] = means_fit[-1]
-        cocoon_info['sigma_cocoon'] = sigmas_fit[-1]
-        cocoon_info['f_cocoon'] = f_cocoon
+        ### append param fits to lists for table:
+        Mts.append(means_fit[0]) # thin stream means
+        Sts.append(sigmas_fit[0])# thin stream dispersions
 
+        Mc.append(means_fit[1]) # cocoon means
+        Sc.append(sigmas_fit[1])# cocoon dispersions
 
+        fc.append(f_cocoon)
 
-
-
-
-
-
-        ### pickle the dictionary. 
-        # if constrain_widths==True:
-        #     datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/constrained/'
-        # if constrain_widths==False:
-        #     datapath = '/n/home02/amphillips/p27_nbody/data/data_dicts/unconstrained/'
-        # rvir = rvirs[rvir_index]
-        # print("dumping to pkl file...")
-        # with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
-        #     pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        tab_rvirs.append(rvir)
+        tab_orbits.append(orbit)
 
 
         if make_plots==True:
+            plot_path = '/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/'
+            
+            
+            ##### This will be re-calculated later, in results.py using the parameters that i save to a table now. 
+            # for now only calculating because it goes into the sanity check making plots step. 
+            p1, p2 = [component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+            p_thin = p1
+            ts = p1>0.5
+            p_cocoon = 1-p_thin
+
             c_labels = ["#CCC9E7", "#2F2F2F"]
             cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
@@ -848,15 +859,31 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             axs[-1,1].set_xlabel(r'density')
 
 
+
+            case_dir = case_name+"/" #<-- have made all of these directories in scratch. 
+            plt.savefig(plot_path+case_dir+"%s_%.2f.pdf"%(orbit, rvir),
+                        dpi=300, bbox_inches='tight')
+
         
-            if constrain_widths==False:
-                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-                            bbox_inches='tight')
-            if constrain_widths==True:
-                plt.savefig("/n/home02/amphillips/p27_nbody/plots/cocoon_separation/gmm_constrained/%s_%.2f.pdf"%(orbit, rvirs[rvir_index]),
-                            bbox_inches='tight')
 
             plt.close()
 
 
+print("writing table...")
+t_out = Table()
+t_out['orbit'] = np.array(tab_orbits)
+t_out['Rvir0'] = np.array(tab_rvirs)
+t_out['M_ts'] = np.array(Mts)
+t_out['S_ts'] = np.array(Sts)
+t_out['M_c'] = np.array(Mc)
+t_out['S_c'] = np.array(Sc)
+t_out['f_cocoon'] = np.array(fc)
+t_out.write(table_path+case_name+".fits", overwrite=True)
 # %%
+tt = Table.read(table_path+case_name+".fits", format="fits")
+tt["S_ts"][:,1]
+
+# TODO: 
+# - AAU rvir0=6 case not working / did work last week... what's up???
+# - run all cases of noise model
+# - rewrite results notebook; add stuff to overleaf. 
