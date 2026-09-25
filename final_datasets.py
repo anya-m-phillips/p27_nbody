@@ -131,14 +131,19 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
     orbital_phase = (r - peri) / (apo - peri)
 
-    if orbital_phase<0.5:
-        tidal_boundary = 2.0 #<-- if we're closer to pericenter, make the tidal boundary 2 rtid since things will be recaptured. this would be gd1 and jet.
-        print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
+    # if orbital_phase<0.5:
+    #     tidal_boundary = 2.0 #<-- if we're closer to pericenter, make the tidal boundary 2 rtid since things will be recaptured. this would be gd1 and jet.
+    #     print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
 
-    if orbital_phase>0.5:
-        tidal_boundary = 1.0
-    if orbital_phase>1:
-        print("something's wrong dawg")
+    # if orbital_phase>0.5:
+    #     tidal_boundary = 1.0
+    # if orbital_phase>1:
+    #     print("something's wrong dawg")
+
+    ### actually, determining that I always want to 
+    # cut at 2x the tidal radius to completely remove the progenitor. 
+    # will just have to deal with the fact that AAU is messed up :/ 
+    tidal_boundary = 2.0
 
     print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
 
@@ -200,6 +205,12 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         sc_straighter = simspect.poly_straightening(sc, tc=[inMW_na, trim_new]) #<-- provide tc (trim criteria) so that the fitter doesn't lock to outliers but they're still included in the dataset. can exclude them later. 
         sc_straighter_primaries = simspect.poly_straightening(sc_primaries, tc=[inMW_na, trim_new_primaries])
 
+
+        # use = unbound & trim_new
+        # fig, ax = plt.subplots(figsize=[9,3])
+        # ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
+        #             c='k', s=.01)
+        # ax.set_xlim(-20,20)
 
 
         ##### GETTING A HANDLE ON THE CM VS PRIMARY TREATMENT FOR WHAT PROPER MOTIONS 

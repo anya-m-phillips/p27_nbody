@@ -592,14 +592,14 @@ tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], []
 
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    # if orbit!='aau':
-    #     continue
+    if orbit!='aau':
+        continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
 
     for rvir_index in range(4):
 
-        if rvir_index!=3:
+        if rvir_index!=0:
             continue
 
         rvir = rvirs[rvir_index]
@@ -619,7 +619,6 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             sc_straighter = data_dict['sc_straighter'] #<-- dictionary
         if include_binaries==True:
             sc_straighter = data_dict['sc_straighter_primaries'] #<-- dictionary
-
 
 
 
@@ -689,8 +688,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         # # ax.hist(rverr[use])
         # # ax.hist(noise_dict['pm_phi2'][use])
         #####################################################
-
-
+        fig, ax = plt.subplots(figsize=[9,3])
+        ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
+                   c='k', s=.1)
+        ax.set_xlim(-20,20)
+# %%
         #### assemble the data and perform the fit: 
         if noise is None:
             x_data = np.column_stack([sc_straighter[k][use] for k in keys])
@@ -814,7 +816,8 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                 ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
                         sc_straighter[key][use][order], # plot cocoon on top. 
                         # x_data[:,ii],
-                            c=p_cocoon[order], s=5, cmap=cocoon_cmap,
+                            # c=p_cocoon[order], s=5, cmap=cocoon_cmap,
+                            s=0.1, c='k',
                             rasterized=True) 
                 ax.set_ylim(-cut,cut)
     
