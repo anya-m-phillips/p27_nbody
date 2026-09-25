@@ -592,8 +592,8 @@ tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], []
 
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    if orbit!='aau':
-        continue
+    # if orbit!='aau':
+    #     continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
 
