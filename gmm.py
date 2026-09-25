@@ -599,7 +599,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
     for rvir_index in range(4):
 
-        if rvir_index!=1:
+        if rvir_index!=3:
             continue
 
         rvir = rvirs[rvir_index]
@@ -884,6 +884,7 @@ tt = Table.read(table_path+case_name+".fits", format="fits")
 tt["S_ts"][:,1]
 
 # TODO: 
-# - AAU rvir0=6 case not working / did work last week... what's up???
+# - AAU rvir0=6 case not working / did work last week... what's up??? #<-- it's the choice of tidal boundary. 
 # - run all cases of noise model
 # - rewrite results notebook; add stuff to overleaf. 
+

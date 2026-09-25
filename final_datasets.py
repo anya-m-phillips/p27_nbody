@@ -112,18 +112,45 @@ copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice th
 
 print("beginning loop...")
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    if orbit !='gd1':
-        continue
+    # if orbit !='aau':
+    #     continue
 
     mass_index = 1 # <-- HIGH mass stellar population... should maximize cocoon contributions from stellar evolution-related kicks i think. 
+    
+
+    ### determine orbital phase -- informs the rtid boundary.
+
+    init_displacement = init_displacements[ii]
+    orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
+    peri = orbit_obj.pericenter().to(u.kpc).value
+    apo = orbit_obj.apocenter().to(u.kpc).value
+
+
+    x,y,z = init_displacement[:3]
+    r = np.sqrt(x**2 + y**2 + z**2)
+
+    orbital_phase = (r - peri) / (apo - peri)
+
+    if orbital_phase<0.5:
+        tidal_boundary = 2.0 #<-- if we're closer to pericenter, make the tidal boundary 2 rtid since things will be recaptured. this would be gd1 and jet.
+        print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
+
+    if orbital_phase>0.5:
+        tidal_boundary = 1.0
+    if orbital_phase>1:
+        print("something's wrong dawg")
+
+    print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
+
+
     for rvir_index in range(4):
-        if rvir_index!=3:
-            continue
+        # if rvir_index!=3:
+        #     continue
 
         (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
             simspect.prepare_nbody_data_anycopy(
                 orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-                include_photometry=False, N_rtid_boundary = 2.0,
+                include_photometry=False, N_rtid_boundary = tidal_boundary, #<--- not sure what i'm going to use for tthis: 
                 verbose=False
             )
 
@@ -131,7 +158,6 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
         distances = coords_obs.distance
         data_dict['coords_obs'] = coords_obs
-
 
         # ** this is always going to be centers of mass. gets returned as an immutible coordinate object, idk. 
         coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
@@ -157,6 +183,10 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         unbound = ~CMdict['in_rtid'] #<-- flag what's unbound from the cluster. 
         data_dict['unbound'] = unbound
         data_dict['nonrem'] = nonrem
+
+        ### quick check on how restrictive unbound is... for debugging purposes. 
+        # print(len(distances), len(distances[unbound]))
+
 
         ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
         inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. keep everything true but make the mask so functions downstream still work. 
