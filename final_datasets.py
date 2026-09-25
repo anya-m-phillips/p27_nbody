@@ -107,13 +107,14 @@ init_displacements = [
     grid_info.c19_init_displacement]
 masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
-copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice there are <=5x copies per sim.
 
 
 print("beginning loop...")
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    # if orbit !='aau':
-    #     continue
+    if orbit !='aau':
+        copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice there are <=5x copies per sim.
+    else:
+        copy_options = [4,3,2,1,0] #<-- a misbehaving copy of AAU.... 
 
     mass_index = 1 # <-- HIGH mass stellar population... should maximize cocoon contributions from stellar evolution-related kicks i think. 
     
@@ -156,7 +157,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             simspect.prepare_nbody_data_anycopy(
                 orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
                 include_photometry=False, N_rtid_boundary = tidal_boundary, #<--- not sure what i'm going to use for tthis: 
-                verbose=False
+                verbose=True
             )
 
 

@@ -579,28 +579,39 @@ init_displacements = [
     grid_info.aau_init_displacement,
     grid_info.pa5_init_displacement,
     grid_info.jet_init_displacement,
-    grid_info.c19_init_displacement]
+    grid_info.c19_init_displacement
+    ]
+
+phi1_lims = [
+    (-80, 10),
+    (-15,15),
+    (-10,10),
+    (-20,20),
+    (-20,10)
+]
+
 masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
 copy_options = [0,1,2,3,4]
 # copy_options = [4,3,2,1,0]
 
-keys = ['d_phi2','v_phi1','v_phi2','v_gsr'] #<-- for GMM fitting. 
+keys = ['phi2','v_phi1','v_phi2','v_gsr'] #<-- for GMM fitting. 
 
 
 tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], []
 
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    if orbit!='aau':
-        continue
+    # if orbit!='aau':
+    #     continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
 
     for rvir_index in range(4):
+        # if rvir_index!=3:
+        #     continue
 
-        if rvir_index!=0:
-            continue
+        # copy_options = [4,3,2,1]
 
         rvir = rvirs[rvir_index]
 
@@ -688,11 +699,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         # # ax.hist(rverr[use])
         # # ax.hist(noise_dict['pm_phi2'][use])
         #####################################################
-        fig, ax = plt.subplots(figsize=[9,3])
-        ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
-                   c='k', s=.1)
-        ax.set_xlim(-20,20)
-# %%
+        # fig, ax = plt.subplots(figsize=[9,3])
+        # ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
+        #            c='k', s=.1)
+        # ax.set_xlim(-20,20)
+
         #### assemble the data and perform the fit: 
         if noise is None:
             x_data = np.column_stack([sc_straighter[k][use] for k in keys])
@@ -724,9 +735,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
         min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
         constraints = [sigma_ratio_constraint(min_ratio,
-                                              n_components=ncomponents,
-                                              K=x_data.shape[1],
-                                              dims=constraint_dims)]
+                                            n_components=ncomponents,
+                                            K=x_data.shape[1],
+                                            dims=constraint_dims)]
 
 
         # stage 1: Powell, to land in the right basin. it IGNORES constraints
@@ -799,10 +810,10 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
             
             key_labels = [
-                # r'$\phi_2~[\degree]$',
+                r'$\phi_2~[\degree]$',
                 # r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
                 # r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-                r'$d_{\phi_2}~[\rm kpc]$',
+                # r'$d_{\phi_2}~[\rm kpc]$',
                 r'$v_{\phi_1}~[\rm km~s^{-1}]$',
                 r'$v_{\phi_2}~[\rm km~s^{-1}]$',                
                 r'$v_{\rm GSR}~[\rm km~s^{-1}]$',
@@ -816,11 +827,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                 ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
                         sc_straighter[key][use][order], # plot cocoon on top. 
                         # x_data[:,ii],
-                            # c=p_cocoon[order], s=5, cmap=cocoon_cmap,
-                            s=0.1, c='k',
+                            c=p_cocoon[order], s=5, cmap=cocoon_cmap,
+                            # s=0.1, c='k',
                             rasterized=True) 
                 ax.set_ylim(-cut,cut)
-    
+                ax.set_xlim(phi1_lims[ii])
 
                 # ax.set_ylim(-3*cut, 3*cut)
                 ax.set_ylabel(key_labels[jj], fontsize=15)
@@ -884,10 +895,26 @@ t_out['f_cocoon'] = np.array(fc)
 t_out.write(table_path+case_name+".fits", overwrite=True)
 # %%
 tt = Table.read(table_path+case_name+".fits", format="fits")
-tt["S_ts"][:,1]
+fig, ax = plt.subplots()
 
+okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
+rvir_cut = tt['Rvir0']<6.
+
+for orbit in orbits:
+    orbsel = tt['orbit']==orbit
+    
+    selection=orbsel & np.logical_and.reduce(okay_mean.T) #& rvir_cut
+
+    ax.plot(tt['Rvir0'][selection], tt['f_cocoon'][selection],
+            marker='o',
+            label=orbit)
+
+ax.legend(loc='upper left')
+ax.set_ylim(bottom=0)
 # TODO: 
-# - AAU rvir0=6 case not working / did work last week... what's up??? #<-- it's the choice of tidal boundary. 
+# - AAU rvir0=6 case not working / did work last week... what's up??? #<--
+#   ^ the difference is the choice of tidal boundary; however, 
+#   i don't want to relax the tidal boundary cut, so we're going to have to live with the weird result. 
 # - run all cases of noise model
 # - rewrite results notebook; add stuff to overleaf. 
 

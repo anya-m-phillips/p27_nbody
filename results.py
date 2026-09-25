@@ -51,40 +51,71 @@ import PETAR_ANALYSIS_FUNCTIONS as paf
 import inspect_new_sims as simspect 
 import pickle
 # %%
+datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
+table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
+
+make_plots=True
+constrain_widths=False
+noise = None #<-- None or 'via' or 'desi'
+include_binaries=False
+
+if noise is None:
+    cd0 = 'noiseless'
+if noise is not None:
+    cd0 = noise+"_noise" #< so via_noise or desi_noise
+
+if include_binaries==True:
+    cd1 = 'binaries'
+if include_binaries==False:
+    cd1 = 'CoM'
+
+if constrain_widths==True:
+    cd2 = '_constrained'
+if constrain_widths==False:
+    cd2 = ''
+
+case_name = cd0+"_"+cd1+cd2
+
+print("running case:", case_name)
+
 
 grid_info = paf.extended_grid_info(scratch=False) 
 lm_colors, hm_colors, simcolors = paf.define_simcolors()
-reordered_colors = hm_colors + lm_colors[::-1]
+reordered_colors = hm_colors[:-1] + lm_colors[::-1]
 cc = reordered_colors[:-1]
 prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 
 # ordering decided here. 
-orbits = ['gd1','aau','pa5','jet','m3','c19']
+orbits = ['gd1','aau','pa5','jet','c19']
+phi1_lims = [
+    (-80, 10),
+    (-15,15),
+    (-15,15),
+    (-20,20),
+    (-20,10)
+]
+orbit_lim_map = {o:l for o, l in zip(orbits, phi1_lims)}
+
 init_displacements = [
     grid_info.gd1_init_displacement, 
     grid_info.aau_init_displacement,
     grid_info.pa5_init_displacement,
     grid_info.jet_init_displacement,
-    grid_info.m3_init_displacement,
     grid_info.c19_init_displacement]
 masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
 copy_options = [0,1,2,3,4]
-# copy_options = [4,3,2,1,0]
 
-# keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 
 pericenters_kpc = []
 apocenters_kpc = []
 present_rs = []
+med_distances = []
 
 f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
 
 use_constrained = False
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    # if orbit=='pa5' or orbit=='m3':
-    #     continue
-    # do the orbit-wise check -- integrate prog orbit and find the pericenter. 
     init_displacement = init_displacements[ii]
     orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
     peri = orbit_obj.pericenter()
@@ -96,99 +127,44 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     r = np.sqrt(x**2 + y**2 + z**2)
     present_rs.append(r) # kpc
 
+    ##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
+    filename = datapath+"%s_%.2f.pickle"%(orbit, 6.00)
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
 
-    mass_index = 1 # <-- high mass stellar population... 
+    coords_obs = data_dict['coords_obs']
+    distances = coords_obs.distance.to(u.kpc).value
+    med_distances.append(np.median(distances))
 
-    f_cocoons_this_orbit = []
-    cocoon_sig_vgsr_this_orbit = []
-    cocoon_sig_phi2_this_orbit = []
-
-    thin_sig_vgsr_this_orbit = []
-    thin_sig_phi2_this_orbit = []
-
-    for rvir_index in range(4):
-        rvir = rvirs[rvir_index]
-
-        ### load dictionary
-        data_path = "/n/home02/amphillips/p27_nbody/data/data_dicts/"
-        if use_constrained==True:
-            data_path+='constrained/'
-        else:
-            data_path+='unconstrained/'
-        filename = data_path+"%s_%.2f.pickle"%(orbit, rvir)
-        with open(filename, 'rb') as handle:
-            data_dict = pickle.load(handle)
-
-        cocoon_dict = data_dict['cocoon_info']
-
-        mu_thin, sigma_thin = cocoon_dict['mu_thin'], cocoon_dict['sigma_thin']
-        mu_cocoon, sigma_cocoon = cocoon_dict['mu_cocoon'], cocoon_dict['sigma_cocoon']
-        f_cocoon = cocoon_dict['f_cocoon']
-
-        f_cocoons_this_orbit.append(f_cocoon)
-
-        sc_straighter = cocoon_dict['sc_straighter']
-        p_thin = cocoon_dict['p_thin']
-        use = cocoon_dict['unbound']
-
-        c = p_thin<0.5
-        phi2s = sc_straighter['phi2'][use]
-
-
-
-        # cocoon_sig_phi2_this_orbit.append(sigma_cocoon[0])
-        cocoon_sig_phi2_this_orbit.append(np.std(phi2s[c]))
-        cocoon_sig_vgsr_this_orbit.append(sigma_cocoon[-1])
-
-        # thin_sig_phi2_this_orbit.append(sigma_thin[0])
-        thin_sig_phi2_this_orbit.append(np.std(phi2s[~c]))
-        thin_sig_vgsr_this_orbit.append(sigma_thin[-1])
-
-
-        ### for now don't care about this. 
-        # ol_clip = cocoon_dict['ol_clip']
-        # unbound = cocoon_dict['unbound']
-        # use = ol_clip & unbound
-
-        # p_thin = cocoon_dict['p_thin']
-        # sc_straighter = cocoon_dict['sc_straighter']
-
-
-    f_cocoons.append(f_cocoons_this_orbit)
-    cocoon_sigvgsrs.append(cocoon_sig_vgsr_this_orbit)
-    cocoon_sigphi2s.append(cocoon_sig_phi2_this_orbit)
-    thin_sigvgsrs.append(thin_sig_vgsr_this_orbit)
-    thin_sigphi2s.append(thin_sig_phi2_this_orbit) 
-
+med_distances = np.array(med_distances)
+present_rs = np.array(present_rs)
 pericenters_kpc = np.array(pericenters_kpc)
 apocenters_kpc = np.array(apocenters_kpc)
-present_rs = np.array(present_rs)
-
-f_cocoons = np.array(f_cocoons)
-cocoon_sigvgsrs = np.array(cocoon_sigvgsrs)
-cocoon_sigphi2s = np.array(cocoon_sigphi2s)
-thin_sigvgsrs = np.array(thin_sigvgsrs)
-thin_sigphi2s = np.array(thin_sigphi2s)
-
-
 ### roughly ~amount of the way through orbit
 orbital_phases = (present_rs - pericenters_kpc) / (apocenters_kpc - pericenters_kpc)
 orbits = np.array(orbits)
 
 eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
 # %%
-reordered = np.argsort(pericenters_kpc)
+
+tt = Table.read(table_path+case_name+".fits", format="fits")
+okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
+rvir_cut = tt['Rvir0']<6.
+
+reordered = np.argsort(pericenters_kpc )
 
 ccc = cc[1:]
 fig, axs = plt.subplots(2,3,figsize=[21,14])
+plt.subplots_adjust(wspace=0.2, hspace=0.2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
-    # if orbit in ['m3','pa5']:
-    #     continue
+    orbsel = tt['orbit'] == orbit
 
-    f_cocoons_this_orbit = f_cocoons[reordered][ii]
+    selection=orbsel & np.logical_and.reduce(okay_mean.T) #& rvir_cut
 
+    f_cocoons_this_orbit = tt['f_cocoon'][selection]
 
-    x = rvirs
+    
+    x = tt['Rvir0'][selection]
     axs[0,0].plot(x, f_cocoons_this_orbit, 
                 label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
@@ -197,14 +173,17 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
 
 
     ### cocoon ! ! !
-    phi2_dispersions_this_orbit = cocoon_sigphi2s[reordered][ii]
-    vgsr_dispersions_this_orbit = cocoon_sigvgsrs[reordered][ii]
+    phi2_dispersions_this_orbit = tt['S_c'][:,0][selection] #<-- TODO: translate back to angle from distance. 
+    # phi2_dispersions_this_orbit = (dphi2_dispersions_this_orbit / med_distances[ii]) * u.radian.to(u.degree)
+    
+    vgsr_dispersions_this_orbit = tt['S_c'][:,-1][selection]
+
     axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
     axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
 
     ### thin ! ! !
-    phi2_dispersions_this_orbit = thin_sigphi2s[reordered][ii]
-    vgsr_dispersions_this_orbit = thin_sigvgsrs[reordered][ii]
+    phi2_dispersions_this_orbit = tt['S_ts'][:,0][selection] #<-- TODO: translate back to angle from distance. 
+    vgsr_dispersions_this_orbit = tt['S_ts'][:,-1][selection]
     axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
     axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
 
@@ -230,47 +209,69 @@ axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
 
 axs[1,0].remove()
 
-filename="plots/gmm_summary"
-if use_constrained==True:
-    filename+="_constrained.pdf"
-else:
-    filename+="_unconstrained.pdf"
-plt.savefig(filename, dpi=300, bbox_inches='tight')
+plot_filename = "summary_"+case_name
+plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
 
 # %%
-
+#
+#
+#--------------------------------------------------------#
+#       plots to demonstrate the GMM results             #
+#       for individuaal simulations (success and fails)  #
+#--------------------------------------------------------#
+import gmm
 # %%
-
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
+tt = Table.read(table_path+case_name+".fits", format="fits")
+
+
 c_labels = ["#CCC9E7", "#2F2F2F"]
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-orbit = 'gd1'
-rvir_index=0
+orbit = 'pa5'
+rvir_index=2
 rvir = rvirs[rvir_index]
-filename = data_path+"%s_%.2f.pickle"%(orbit, rvir)
+
+
+#### extract info about the mixture modele from the saved table:
+row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+means_fit = np.array([
+    row['M_ts'][0], row['M_c'][0]
+])
+sigmas_fit = np.array([
+    row['S_ts'][0], row['S_c'][0]
+])
+fracs_fit = np.array([
+    1-row['f_cocoon'][0], row['f_cocoon'][0]
+])
+
+
+#### open the N-body data
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
 with open(filename, 'rb') as handle:
     data_dict = pickle.load(handle)
 
-cocoon_dict = data_dict['cocoon_info']
 
-## for now don't care about this. 
-# ol_clip = cocoon_dict['ol_clip']
-trim_new = cocoon_dict['trim_new']
-unbound = cocoon_dict['unbound']
-# use = ol_clip & unbound
-use = unbound
+# if include_binaries==False:
+sc_straighter = data_dict['sc_straighter'] #<-- dictionary
+# if include_binaries==True:
+#     sc_straighter = data_dict['sc_straighter_primaries'] #<-- dictionary
 
-p_thin = cocoon_dict['p_thin']
+unbound = data_dict['unbound']
+trim_new = data_dict['trim_new']
+use = unbound & trim_new
+
+keys = ['phi2','v_phi1','v_phi2','v_gsr']
+x_data = np.column_stack([
+    sc_straighter[k][use] for k in keys
+])
+
+ncomponents = 2
+p1, p2 = [gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+p_thin = p1
+ts = p1>0.5
 p_cocoon = 1-p_thin
 order = np.argsort(p_cocoon)
-sc_straighter = cocoon_dict['sc_straighter']
-
-
-cocoon_sigmas = cocoon_dict['sigma_cocoon']
-
-
-
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
@@ -300,12 +301,10 @@ for jj, key in enumerate(keys):
                 c=p_cocoon[order], s=5, cmap=cocoon_cmap,
                 rasterized=True) 
     ax.set_ylim(-cut,cut)
-
+    ax.set_xlim(orbit_lim_map[orbit])
 
     # ax.set_ylim(-3*cut, 3*cut)
     ax.set_ylabel(key_labels[jj], fontsize=15)
-    ax.set_xlim(-100, 15) #<-- gd1
-    # ax.set_xlim(-20,10) #<-- jet
 
 
     ax = axs[jj,1]
@@ -342,5 +341,5 @@ for jj, key in enumerate(keys):
 axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
 axs[-1,1].set_xlabel(r'fraction in bin', fontsize=15)
 
-plt.savefig("plots/demo_cocoon_separation.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/demo_cocoon_separation_%s.pdf"%orbit, dpi=300, bbox_inches='tight')
 # %%
