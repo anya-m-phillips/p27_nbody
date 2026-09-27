@@ -283,9 +283,18 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             ### could also add seeing, airmass, moon, etc. 
         ) #<-- if G is out of the viamock table range (5-30) I will just have nan values. 
 
+        rverr_via_10hr = np.full(len(mG), fill_value = np.nan)
+        rverr_via_10hr[acceptable_G_viamock] = noise.via_RVerr(
+            G = mG[acceptable_G_viamock],
+            feh=-2.0,
+            log_Teff=log_Teff[acceptable_G_viamock],
+            exptime_s=int(3600*10),
+            nexp=10
+        )
 
 
         vgsr_noise_via = rng.normal(0, rverr_via)
+        vgsr_noise_via_10hr = rng.normal(0, rverr_via)
         vgsr_noise_desi = rng.normal(0, rverr_desi)
 
 
@@ -308,7 +317,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
             'rverr_via': rverr_via, #<-- the rv uncertainties
             'rverr_desi': rverr_desi, #<-- the rv uncertainties
-            'pm_err_gaia': pm_err #<-- pm uncertainty ( total / sqrt2 )
+            'pm_err_gaia': pm_err, #<-- pm uncertainty ( total / sqrt2 )
+            'rverr_via10hr':rverr_via_10hr,
+            'v_gsr_via10hr':vgsr_noise_via_10hr
             }
 
         data_dict['noise'] = noise_dict

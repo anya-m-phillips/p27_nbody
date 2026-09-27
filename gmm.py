@@ -542,8 +542,8 @@ table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
 make_plots=True
 constrain_widths=False
-noise = None #<-- None or 'via' or 'desi'
-include_binaries=False
+noise = 'via' #<-- None or 'via' or 'desi'
+include_binaries=True
 
 if noise is None:
     cd0 = 'noiseless'
@@ -604,6 +604,9 @@ tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], []
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
     # if orbit!='aau':
     #     continue
+    if noise=='desi': #<-- for DESI, only look at GD-1, just for the jarvis comparison. other streams don't seem to have enough surviving members for this to work. 
+        if orbit!='gd1':
+            continue
 
     mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
 
@@ -673,7 +676,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
             
             if noise=='via':
-                good_RV = rverr<1.0 #km/s #<--- pretty happy with how this mag distribution comes out...
+                good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
                 use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
             else:
                 good_RV = rverr<10. #km/s
@@ -744,7 +747,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
         # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
         # throwing away the basin Powell was run to find.
-        result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell',
+        result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # https://en.wikipedia.org/wiki/Powell%27s_method
                             bounds=bounds,
                             options={'maxiter': 100000, 'maxfev': 100000})
 
@@ -824,8 +827,12 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
                 ax = axs[jj,0]
 
+                y = sc_straighter[key][use][order]
+                if noise is not None:
+                    y += noise_dict[key][use][order]
+
                 ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
-                        sc_straighter[key][use][order], # plot cocoon on top. 
+                        y, # plot cocoon on top. 
                         # x_data[:,ii],
                             c=p_cocoon[order], s=5, cmap=cocoon_cmap,
                             # s=0.1, c='k',
@@ -844,11 +851,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                 #                       bins=bins, density=True)
 
                 cocoon_selection = p_thin<0.5
-                ax.hist(sc_straighter[key][use][~cocoon_selection], 
+                ax.hist(y[~cocoon_selection], 
                         alpha=1., density=True, #, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
                         color=c_labels[0],orientation='horizontal',
                         bins=bins)
-                ax.hist(sc_straighter[key][use][cocoon_selection],
+                ax.hist(y[cocoon_selection],
                         histtype='step', density=True, #, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
                         lw=2, 
                         color=c_labels[-1],orientation='horizontal',
@@ -893,8 +900,22 @@ t_out['M_c'] = np.array(Mc)
 t_out['S_c'] = np.array(Sc)
 t_out['f_cocoon'] = np.array(fc)
 t_out.write(table_path+case_name+".fits", overwrite=True)
+
 # %%
 tt = Table.read(table_path+case_name+".fits", format="fits")
+fig, ax = plt.subplots()
+ax.scatter(tt['S_ts'][:,3], tt['S_c'][:,3], c=tt['Rvir0'], cmap='cool')
+ax.set_xlim(left=0)
+ax.set_ylim(bottom=0)
+# %%
+
+# %%
+
+# %%
+
+# %%
+
+# %%
 fig, ax = plt.subplots()
 
 okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])

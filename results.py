@@ -56,8 +56,8 @@ table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
 make_plots=True
 constrain_widths=False
-noise = None #<-- None or 'via' or 'desi'
-include_binaries=False
+noise = 'via' #<-- None or 'via' or 'desi'
+include_binaries=True
 
 if noise is None:
     cd0 = 'noiseless'
@@ -114,7 +114,6 @@ med_distances = []
 
 f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
 
-use_constrained = False
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
     init_displacement = init_displacements[ii]
     orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
@@ -145,6 +144,7 @@ orbital_phases = (present_rs - pericenters_kpc) / (apocenters_kpc - pericenters_
 orbits = np.array(orbits)
 
 eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
+
 # %%
 
 tt = Table.read(table_path+case_name+".fits", format="fits")
@@ -213,6 +213,8 @@ plot_filename = "summary_"+case_name
 plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
 
 # %%
+
+# %%
 #
 #
 #--------------------------------------------------------#
@@ -223,18 +225,17 @@ import gmm
 # %%
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
 tt = Table.read(table_path+case_name+".fits", format="fits")
-
-
 c_labels = ["#CCC9E7", "#2F2F2F"]
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-orbit = 'pa5'
+orbit = 'gd1'
 rvir_index=2
 rvir = rvirs[rvir_index]
 
 
 #### extract info about the mixture modele from the saved table:
 row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+
 means_fit = np.array([
     row['M_ts'][0], row['M_c'][0]
 ])
@@ -259,7 +260,33 @@ sc_straighter = data_dict['sc_straighter'] #<-- dictionary
 
 unbound = data_dict['unbound']
 trim_new = data_dict['trim_new']
-use = unbound & trim_new
+
+if noise is not None:
+    nonrem = data_dict['nonrem']
+
+
+    phot = data_dict['phot']
+    noise_dict = data_dict['noise']
+    noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+
+    rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
+    alive = data_dict['alive']
+    acceptable_G = data_dict['acceptable_G']
+
+    cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
+    
+
+    if noise=='via':
+        good_RV = rverr<1.0 #km/s #<--- pretty happy with how this mag distribution comes out...
+        use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
+    else:
+        good_RV = rverr<10. #km/s
+        use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
+
+
+else:
+    use = unbound & trim_new
 
 keys = ['phi2','v_phi1','v_phi2','v_gsr']
 x_data = np.column_stack([
@@ -290,13 +317,20 @@ for jj, key in enumerate(keys):
     cocoon_selection = p_thin<0.5
 
     ydata = sc_straighter[key][use][cocoon_selection]
+    if noise is not None:
+        ydata += noise_dict[key][use][cocoon_selection]
+
     std = np.std(ydata)
     cut = 3*std #cocoon_sigmas[jj]
 
     ax = axs[jj,0]
 
+    y = sc_straighter[key][use][order]
+    if noise is not None:
+        y+=noise_dict[key][use][order]
+
     ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
-            sc_straighter[key][use][order], # plot cocoon on top. 
+            y, # plot cocoon on top. 
             # x_data[:,ii],
                 c=p_cocoon[order], s=5, cmap=cocoon_cmap,
                 rasterized=True) 
@@ -312,11 +346,11 @@ for jj, key in enumerate(keys):
 
 
 
-    ax.hist(sc_straighter[key][use][~cocoon_selection], 
+    ax.hist(y[~cocoon_selection], 
             alpha=1., density=False, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
             color=c_labels[0],orientation='horizontal',
             bins=bins)
-    ax.hist(sc_straighter[key][use][cocoon_selection],
+    ax.hist(y[cocoon_selection],
             histtype='step', density=False, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
             lw=2, 
             color=c_labels[-1],orientation='horizontal',
