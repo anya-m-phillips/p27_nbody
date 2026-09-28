@@ -542,7 +542,7 @@ ax.plot(l,l, c='k', lw=1)
 ax.set_xlabel(r'$f_{\rm bin, ts}$')
 ax.set_ylabel(r'$f_{\rm bin, c}$')
 
-plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
 # %%
 #
 #
