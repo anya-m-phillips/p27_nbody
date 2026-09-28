@@ -433,7 +433,7 @@ plot_filename = "summary_"+case_name
 #-----------------------------------------------------#
 #   binary fractions in thin stream vs cocoon         # 
 #-----------------------------------------------------#
-case = "noiseless_CoM"
+case = "noiseless_binaries"
 tt = Table.read(table_path+case+".fits", format="fits")
 # c_labels = ["#CCC9E7", "#2F2F2F"]
 c_labels = ['orange','white','midnightblue']
@@ -464,7 +464,12 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
         data_dict = pickle.load(handle)
 
     coords_obs = data_dict['coords_obs']
-    sc_straighter = data_dict['sc_straighter']
+    kk = 'sc_straighter'
+    tt = 'trim_new'
+    if 'binaries' in case:
+        kk+='_primaries'
+        tt+='_primaries'
+    sc_straighter = data_dict[kk]
 
     distances = coords_obs.distance.to(u.kpc).value
 
@@ -472,7 +477,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
 
     # all_IDs = data_dict['IDs']
 
-    unbound, trim_new = data_dict['unbound'], data_dict['trim_new']
+    unbound, trim_new = data_dict['unbound'], data_dict[tt]
 
     #### put things into thin stream vs cocoon: 
     keys = ['phi2','v_phi1','v_phi2','v_gsr']
@@ -535,7 +540,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
                label=orbit+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
 
 ax.legend(loc='lower right')
-l = [0,0.2]
+l = [0,0.4]
 ax.set_xlim(l)
 ax.set_ylim(l)
 ax.plot(l,l, c='k', lw=1)

@@ -533,7 +533,7 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
                                             component=slice(0, -1),
                                             sort_dim=sort_dim)
 
-
+# def bic()
 
 # %%
 if __name__=="__main__":
