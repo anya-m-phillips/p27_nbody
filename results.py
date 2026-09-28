@@ -163,8 +163,6 @@ figg, axx = plt.subplots()
 
 bins = np.linspace(0, 40, 100)
 
-rvcuts = [1,2,5,10]
-
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
     init_displacement = init_displacements[ii]
     orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
@@ -335,12 +333,14 @@ caseII = 'noiseless_binaries'
 tt = Table.read(table_path+caseI+".fits", format="fits")
 okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
 # rvir_cut = tt['Rvir0']<6.
+tt
+
 
 tt2 = Table.read(table_path+caseII+".fits", format='fits')
 okay_mean2 = np.abs(tt2['M_c']) < 0.5*np.asarray(tt['S_c'])
 
 
-reordered = np.argsort(pericenters_kpc )
+reordered = np.argsort(pericenters_kpc)
 
 ccc = cc[1:]
 fig, axs = plt.subplots(2,3,figsize=[21,14])
@@ -427,10 +427,123 @@ axs[1,0].remove()
 
 plot_filename = "summary_"+case_name
 
-plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
+# plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
 
 # %%
+#-----------------------------------------------------#
+#   binary fractions in thin stream vs cocoon         # 
+#-----------------------------------------------------#
+case = "noiseless_CoM"
+tt = Table.read(table_path+case+".fits", format="fits")
+# c_labels = ["#CCC9E7", "#2F2F2F"]
+c_labels = ['orange','white','midnightblue']
+cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
+rvir=0.75
+
+fig, ax = plt.subplots()
+
+for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i think. 
+    #### extract info about the mixture modele from the saved table:
+    print(orbit, rvir)
+    row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+
+    means_fit = np.array([
+        row['M_ts'][0], row['M_c'][0]
+    ])
+    sigmas_fit = np.array([
+        row['S_ts'][0], row['S_c'][0]
+    ])
+    fracs_fit = np.array([
+        1-row['f_cocoon'][0], row['f_cocoon'][0]
+    ])
+
+    ##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
+    filename = datapath+"%s_%.2f.pickle"%(orbit, rvir) #<-- go for the 
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
+
+    coords_obs = data_dict['coords_obs']
+    sc_straighter = data_dict['sc_straighter']
+
+    distances = coords_obs.distance.to(u.kpc).value
+
+    nsingles = data_dict['nsingles']
+
+    # all_IDs = data_dict['IDs']
+
+    unbound, trim_new = data_dict['unbound'], data_dict['trim_new']
+
+    #### put things into thin stream vs cocoon: 
+    keys = ['phi2','v_phi1','v_phi2','v_gsr']
+    use = unbound & trim_new
+    bound = ~unbound
+
+    x_data = np.column_stack([
+        sc_straighter[k][use] for k in keys
+    ])
+
+    pcs = np.full(len(bound), fill_value = np.nan)
+
+    ncomponents = 2
+    p1, p2 = [gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+    p_thin = p1
+    ts = p1>0.5
+    p_cocoon = 1-p_thin
+
+    pcs[use] = p_cocoon
+
+    # single/binary info is contained in the ordering. [:nsingles] are single and [nsingles:] are the binaries. 
+    
+    
+    ##### NOTE this needs to be edited
+    counter = np.ones(len(bound)) # account for all the systems
+
+
+    p_cocoon_singles = pcs[:nsingles]
+    p_cocoon_binaries = pcs[nsingles:]
+
+    n_ts = len(pcs[(pcs<0.5) & (~np.isnan(pcs))])
+    n_c = len(pcs[(pcs>0.5) & (~np.isnan(pcs))])
+
+
+
+    nbin_c = len(p_cocoon_binaries[(p_cocoon_binaries>0.5) & (~np.isnan(p_cocoon_binaries))])
+    nbin_ts = len(p_cocoon_binaries[(p_cocoon_binaries<0.5) & (~np.isnan(p_cocoon_binaries))])
+
+
+
+    print(orbit)
+    fbin_ts = nbin_ts / n_ts
+    fbin_c = nbin_c / n_c
+    print("\tthin stream binary fraction: ", nbin_ts / n_ts)
+    print("\tcocoon binary fraction: ", nbin_c / n_c)
+
+
+    p_ts, P_ts = paf.Prob_of_frac(nbin_ts, n_ts)
+    lo_ts,m_ts,up_ts = paf.percentile(p_ts, P_ts)
+    xerr_l, xerr_u = m_ts-lo_ts, up_ts-m_ts
+
+    p_c, P_c = paf.Prob_of_frac(nbin_c, n_c)
+    lo_c,m_c,up_c = paf.percentile(p_c, P_c)
+    yerr_l, yerr_u = m_c-lo_c, up_c-m_c
+
+
+
+    ax.errorbar([m_ts], [m_c], c=ccc[ii],
+                xerr=[[xerr_l], [xerr_u]], yerr=[[yerr_l], [yerr_u]], 
+                markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
+               label=orbit)
+
+ax.legend()
+l = [0,0.2]
+ax.set_xlim(l)
+ax.set_ylim(l)
+ax.plot(l,l, c='k', lw=1)
+ax.set_xlabel(r'$f_{\rm bin, ts}$')
+ax.set_ylabel(r'$f_{\rm bin, c}$')
+
+plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
 # %%
 #
 #
@@ -440,12 +553,14 @@ plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
 #--------------------------------------------------------#
 # %%
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
+include_binaries=True
+case_name = 'desi_noise_CoM'
 tt = Table.read(table_path+case_name+".fits", format="fits")
 # c_labels = ["#CCC9E7", "#2F2F2F"]
 c_labels = ['orange','white','midnightblue']
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-orbit = 'jet'
+orbit = 'gd1'
 rvir_index=0
 rvir = rvirs[rvir_index]
 
@@ -470,10 +585,10 @@ with open(filename, 'rb') as handle:
     data_dict = pickle.load(handle)
 
 
-# if include_binaries==False:
-sc_straighter = data_dict['sc_straighter'] #<-- dictionary
-# if include_binaries==True:
-#     sc_straighter = data_dict['sc_straighter_primaries'] #<-- dictionary
+if include_binaries==False:
+    sc_straighter = data_dict['sc_straighter'] #<-- dictionary
+if include_binaries==True:
+    sc_straighter = data_dict['sc_straighter_primaries'] #<-- dictionary
 
 unbound = data_dict['unbound']
 trim_new = data_dict['trim_new']
