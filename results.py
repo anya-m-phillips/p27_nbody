@@ -50,14 +50,57 @@ from streamframe import StreamFrame
 import PETAR_ANALYSIS_FUNCTIONS as paf
 import inspect_new_sims as simspect 
 import pickle
+import gmm
+
+# %%
+
+##### finish later. 
+# def get_p_cocoon(data_dict, use, row, noise ):
+#     keys = ['phi2','v_phi1','v_phi2','v_gsr']
+#     sc_straighter = data_dict['sc_straighter']
+#     row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+
+#     means_fit = np.array([
+#         row['M_ts'][0], row['M_c'][0]
+#     ])
+#     sigmas_fit = np.array([
+#         row['S_ts'][0], row['S_c'][0]
+#     ])
+#     fracs_fit = np.array([
+#         1-row['f_cocoon'][0], row['f_cocoon'][0]
+#     ])
+#     keys = ['phi2','v_phi1','v_phi2','v_gsr']
+#     x_data = np.column_stack([
+#         sc_straighter[k][use] for k in keys
+#     ])
+
+#     ncomponents = 2
+#     p1, p2 = [gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+#     p_thin = p1
+#     ts = p1>0.5
+#     p_cocoon = 1-p_thin
+#     return p_cocoon
+
+# def get_cocoon_flag(data_dict, use, means, sigmas):
+
+#     return p_cocoon>0.5
+
 # %%
 datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
+
+#-----------------------------------------------#
+#   opening all of the data and checking out    #
+#   the observability given distances to all    #
+#   the streams, which noise i use, etc.        #
+#-----------------------------------------------#
+
+
 make_plots=True
 constrain_widths=False
 noise = 'via' #<-- None or 'via' or 'desi'
-include_binaries=True
+include_binaries=False
 
 if noise is None:
     cd0 = 'noiseless'
@@ -83,6 +126,7 @@ grid_info = paf.extended_grid_info(scratch=False)
 lm_colors, hm_colors, simcolors = paf.define_simcolors()
 reordered_colors = hm_colors[:-1] + lm_colors[::-1]
 cc = reordered_colors[:-1]
+ccc = cc[1:]
 prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 
 # ordering decided here. 
@@ -112,7 +156,14 @@ apocenters_kpc = []
 present_rs = []
 med_distances = []
 
-f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
+# f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
+
+# fig, ax = plt.subplots()
+figg, axx = plt.subplots()
+
+bins = np.linspace(0, 40, 100)
+
+rvcuts = [1,2,5,10]
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
     init_displacement = init_displacements[ii]
@@ -132,8 +183,63 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         data_dict = pickle.load(handle)
 
     coords_obs = data_dict['coords_obs']
+    sc = data_dict['sc_straighter']
+
     distances = coords_obs.distance.to(u.kpc).value
     med_distances.append(np.median(distances))
+    trim_new = data_dict['trim_new']
+    unbound = data_dict['unbound']
+
+    nonrem = data_dict['nonrem']
+    phot = data_dict['phot']
+    noise_dict = data_dict['noise']
+    noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+    rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
+    alive = data_dict['alive']
+    acceptable_G = data_dict['acceptable_G']
+    cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
+
+    if noise=='via':
+        good_RV = rverr<1.0 #km/s #<--- pretty happy with how this mag distribution comes out...
+    else:
+        good_RV = rverr<10. #km/s
+
+    good_RV5 = rverr<5.0
+
+
+
+    use = trim_new & unbound & nonrem & alive & acceptable_G & nonrem & good_RV
+    use5 = trim_new & unbound & nonrem & alive & acceptable_G & nonrem & good_RV5
+
+    # lw=3
+    # ax.hist(distances[use], bins=40,# bins=bins, 
+    #         color=ccc[ii], histtype='step', lw=lw,
+    #         label=orbit)
+    # if orbit=='gd1'
+    x = coords_obs.phi1
+    if orbit=='gd1':
+        x+=40*u.degree
+
+    axx.scatter(x[unbound & trim_new], distances[unbound & trim_new], c='0.9', s=5, rasterized=True)
+    axx.scatter(x[use5], distances[use5], c='0.7', s=5, rasterized=True)
+    axx.scatter(x[use], distances[use], c=ccc[ii], s=20, rasterized=True,
+                edgecolor='k', lw=0.2)
+    axx.set_xlabel(r'$\phi_1~[\degree]$')
+    axx.set_ylabel(r'Distance [kpc]')
+    axx.set_title(noise)
+    # axx.set_ylim(0, 20)
+
+    fig, cmd = plt.subplots()
+    cmd.scatter(phot['BP_RP'][use5], phot['mG'][use5], c='0.7' )# ccc[ii])
+    cmd.scatter(phot['BP_RP'][use], phot['mG'][use], c=ccc[ii])
+
+    cmd.scatter(phot['BP_RP'][unbound & trim_new], phot['mG'][unbound & trim_new], c='0.9', zorder=0)
+    cmd.invert_yaxis()
+    cmd.set_title(orbit)
+
+# ax.legend()
+
 
 med_distances = np.array(med_distances)
 present_rs = np.array(present_rs)
@@ -145,8 +251,12 @@ orbits = np.array(orbits)
 
 eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
 
-# %%
 
+
+
+
+
+# %%
 tt = Table.read(table_path+case_name+".fits", format="fits")
 okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
 rvir_cut = tt['Rvir0']<6.
@@ -210,7 +320,7 @@ axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
 axs[1,0].remove()
 
 plot_filename = "summary_"+case_name
-plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
+# plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
 
 # %%
 
@@ -221,15 +331,15 @@ plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
 #       plots to demonstrate the GMM results             #
 #       for individuaal simulations (success and fails)  #
 #--------------------------------------------------------#
-import gmm
 # %%
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
 tt = Table.read(table_path+case_name+".fits", format="fits")
-c_labels = ["#CCC9E7", "#2F2F2F"]
+# c_labels = ["#CCC9E7", "#2F2F2F"]
+c_labels = ['orange','white','midnightblue']
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-orbit = 'gd1'
-rvir_index=2
+orbit = 'jet'
+rvir_index=0
 rvir = rvirs[rvir_index]
 
 
@@ -261,6 +371,9 @@ sc_straighter = data_dict['sc_straighter'] #<-- dictionary
 unbound = data_dict['unbound']
 trim_new = data_dict['trim_new']
 
+keys = ['phi2','v_phi1','v_phi2','v_gsr']
+
+
 if noise is not None:
     nonrem = data_dict['nonrem']
 
@@ -275,7 +388,13 @@ if noise is not None:
 
     cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
     good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
-    
+
+    distances = data_dict['coords_obs'].distance
+
+    noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+    noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+    noise_dict['d_phi2'] = distances.to(u.kpc).value * (noise_dict['phi2']*u.degree).to(u.radian).value
+
 
     if noise=='via':
         good_RV = rverr<1.0 #km/s #<--- pretty happy with how this mag distribution comes out...
@@ -283,15 +402,21 @@ if noise is not None:
     else:
         good_RV = rverr<10. #km/s
         use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
+    
+    # keys = ['phi2','v_phi1','v_phi2','v_gsr_'+noise]
+
+    x_data = np.column_stack(
+        [sc_straighter[k][use]+noise_dict[k][use] for k in keys]
+    )
 
 
 else:
     use = unbound & trim_new
+    x_data = np.column_stack([
+        sc_straighter[k][use] for k in keys
+    ])
 
-keys = ['phi2','v_phi1','v_phi2','v_gsr']
-x_data = np.column_stack([
-    sc_straighter[k][use] for k in keys
-])
+
 
 ncomponents = 2
 p1, p2 = [gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
@@ -332,10 +457,11 @@ for jj, key in enumerate(keys):
     ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
             y, # plot cocoon on top. 
             # x_data[:,ii],
-                c=p_cocoon[order], s=5, cmap=cocoon_cmap,
+                c=p_cocoon[order], s=50, edgecolor='k', lw=.5,
+                cmap=cocoon_cmap,
                 rasterized=True) 
     ax.set_ylim(-cut,cut)
-    ax.set_xlim(orbit_lim_map[orbit])
+    # ax.set_xlim(orbit_lim_map[orbit])
 
     # ax.set_ylim(-3*cut, 3*cut)
     ax.set_ylabel(key_labels[jj], fontsize=15)
