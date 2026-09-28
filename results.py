@@ -494,11 +494,9 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
     pcs[use] = p_cocoon
 
     # single/binary info is contained in the ordering. [:nsingles] are single and [nsingles:] are the binaries. 
-    
-    
-    ##### NOTE this needs to be edited
-    counter = np.ones(len(bound)) # account for all the systems
-
+    n_bound = len(pcs[bound])
+    binaries_bound = np.sum(bound.astype(int)[nsingles:])
+    fbin_bound = binaries_bound/n_bound
 
     p_cocoon_singles = pcs[:nsingles]
     p_cocoon_binaries = pcs[nsingles:]
@@ -518,6 +516,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
     fbin_c = nbin_c / n_c
     print("\tthin stream binary fraction: ", nbin_ts / n_ts)
     print("\tcocoon binary fraction: ", nbin_c / n_c)
+    print("\tbound fbin", fbin_bound)
 
 
     p_ts, P_ts = paf.Prob_of_frac(nbin_ts, n_ts)
@@ -533,9 +532,9 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
     ax.errorbar([m_ts], [m_c], c=ccc[ii],
                 xerr=[[xerr_l], [xerr_u]], yerr=[[yerr_l], [yerr_u]], 
                 markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
-               label=orbit)
+               label=orbit+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
 
-ax.legend()
+ax.legend(loc='lower right')
 l = [0,0.2]
 ax.set_xlim(l)
 ax.set_ylim(l)
