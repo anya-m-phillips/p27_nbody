@@ -321,6 +321,113 @@ axs[1,0].remove()
 
 plot_filename = "summary_"+case_name
 # plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
+# %%
+#----------------------------#
+# a version of this table    #
+# that includes the no noise #
+# + binary motions gmm fits. #
+#----------------------------#
+
+caseI = 'noiseless_CoM'
+caseII = 'noiseless_binaries'
+
+
+tt = Table.read(table_path+caseI+".fits", format="fits")
+okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
+# rvir_cut = tt['Rvir0']<6.
+
+tt2 = Table.read(table_path+caseII+".fits", format='fits')
+okay_mean2 = np.abs(tt2['M_c']) < 0.5*np.asarray(tt['S_c'])
+
+
+reordered = np.argsort(pericenters_kpc )
+
+ccc = cc[1:]
+fig, axs = plt.subplots(2,3,figsize=[21,14])
+plt.subplots_adjust(wspace=0.2, hspace=0.2)
+for ii, orbit in enumerate(tqdm(orbits[reordered])):
+    orbsel = tt['orbit'] == orbit
+    orbsel2 = tt2['orbit'] == orbit
+
+    selection=orbsel #& np.logical_and.reduce(okay_mean.T) #& rvir_cut
+    selection2 = orbsel2 #& np.logical_and.reduce(okay_mean2.T)
+
+
+    f_cocoons_this_orbit = tt['f_cocoon'][selection]
+    f_cocoons_this_orbit2 = tt2['f_cocoon'][selection2]
+    
+    x = tt['Rvir0'][selection]
+    x2 = tt2['Rvir0'][selection2]
+    axs[0,0].plot(x, f_cocoons_this_orbit, 
+                label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
+                # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
+                # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
+                marker='o', color=ccc[ii], markersize=10)
+
+    axs[0,0].plot(x2, f_cocoons_this_orbit2, 
+                # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
+                # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
+                # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
+                marker='o', color=ccc[ii], markersize=10,
+                ls=':')
+
+
+    ### cocoon ! ! !
+    phi2_dispersions_this_orbit = tt['S_c'][:,0][selection] #<-- TODO: translate back to angle from distance. 
+    phi2_dispersions_this_orbit2 = tt2['S_c'][:,0][selection2]
+
+    vgsr_dispersions_this_orbit = tt['S_c'][:,-1][selection]
+    vgsr_dispersions_this_orbit2 = tt2['S_c'][:,-1][selection]
+
+    axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
+    axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
+
+    axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
+    axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
+
+
+    ### thin ! ! !
+    phi2_dispersions_this_orbit = tt['S_ts'][:,0][selection] #<-- TODO: translate back to angle from distance. 
+    vgsr_dispersions_this_orbit = tt['S_ts'][:,-1][selection]
+
+    phi2_dispersions_this_orbit2 = tt2['S_ts'][:,0][selection2] #<-- TODO: translate back to angle from distance. 
+    vgsr_dispersions_this_orbit2 = tt2['S_ts'][:,-1][selection2]
+
+    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
+    axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
+
+
+    # axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
+    # axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
+    axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
+    axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
+
+for ax in np.concatenate([axs[0], axs[1]]):
+    ax.set_ylim(bottom=0)
+    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+    ax.minorticks_off()
+    ax.set_xticks([.75, 1.5, 3., 6.])
+
+axs[0,0].plot([None],[None], c='k', marker='o', markersize=10, label='system CMs')
+axs[0,0].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary orbits')
+
+axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
+axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+# axs[0,0].set_ylim(0.0, 0.2)
+
+axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
+axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
+
+axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
+axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
+
+axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
+
+axs[1,0].remove()
+
+plot_filename = "summary_"+case_name
+
+plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
 
 # %%
 
