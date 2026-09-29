@@ -74,7 +74,7 @@ def trim_obstream_percentile(sc, p=[1,99],
 
 # %%
 
-# if __name__=="__main__":
+# if __name__=="__main__": #<-- i think these dictionaries should have _all_ the info I need, so will just run as a notebook, once which gives me the data I need for every "case"
 print("rng prep")
 rng = np.random.default_rng(seed=42)
 
@@ -116,18 +116,23 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     else:
         copy_options = [4,3,2,1,0] #<-- a misbehaving copy of AAU.... 
 
-    mass_index = 1 # <-- HIGH mass stellar population... should maximize cocoon contributions from stellar evolution-related kicks i think. 
+    mass_index = 1 # <-- HIGH mass stellar population... should maximize cocoon contributions from stellar evolution-related kicks i think, and also in general give us clusters that dissolve more quickly (ie more stars to work with in the stream)
     
 
     ### determine orbital phase -- informs the rtid boundary.
 
-    init_displacement = init_displacements[ii]
-    orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
+    # init_displacement = init_displacements[ii]
+    # orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
+
+    pr = prog_tab[prog_tab['name']==orbit] #<-- prog row
+    disp = [pr['x'][0], pr['y'][0], pr['z'][0], pr['vx'][0], pr['vy'][0], pr['vz'][0]]
+    orbit_obj = paf.integrate_prog_orbit(disp, steps=10000, dt=1*u.Myr)
+
     peri = orbit_obj.pericenter().to(u.kpc).value
     apo = orbit_obj.apocenter().to(u.kpc).value
 
 
-    x,y,z = init_displacement[:3]
+    x,y,z = disp[:3]
     r = np.sqrt(x**2 + y**2 + z**2)
 
     orbital_phase = (r - peri) / (apo - peri)
@@ -146,7 +151,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     # will just have to deal with the fact that AAU is messed up :/ 
     tidal_boundary = 2.0
 
-    print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
+    print(orbit)#, ": orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary) #<--- init orbital phase, not actually what i want to use!!
 
 
     for rvir_index in range(4):
@@ -249,11 +254,17 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         G  = iso_phot['Gaia_G_EDR3']
         BP = iso_phot['Gaia_BP_EDR3']
         RP = iso_phot['Gaia_RP_EDR3']
-        BP_RP = BP-RP
-        z = noise.gaia_g_to_lsst_z(G, BP_RP)
+        log_Teff = iso_phot['log_Teff']
         mz = paf.m_from_M(z, dist=distances)
         mG = paf.m_from_M(G, dist=distances)
-        log_Teff = iso_phot['log_Teff']
+
+
+        # TO-DO: translate to catalog photometry
+        #   by assigning catalog phots brightest to dimmest
+
+        BP_RP = BP-RP
+        z = noise.gaia_g_to_lsst_z(G, BP_RP)
+
 
         alive = on_iso #<-- removes high mass things that are remnants; should already be removed by remnants cut tho? 
         acceptable_G_viamock = (mG>5) & (mG<30)
@@ -294,7 +305,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
 
         vgsr_noise_via = rng.normal(0, rverr_via)
-        vgsr_noise_via_10hr = rng.normal(0, rverr_via)
+        vgsr_noise_via_10hr = rng.normal(0, rverr_via_10hr) 
         vgsr_noise_desi = rng.normal(0, rverr_desi)
 
 
@@ -302,7 +313,6 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
         pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
 
-        rng = np.random.default_rng(seed=42)
         pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
         pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
         phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)

@@ -2444,6 +2444,12 @@ def m_from_M(M, dist):
     """
     m = M + (5*np.log10(dist.to(u.pc).value)) -  5
     return m
+def M_from_m(m, dist):
+    """
+    provide distance as an astropy quantity with units
+    """
+    M = m + 5 - (5*np.log10(dist.to(u.pc).value))
+    return M
 
 def B(nu, T):
     """

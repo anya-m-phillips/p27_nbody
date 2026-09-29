@@ -164,16 +164,18 @@ figg, axx = plt.subplots()
 bins = np.linspace(0, 40, 100)
 
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    init_displacement = init_displacements[ii]
-    orbit_obj = paf.integrate_prog_orbit(init_displacement, steps=100000, dt=1*u.Myr)
-    peri = orbit_obj.pericenter()
-    apo = orbit_obj.apocenter()
-    pericenters_kpc.append(peri.to(u.kpc).value)
-    apocenters_kpc.append(apo.to(u.kpc).value)
 
-    x,y,z = init_displacement[:3]
+    pr = prog_tab[prog_tab['name']==orbit] #<-- prog row
+    disp = [pr['x'][0], pr['y'][0], pr['z'][0], pr['vx'][0], pr['vy'][0], pr['vz'][0]]
+    orbit_obj = paf.integrate_prog_orbit(disp, steps=10000, dt=1*u.Myr)
+
+    peri = orbit_obj.pericenter().to(u.kpc).value
+    apo = orbit_obj.apocenter().to(u.kpc).value
+
+
+    x,y,z = disp[:3]
     r = np.sqrt(x**2 + y**2 + z**2)
-    present_rs.append(r) # kpc
+    present_rs.append(r)
 
     ##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
     filename = datapath+"%s_%.2f.pickle"%(orbit, 6.00)
