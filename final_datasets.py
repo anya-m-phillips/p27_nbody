@@ -86,7 +86,7 @@ isocmd = artpop.fetch_mist_iso_cmd(
     phot_system='UBVRIplus',
     #v_over_vcrit=0.0 #<-- idk
 )
-m0_grid, iso_table = noise.build_isochrone_table(isocmd) #<-- will do gaia bands + teff automatically, have max_phase=5 (remove post agb evolution)
+m0_grid, iso_table = noise.build_isochrone_table(isocmd) #<-- will do gaia bands + teff automatically; max_eep=POST_AGB_EEP removes post-AGB/WD (max_phase=5 does not on artpop)
 min_m0, max_m0 = m0_grid[0], m0_grid[-1]
 
 
@@ -152,6 +152,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     tidal_boundary = 2.0
 
     print(orbit)#, ": orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary) #<--- init orbital phase, not actually what i want to use!!
+    t = noise.load_gaia_catalog(orbit)
 
 
     for rvir_index in range(4):
@@ -249,7 +250,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         data_dict['sc_straighter_primaries'] = sc_straighter_primaries
         ###### get noise: 
         
-        ### isochrone photometry as loaded above:
+
+        #   "rigorous" and solid way to get photometry by mapping zams masses to 
+        #   a MIST isochrone:
         iso_phot, on_iso = noise.isochrone_photometry(m0s, m0_grid, iso_table)
         G  = iso_phot['Gaia_G_EDR3']
         BP = iso_phot['Gaia_BP_EDR3']
@@ -257,14 +260,8 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         log_Teff = iso_phot['log_Teff']
         mz = paf.m_from_M(z, dist=distances)
         mG = paf.m_from_M(G, dist=distances)
-
-
-        # TO-DO: translate to catalog photometry
-        #   by assigning catalog phots brightest to dimmest
-
         BP_RP = BP-RP
         z = noise.gaia_g_to_lsst_z(G, BP_RP)
-
 
         alive = on_iso #<-- removes high mass things that are remnants; should already be removed by remnants cut tho? 
         acceptable_G_viamock = (mG>5) & (mG<30)
@@ -333,6 +330,22 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             }
 
         data_dict['noise'] = noise_dict
+
+
+        #------------------------------------------------#
+        #   also want to save info using the updated     #
+        #   photometry protocol, i.e., matching to a     #
+        #   catalog.                                     # 
+        #------------------------------------------------#
+        isotrack = None
+        N_jarvis = 679 #<-- length of jarvis catalog. 
+        N = len(t) if orbit != 'gd1' else N_jarvis
+
+        # TODO: need to filter out e.g. things outside of trim_new, things still bound to progenitor
+        # so that I don't waste them on the good photometry as it gets matched. 
+        iso_phot_use = iso_phot #<---- trim it down here maybe. same w distances eventually. 
+        phot_cheating, matched_flag = noise.assign_photometry_from_catalog(iso_phot, distances, catalog=t,
+                                                                           track=isotrack, N=N)
 
 
 

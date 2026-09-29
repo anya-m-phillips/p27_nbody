@@ -25,7 +25,7 @@ noise.py             (imported as noise)     -- isochrone photometry + survey er
 
 # TODOs
 the live ones, collected here. details are in each script's section below.
-- **`noise.py` / photometry:** add an option to take the Jarvis+26 data (or any input stream photometry catalog) and assign magnitudes **star by star** to the "still alive" N-body population -- i.e. rank/match against a real catalog instead of painting from the isochrone -- accepting that luminosities won't be exactly self-consistent with the N-body stellar evolution. may or may not end up making sense, but the photometry generation is the place to hang it. **in progress:** the steps are outlined in the `assign_photometry_from_catalog` stub (still returns `None`), being prototyped in the `# SCRATCH` cell; the Teff lookup for step 5 is done (`nearest_isochrone_point`, see the CMD-space lookup subsection of photometry).
+- **`noise.py` / photometry:** add an option to take the Jarvis+26 data (or any input stream photometry catalog) and assign magnitudes **star by star** to the "still alive" N-body population -- i.e. rank/match against a real catalog instead of painting from the isochrone -- accepting that luminosities won't be exactly self-consistent with the N-body stellar evolution. may or may not end up making sense, but the photometry generation is the place to hang it. **the function is written** (`noise.assign_photometry_from_catalog`, see its bullet in the `noise.py` section) and checked on `gd1` rvir_index=0; **not yet hooked into `final_datasets.py`.**
 - **`gmm.py` / model choice:** also fit the best **single-component** gaussian for every sim and case, compute the **BIC** for both the one- and two-component models, and save them (plus presumably the one-component params) to the case's table. expectation: for noisy/down-sampled data some sims will prefer one component, and that is reported as a **non-detection of a cocoon**. pieces that already exist: `nll_flat(theta, x_data, min_components=1)` in `gmm.py` is the single-gaussian likelihood (see the packing layer section); `AIC`/`BIC` live in `old/develop_GMM.py` (gmm.py only has a `# def bic()` placeholder). k = 2K = 8 for one component, (n-1) + 2nK = 17 for two.
 - `gmm.py`: AAU at rvir0 = 6 pc gives a weird result; traced to the 2 rtid tidal boundary, and the decision is to live with it rather than relax the cut.
 - `gmm.py`: run all noise cases (see the case table below); rewrite the results notebook (`results.py`); add stuff to overleaf.
@@ -93,10 +93,12 @@ survey error models and isochrone photometry. the `__main__` block is entirely c
 - `build_isochrone_table` / `isochrone_photometry` / `gaia_from_isochrone`: ZAMS mass -> Gaia mags + `log_Teff` by interpolating a MIST isochrone. **read the precision subsection before touching them.** see the photometry section.
 - `isochrone_cmd_track` / `nearest_isochrone_point` / `Teff_from_gaia_isochrone`: the reverse direction -- a catalog star's (absolute G, BP-RP) -> nearest point on the isochrone -> `log_Teff` (for viamock). see the CMD-space lookup subsection of photometry.
 - `load_gaia_catalog(orbit)`: reads `data/bpw25_catalogs/<orbit>.fits`.
-- `assign_photometry_from_catalog(gaia_iso, distances, catalog, N=None)`: **stub** (returns `None`), the steps are written out as comments. the plan: rank the N-body stars and the catalog by apparent G, give the brightest N N-body stars the catalog's apparent G and BP-RP (NaN for the rest), convert back to absolute with the N-body distances, look up Teff with `Teff_from_gaia_isochrone`, restore the original order and return a matched flag.
+- `assign_photometry_from_catalog(gaia_iso, distances, catalog, track, N=None, eligible=None, **nearest_kwargs)` -> `(phot, matched)`. `gaia_iso` is the `phot` dict from `isochrone_photometry` (only its G is used, to rank); `distances` a Quantity; `track` from `isochrone_cmd_track`. ranks the N-body stars (finite iso mG, and `eligible` if given) and the catalog (finite G and BP-RP) by apparent G and hands the brightest N N-body stars the catalog's **apparent G and BP-RP exactly**; converts to absolute with the N-body distances; `log_Teff` from `nearest_isochrone_point`. `phot` has the same keys as `final_datasets`' photdict (`G`, `BP_RP`, `z`, `mG`, `mz`, `log_Teff`) plus `iso_dist` and `catalog_index` (-1 unmatched), all full length in the original order, NaN where unmatched. `N=None` = every usable catalog row; capped at the number of rankable N-body stars (prints if so).
+  - **pass `eligible`** (e.g. `unbound & nonrem & trim`), or bound progenitor stars compete for the catalog's rows.
+  - measured on `gd1` hm rvir_index=0 with `eligible = unbound & nonrem & trim_new` (6273 stars): all 1578 catalog rows matched, but the matched N-body stars have **isochrone** mG 15.0-23.6 against the catalog's 12.2-20.1 -- the sim has fewer bright stream stars than GD-1, so rank matching brightens each star by ~3 mag, and the catalog-based `log_Teff` runs a median 0.15 dex hotter than the isochrone value for the same star. that's the scheme working as designed, but it means `N` (and the eligible pool) sets how deep into the N-body MS the catalog reaches. `iso_dist` median 1.7, 267 of 1578 > 3.
 - `get_gaia_photometry`, `g_phot`: the blackbody + top-hat fallback, duplicated here from `paf` "to illustrate the difference in stellar populations." not used by the pipeline.
 
-**TODO (photometry):** add an option to take the Jarvis+26 data (or some input stream photometry catalog) and match magnitudes star by star onto the "still alive" N-body population, even if the luminosities end up a bit off relative to the N-body stellar evolution. this would replace (or sit alongside) the isochrone painting in `final_datasets.py`; the natural hook is wherever `alive`/`on_iso` is decided, since that defines the population being matched. in progress -- see `assign_photometry_from_catalog` above.
+**TODO (photometry):** add an option to take the Jarvis+26 data (or some input stream photometry catalog) and match magnitudes star by star onto the "still alive" N-body population, even if the luminosities end up a bit off relative to the N-body stellar evolution. this would replace (or sit alongside) the isochrone painting in `final_datasets.py`; the natural hook is wherever `alive`/`on_iso` is decided, since that defines the population being matched. the function exists (see `assign_photometry_from_catalog` above); what's left is calling it from `final_datasets.py`.
 
 ## `final_datasets.py`
 assembles one data dictionary per simulation and pickles it. imports `paf`, `simspect`, `noise`. no `__main__` guard (it's a script). what it does, per orbit x rvir:
@@ -104,7 +106,7 @@ assembles one data dictionary per simulation and pickles it. imports `paf`, `sim
 - **progenitor removal:** `N_rtid_boundary = 2.0` for every orbit -- "unbound" = outside 2x the petar tidal radius, to make sure the progenitor is fully removed and stars that get recaptured as rtid re-expands aren't counted. (an orbital-phase-dependent 1x/2x choice was tried and abandoned; the orbital phase is still computed and printed, but see the bugs list -- it's computed at the wrong time.)
 - **coordinates:** `coords_obs` (CoM `SkyCoord`), then two straightened versions: `sc` from CoM, and `sc_primaries` from the luminous component with `PM_treatment='CoM'` hardcoded -- i.e. binaries get the **primary's** instantaneous RV/phi2/distance but the **CoM** proper motions (decided 24 Sep). both are then `poly_straightening`-ed.
 - **trim:** `trim_obstream_percentile(sc, p=[1,99], trim_keys=[phi1, d_phi2, v_phi1, v_phi2, v_gsr, distance])` -- a 1-99 percentile clip in *every* observed-frame dimension, AND-ed. computed separately for `sc` and `sc_primaries`. this replaces both the intrinsic-frame `inMW`/`trim` and the hard `outlier_clip` cuts; `inMW_na` is an all-True placeholder so the two-mask functions still work. the trim only picks which stars `poly_straightening` fits to -- everything is kept in the saved arrays.
-- **photometry:** 12 Gyr, [Fe/H] = -2 MIST isochrone from `artpop.fetch_mist_iso_cmd(..., phot_system='UBVRIplus')`, interpolated at `lumdict['m0_zams']` (the luminous component's birth mass for binaries -- the companion's light is not added). absolute G, BP-RP, z (via RTN-099), apparent `mG`/`mz` using the CoM distances, and `log_Teff`.
+- **photometry:** [Fe/H] = -2 MIST v1.2 isochrone from `artpop.fetch_mist_iso_cmd(log_age=log10(12e9), ..., phot_system='UBVRIplus')` -- which actually returns the **12.6 Gyr (log age 10.10), v/vcrit = 0.4** grid isochrone, see the photometry section -- interpolated at `lumdict['m0_zams']` (the luminous component's birth mass for binaries -- the companion's light is not added). absolute G, BP-RP, z (via RTN-099), apparent `mG`/`mz` using the CoM distances, and `log_Teff`.
 - **noise:** Gaia DR3 end-of-mission position and PM errors from `pygaia` (total / sqrt(2) per component, in **µas and µas/yr**); DESI RV errors from `mz`; Via RV errors for 1 hr/1 exposure and 10 hr/10 exposures. noise realizations are drawn here, once, and saved, so every `gmm.py` case sees the same draw.
 - **output:** `/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/<orbit>_<rvir:.2f>.pickle`. note the filename has no stellar_pop in it, so an `lm` run would overwrite the `hm` pickles. and it's netscratch, so the 90-day purge applies.
 
@@ -319,9 +321,9 @@ the interpolant sorts `orbit_coords['phi1']` first (`np.interp` requires increas
 
 ## photometry
 ### isochrone interpolation: ZAMS mass -> Gaia mags (`noise.py`) -- the live path
-three functions, no state, all float64. the point of doing it this way rather than by blackbody is that **the isochrone is a free parameter**: swap the `artpop.fetch_mist_iso_cmd` call in `final_datasets.py` and the whole stellar population changes. it is **12 Gyr, [Fe/H] = -2** right now, which does *not* match the 2.4-4 Gyr dynamical ages -- a known caveat, justified by all the massive star evolution being over by a few Gyr anyway.
+three functions, no state, all float64. the point of doing it this way rather than by blackbody is that **the isochrone is a free parameter**: swap the `artpop.fetch_mist_iso_cmd` call in `final_datasets.py` and the whole stellar population changes. it is **[Fe/H] = -2, requested at 12 Gyr (actually 12.6 Gyr, v/vcrit = 0.4 -- see the artpop subsection below)** right now, which does *not* match the 2.4-4 Gyr dynamical ages -- a known caveat, justified by all the massive star evolution being over by a few Gyr anyway.
 
-- `build_isochrone_table(iso, bands=ISO_BANDS, max_phase=5, mass_col='initial_mass')` -> `(m0_grid, {band: values})`. `ISO_BANDS = ('Gaia_G_EDR3', 'Gaia_BP_EDR3', 'Gaia_RP_EDR3', 'log_Teff')` -- `log_Teff` rides along because viamock needs it. it sorts on `mass_col` and **drops any non-increasing node** rather than trusting the file, because `np.interp` requires increasing `xp` and does not check. it prints if it drops anything.
+- `build_isochrone_table(iso, bands=ISO_BANDS, max_phase=5, max_eep=POST_AGB_EEP, mass_col='initial_mass')` -> `(m0_grid, {band: values})`. `ISO_BANDS = ('Gaia_G_EDR3', 'Gaia_BP_EDR3', 'Gaia_RP_EDR3', 'log_Teff')` -- `log_Teff` rides along because viamock needs it. it sorts on `mass_col` and **drops any non-increasing node** rather than trusting the file, because `np.interp` requires increasing `xp` and does not check. it prints if it drops anything.
 - `isochrone_photometry(m0_query, m0_grid, table)` -> `(phot, on_iso)`. **off-isochrone stars get `NaN`, not a clamped edge value**, and `on_iso` flags them (two-sided: the sim IMF reaches below the isochrone's low-mass end as well as above its turnoff). deliberate: a forgotten mask then shows up as a hole in the CMD rather than a fake pile-up at the tip of the AGB. `final_datasets.py` saves `on_iso` as `alive`.
 - `gaia_from_isochrone(m0_query, iso, ...)` -> `(G, BP, RP, on_iso)`, the one-call wrapper.
 
@@ -330,7 +332,7 @@ mags are **absolute**; `final_datasets.py` applies `paf.m_from_M` with the CoM d
 query with **`m0_zams`**, and interpolate against the isochrone's `initial_mass` column, NOT `star_mass` -- see the `star.mass0` section.
 
 #### precision: this is the part with no headroom
-the evolved sequence is nearly degenerate in initial mass. measured on the 12 Gyr, [Fe/H]=-2 file downloaded from the MIST web interpolator (1460 rows; see the artpop table below for the isochrone that's actually used -- same scale, different edges):
+the evolved sequence is nearly degenerate in initial mass. measured on the 12 Gyr, [Fe/H]=-2 file downloaded from the MIST web interpolator (1460 rows; see the artpop subsections below for the isochrone that's actually used -- same scale, different edges):
 
 | phase | N | m0 range |
 |---|---|---|
@@ -341,18 +343,6 @@ the evolved sequence is nearly degenerate in initial mass. measured on the 12 Gy
 | 5 TPAGB | 601 | 0.804376 - 0.804398 |
 | 6 post-AGB | 302 | 0.804398 - 0.80521 |
 
-the **artpop-fetched** isochrone (`fetch_mist_iso_cmd(log_age=log10(12e9), feh=-2.0, phot_system='UBVRIplus')`, the one the pipeline uses) also has 1460 rows but **tops out at 0.79435 Msun, not 0.805**, and its `phase` column never goes above 5. split by MIST primary EEP instead:
-
-| EEP range | stage | N | artpop `phase` | m0 range |
-|---|---|---|---|---|
-| 202-453 | MS | 203 | 0 | 0.1000 - 0.77782 |
-| 454-630 | SGB/RGB | 177 | 2, 3 | 0.77811 - 0.79177 |
-| 631-807 | CHeB / EAGB | 177 | 3, 4 | 0.79177 - 0.79355 |
-| 808-1408 | TP-AGB | 601 | **5** | 0.793553 - 0.793574 |
-| 1409-1710 | post-AGB / WD cooling | 302 | **5** | 0.793574 - 0.79435 |
-
-so post-AGB is labelled phase 5 here, and `max_phase=5` does **not** remove it (see the features bullet below and the bugs list).
-
 so **everything above the turnoff occupies 0.0168 Msun**, and the tightest node spacing is **1.58e-11 Msun**, on the TP-AGB. that is ~1e5 x float64 eps at 0.8 Msun, so it is resolvable, but:
 - **never round, bin, or cast to float32 anywhere on the mass path.**
 - **linear, not cubic.** on the RGB/AGB segments dM/dmag is ~1e-9; a spline overshoots enormously between nodes and invents points off the isochrone.
@@ -360,12 +350,38 @@ so **everything above the turnoff occupies 0.0168 Msun**, and the tightest node 
 
 checked (on the downloaded file): interpolation at the nodes reproduces the table bit-exactly, the tightest node pair comes back cleanly distinguished (0.012 mag in G), shuffle-invariant, NaN/`on_iso` correct on both sides.
 
+#### artpop's isochrone is not the one on the MIST web interpolator
+`artpop.fetch_mist_iso_cmd(log_age, feh, phot_system, v_over_vcrit=0.4)` doesn't interpolate anything: it reads artpop's packaged MIST v1.2 grid file (here `~/.artpop/mist/MIST_v1.2_vvcrit0.4_UBVRIplus/MIST_v1.2_feh_m2.00_afe_p0.0_vvcrit0.4_UBVRIplus.iso.cmd`, 107 ages) and picks one age with `age_index`. so relative to the downloaded file:
+- **v/vcrit = 0.4 by default** (the downloaded file is 0.0). `final_datasets.py` and the `noise.py` scratch cell both have `v_over_vcrit` commented out. `0.0` is the other packaged option.
+- **the age snaps to the grid**: `log_age = log10(12e9) = 10.079` comes back as **log age 10.10 = 12.6 Gyr**. `[Fe/H]` must match a grid file (-2.00 does).
+- the header `Zinit` differs too (1.43e-4 vs 1.89e-4 for the downloaded file, both at [Fe/H] = -2.00).
+
+these are presumably why the upper mass differs: the artpop isochrone also has 1460 rows but **tops out at 0.79435 Msun, not 0.805** (not checked which of the three is responsible).
+
+#### EEPs vs `phase`
+the MIST primary EEPs are defined in **table II of the MIST README** ([README_tables.pdf](http://waps.cfa.harvard.edu/MIST/README_tables.pdf), "Primary Equivalent Evolutionary Points"). artpop hardcodes the same boundaries in `SSP.select_phase` (`artpop/stars/populations.py`, which cites that table): MS 202-453, RGB 454-605, CHeB 606-706, EAGB 707-807, TP-AGB 808-1408, post-AGB 1409-1710, WD cooling > 1710. the in-between primary EEPs are RGB tip = 605 and ZACHeB = 631.
+
+the `phase` column is a coarser label, and **the two files label post-AGB differently**: in the downloaded file `phase == 6` is exactly `EEP >= 1409` (302 rows), but artpop's packaged grid labels **all of EEP 808-1710 phase 5**, so its `phase` can't separate TP-AGB from post-AGB. its other phase boundaries fall on primary EEPs (0 | 2 at 454, 2 | 3 at 605, 3 | 4 at 707, 4 | 5 at 808). the artpop isochrone split by primary EEP (it starts at EEP 251, i.e. 0.1 Msun, not at the ZAMS EEP):
+
+| EEP range | stage | N | artpop `phase` | m0 range |
+|---|---|---|---|---|
+| 251-453 | MS (to TAMS) | 203 | 0 | 0.100000 - 0.777822 |
+| 454-604 | SGB + RGB (TAMS to RGB tip) | 151 | 2 | 0.778112 - 0.791740 |
+| 605-630 | He flash (RGB tip to ZACHeB) | 26 | 3 | 0.791745 - 0.791765 |
+| 631-706 | CHeB (ZACHeB to TACHeB) | 76 | 3 | 0.791769 - 0.793341 |
+| 707-807 | EAGB | 101 | 4 | 0.793342 - 0.793553 |
+| 808-1408 | TP-AGB | 601 | **5** | 0.793553 - 0.793574 |
+| 1409-1710 | post-AGB (to WDCS) | 302 | **5** | 0.793574 - 0.794351 |
+
+so `max_phase=5` does **not** remove post-AGB here, which is why `build_isochrone_table` also cuts `EEP < max_eep` (default `noise.POST_AGB_EEP = 1409`; see the features bullet below). `isochrone_cmd_track` uses the same constant.
+
 #### two things that are features, not bugs
 - **interpolating in mass gets the relative numbers of giants right for free.** a phase is sampled in proportion to the initial-mass interval it occupies, which is exactly its lifetime x IMF weight.
-- **`max_phase=5` is the default**, meant to drop post-AGB (phase 6), the proto-WD tail, which is already cut from the sim side by `nonrem` (`type < 10`). `max_phase=None` keeps them, and moves the upper m0 edge (so the `alive` count depends on it). ⚠️ **this only works on the downloaded MIST file.** on the artpop isochrone post-AGB is phase 5 (table above), so it is kept: N-body stars with m0_zams in 0.793574-0.79435 get post-AGB/WD photometry (up to logTeff ~ 5, absolute G ~ +10, BP-RP down to -0.58) and count as `alive`. how many that is hasn't been counted. the fix is an EEP cut (`EEP < noise.POST_AGB_EEP`, as `isochrone_cmd_track` does); not applied yet because it changes `alive` in the pickles.
+- **post-AGB (the proto-WD tail) is dropped by the `max_eep=POST_AGB_EEP` default** (`EEP < 1409`), since those stars are already cut from the sim side by `nonrem` (`type < 10`). `max_phase=5` is also still the default but only does anything on the downloaded MIST file, where post-AGB is phase 6 -- on the artpop isochrone it's phase 5 (table above). on the downloaded file the two cuts remove the identical 302 rows. with the EEP cut the artpop table is 1158 nodes, upper m0 edge **0.793574** (was 0.79435), max logTeff 3.885 (was 5.05). `max_eep=None, max_phase=None` keeps everything, and moves the upper m0 edge (so the `alive` count depends on it).
+  - before this cut went in (fixed 29 Sep 2026), N-body stars with m0_zams in 0.793574-0.79435 got post-AGB/WD photometry (absolute G ~ +10) and counted as `alive`. that was **2 stars per pickle** (the same two m0 values in every sim, 40 of 193153 `alive` stars across the 20 pickles, 0-2 per sim after `nonrem & unbound`). the pickles on scratch still have them; photometry of every other star is bit-identical with and without the cut, so regenerating only moves those two to NaN / `alive=False`.
 
 caveats that are real selections, not rounding details:
-- the isochrone is old, so it stops at ~0.794 Msun (artpop; ~0.805 for the downloaded file) and every more massive sim star is thrown out (`alive`). at `hm` the discarded stars are the luminous ones, so quote how many got dropped alongside any luminosity-weighted number.
+- the isochrone is old, so it stops at 0.793574 Msun (artpop, after the post-AGB cut; 0.804398 for the downloaded file) and every more massive sim star is thrown out (`alive`). at `hm` the discarded stars are the luminous ones, so quote how many got dropped alongside any luminosity-weighted number.
 - for binaries only the luminous component's photometry is used; the companion's light isn't added.
 
 ### CMD-space lookup: catalog (G, BP-RP) -> nearest isochrone point (`noise.py`)
@@ -379,7 +395,7 @@ logTeff = nearest['log_Teff']      # == noise.Teff_from_gaia_isochrone(track, G_
 
 - `isochrone_cmd_track(iso, max_eep=POST_AGB_EEP, G_col=..., BP_col=..., RP_col=..., carry=('log_Teff',))` -> dict `EEP`, `G`, `BP_RP` (absolute) + each of `carry`, ordered by EEP. takes the **raw** artpop/MIST table, not `build_isochrone_table`'s output, because:
   - **it's ordered by EEP, not `initial_mass`.** consecutive EEPs are consecutive points along the sequence. on the TP-AGB many nodes share an identical `initial_mass`; `build_isochrone_table` drops those as non-increasing, which is right for mass interpolation but would leave holes in the CMD track.
-  - **the post-AGB cut is on EEP.** `POST_AGB_EEP = 1409` is the MIST primary EEP where post-AGB starts (Dotter 2016, table 2), since artpop's `phase` can't distinguish it (see the precision section). without the cut, faint blue catalog stars snap onto a WD cooling track at logTeff ~ 5. `max_eep=None` keeps everything. with the default the track is 1158 nodes, max logTeff 3.885.
+  - **the post-AGB cut is on EEP.** `POST_AGB_EEP = 1409` is the MIST primary EEP where post-AGB starts (see the EEPs vs `phase` subsection), since artpop's `phase` can't distinguish it. without the cut, faint blue catalog stars snap onto a WD cooling track at logTeff ~ 5. `max_eep=None` keeps everything. with the default the track is 1158 nodes, max logTeff 3.885.
   - MIST phase boundaries are continuous in the CMD (the He flash is smoothed over; every phase-change step is < 0.05 mag), so the whole thing is one polyline with no breaks.
 - `nearest_isochrone_point(G, BP_RP, track, sigma_G=0.2, sigma_color=0.05, chunk=1024)` -> dict with every track key evaluated at the matched point, plus `dist`.
   - **nearest point on the piecewise-linear track** (projection onto each segment, clipped to [0,1]), not the nearest node -- node spacing is very uneven. every track column is linearly interpolated at the projection, so the interpolated `EEP` tells you which stage a star landed on.
@@ -560,8 +576,9 @@ maximum likelihood first, then emcee for posteriors. `nll_flat` negated is the r
 
 # bugs / stale things that remain
 in rough order of how much they'd hurt:
+- **`final_datasets.py` computes `mz` before `z`** (since commit d1f9809, which moved the `BP_RP`/`z` lines below the TODO comment). `z` at that point is the scalar orbit-phase `z` from `x,y,z = disp[:3]`, so `mz` -- and therefore `rverr_desi` -- would be garbage on the next run. the existing pickles predate the commit. fix: move `BP_RP = BP-RP; z = noise.gaia_g_to_lsst_z(G, BP_RP)` back above `mz = ...`.
 - **`import noise` runs the `# SCRATCH` cells** (isochrone fetch, loads the `gd1` sim, plots), because they're at module level. `final_datasets.py` imports it. guard them before re-running the pipeline.
-- **`build_isochrone_table(max_phase=5)` keeps the post-AGB / WD-cooling tail on the artpop isochrone**, which labels it phase 5, not 6. so the current pickles' `alive` includes N-body stars at m0_zams 0.793574-0.79435 with WD-like photometry (not counted yet). fix: cut `EEP < noise.POST_AGB_EEP` (as `isochrone_cmd_track` does) and regenerate. see the precision section.
+- **the scratch pickles predate the post-AGB EEP cut** in `build_isochrone_table`, so each still has 2 `alive` stars with post-AGB/WD photometry. negligible, and regenerating fixes it; see the precision section.
 - **pickle filenames don't include stellar_pop** -- an `lm` run of `final_datasets.py` would silently overwrite the `hm` pickles. (`gmm.py`'s `mass_index = 1` line says "LOW mass" but 1 is `hm`, and it isn't used there anyway.)
 - **pickles live on netscratch**, which is purged on a 90-day clock (they were written ~25-27 Sep 2026). copy them somewhere permanent before they age out.
 - **`star.mass0` at the present day is not the ZAMS mass** -- use `m0_zams`. fails silently. see its own section.
@@ -579,7 +596,7 @@ in rough order of how much they'd hurt:
 - `core_to_galcen_frame` still adds the raw `core.vel` rather than the `fix_core_vel` version.
 - `correct_core` is dead code that also strips units.
 - the `m3` great circle doesn't describe the whole stream (phi2 residual std 0.786 vs ~0.2 for everything else).
-- the isochrone age (12 Gyr) doesn't match the dynamical ages; the isochrone cut (`alive`) throws out every star above ~0.794 Msun (artpop isochrone).
+- the isochrone age (requested 12 Gyr, actually 12.6 Gyr, and v/vcrit = 0.4 by artpop's default) doesn't match the dynamical ages; the isochrone cut (`alive`) throws out every star above 0.793574 Msun (artpop isochrone).
 - `straighten_stream_orbit_interp_arbitrary_frame` in `paf` is a commented-out stub.
 
 

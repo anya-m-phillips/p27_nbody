@@ -210,9 +210,17 @@ def g_phot(T, R, dpc):
 ###     proportion to the initial-mass interval it occupies, which is exactly
 ###     its lifetime x IMF weight. so the giants come out rare automatically;
 ###     nothing extra is needed to get the relative numbers right.
+###   - the post-AGB / WD-cooling tail is cut on EEP, not phase: artpop's
+###     packaged MIST v1.2 grid labels all of EEP 808-1710 phase 5, so
+###     max_phase=5 only removes it from the MIST web-interpolator file, where
+###     EEP >= 1409 is phase 6 (the same 302 rows). 1409 = the post-AGB primary
+###     EEP in the MIST README, table II (waps.cfa.harvard.edu/MIST/README_tables.pdf),
+###     which is also what artpop's own SSP.select_phase('postAGB') uses.
 ISO_BANDS = ('Gaia_G_EDR3', 'Gaia_BP_EDR3', 'Gaia_RP_EDR3', 'log_Teff') #<-- lol i ... think this will work...
+POST_AGB_EEP = 1409
 
-def build_isochrone_table(iso, bands=ISO_BANDS, max_phase=5, mass_col='initial_mass'):
+def build_isochrone_table(iso, bands=ISO_BANDS, max_phase=5, max_eep=POST_AGB_EEP,
+                          mass_col='initial_mass'):
     """
     Build a strictly-increasing initial-mass grid and the matching magnitudes,
     ready for `np.interp`.
@@ -225,9 +233,16 @@ def build_isochrone_table(iso, bands=ISO_BANDS, max_phase=5, mass_col='initial_m
         isochrone magnitude columns to carry along.
     max_phase : int or None
         drop rows with MIST `phase` above this. default 5 keeps MS(0), RGB(2),
-        CHeB(3), EAGB(4) and TPAGB(5) and drops post-AGB(6), which is the
-        proto-WD tail -- those stars are remnants in the simulation and are
-        already cut by `nonrem`. set None to keep everything.
+        CHeB(3), EAGB(4) and TPAGB(5) and drops post-AGB(6) -- but ONLY on the
+        MIST web-interpolator file; artpop labels post-AGB as phase 5, so
+        there this does nothing. max_eep is the cut that works on both.
+    max_eep : int or None
+        keep rows with EEP < max_eep. default POST_AGB_EEP drops post-AGB +
+        WD cooling, the proto-WD tail -- those stars are remnants in the
+        simulation and are already cut by `nonrem`. this moves the upper
+        m0 edge down (0.79435 -> 0.793574 Msun on the artpop 12 Gyr
+        isochrone), so stars in between come back NaN / off-isochrone.
+        set both to None to keep everything.
     mass_col : str
         must be a monotonically increasing column; see the precision notes.
 
@@ -241,6 +256,8 @@ def build_isochrone_table(iso, bands=ISO_BANDS, max_phase=5, mass_col='initial_m
     keep = np.ones(len(m0), dtype=bool)
     if max_phase is not None:
         keep &= np.asarray(iso['phase'], dtype=np.float64) <= max_phase
+    if max_eep is not None:
+        keep &= np.asarray(iso['EEP'], dtype=np.float64) < max_eep
     idx = np.flatnonzero(keep)
 
     # `np.interp` REQUIRES increasing xp and does not check -- it silently
@@ -290,11 +307,12 @@ def isochrone_photometry(m0_query, m0_grid, table):
     return phot, on_iso
 
 
-def gaia_from_isochrone(m0_query, iso, bands=ISO_BANDS, max_phase=5):
+def gaia_from_isochrone(m0_query, iso, bands=ISO_BANDS, max_phase=5, max_eep=POST_AGB_EEP):
     """
     Convenience wrapper: ZAMS masses -> (G, BP, RP, on_iso), absolute mags.
     """
-    m0_grid, table = build_isochrone_table(iso, bands=bands, max_phase=max_phase)
+    m0_grid, table = build_isochrone_table(iso, bands=bands, max_phase=max_phase,
+                                           max_eep=max_eep)
     phot, on_iso = isochrone_photometry(m0_query, m0_grid, table)
     return phot[bands[0]], phot[bands[1]], phot[bands[2]], on_iso
 
@@ -314,14 +332,12 @@ def load_gaia_catalog(orbit):
 ###     share an identical initial_mass (build_isochrone_table drops those as
 ###     non-increasing, which is right for mass interpolation but would punch
 ###     holes in the CMD track).
-###   - the artpop isochrone labels the post-AGB / WD-cooling tail as phase 5,
-###     not 6, so `max_phase` can't remove it. cut on EEP instead: MIST primary
-###     EEP 1409 is the start of post-AGB (Dotter 2016, table 2). without the
-###     cut, faint blue catalog stars snap onto a WD track at logTeff ~ 5.
+###   - same post-AGB EEP cut as build_isochrone_table (POST_AGB_EEP, see the
+###     precision notes above). without it, faint blue catalog stars snap onto
+###     a WD track at logTeff ~ 5.
 ###   - "nearest" is measured in units of (sigma_color, sigma_G), and it is the
 ###     nearest point on the piecewise-linear track (projection onto each
 ###     segment), not the nearest node -- node spacing is very uneven.
-POST_AGB_EEP = 1409
 
 def isochrone_cmd_track(iso, max_eep=POST_AGB_EEP, G_col='Gaia_G_EDR3',
                         BP_col='Gaia_BP_EDR3', RP_col='Gaia_RP_EDR3',
@@ -441,137 +457,190 @@ def trim_obstream_percentile(sc, p=[1,99],
 # %%
 # SCRATCH::::
 
-isocmd = artpop.fetch_mist_iso_cmd(
-    log_age=np.log10(12e9),
-    feh=-2.0,
-    phot_system='UBVRIplus',
-    #v_over_vcrit=0.0 #<-- idk
-)
-m0_grid, iso_table = build_isochrone_table(isocmd) #<-- will do gaia bands + teff automatically, have max_phase=5 (remove post agb evolution)
-min_m0, max_m0 = m0_grid[0], m0_grid[-1]
-prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
-# %%
-orbit='gd1'
-rvir_index=0
-masses=['lm','hm']
-mass_index=1
-tidal_boundary=2.0
-copy_options=[0,1,2,3,4]
-(core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-    simspect.prepare_nbody_data_anycopy(
-        orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-        include_photometry=False, N_rtid_boundary = tidal_boundary, #<--- not sure what i'm going to use for tthis: 
-        verbose=True
-    )
-# %%
-coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
-sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
-trim_new = trim_obstream_percentile(sc=sc)
+# isocmd = artpop.fetch_mist_iso_cmd(
+#     log_age=np.log10(12e9),
+#     feh=-2.0,
+#     phot_system='UBVRIplus',
+#     #v_over_vcrit=0.0 #<-- idk
+# )
+# m0_grid, iso_table = build_isochrone_table(isocmd) #<-- will do gaia bands + teff automatically; max_eep=POST_AGB_EEP removes post-AGB/WD (max_phase=5 does not on artpop)
+# min_m0, max_m0 = m0_grid[0], m0_grid[-1]
+# prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
+# # %%
+# orbit='gd1'
+# rvir_index=0
+# masses=['lm','hm']
+# mass_index=1
+# tidal_boundary=2.0
+# copy_options=[0,1,2,3,4]
+# (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+#     simspect.prepare_nbody_data_anycopy(
+#         orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+#         include_photometry=False, N_rtid_boundary = tidal_boundary, #<--- not sure what i'm going to use for tthis: 
+#         verbose=True
+#     )
+# # %%
+# coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
+# sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
+# trim_new = trim_obstream_percentile(sc=sc)
 
-distances = coords_obs.distance[trim_new]
+# distances = coords_obs.distance[trim_new]
 
-m0s = np.asarray(lumdict['m0_zams'], dtype=np.float64)
-iso_phot, on_iso = isochrone_photometry(m0s, m0_grid, iso_table)
-G  = iso_phot['Gaia_G_EDR3'][trim_new]
-BP = iso_phot['Gaia_BP_EDR3'][trim_new] #<-- i think i never need these since they are getting replaced completely... 
-RP = iso_phot['Gaia_RP_EDR3'][trim_new] #<-- i think i never need these since they are getting replaced completely... 
+# m0s = np.asarray(lumdict['m0_zams'], dtype=np.float64)
+# iso_phot, on_iso = isochrone_photometry(m0s, m0_grid, iso_table)
+# G  = iso_phot['Gaia_G_EDR3'][trim_new]
+# BP = iso_phot['Gaia_BP_EDR3'][trim_new] #<-- i think i never need these since they are getting replaced completely... 
+# RP = iso_phot['Gaia_RP_EDR3'][trim_new] #<-- i think i never need these since they are getting replaced completely... 
 
-mG = paf.m_from_M(G, dist=distances)
+# mG = paf.m_from_M(G, dist=distances)
 
-iso_sort = np.argsort(mG)
+# iso_sort = np.argsort(mG)
 
-mG_sorted = mG[iso_sort]
-BP_sorted, RP_sorted, G_sorted = BP[iso_sort], RP[iso_sort], G[iso_sort]
+# mG_sorted = mG[iso_sort]
+# BP_sorted, RP_sorted, G_sorted = BP[iso_sort], RP[iso_sort], G[iso_sort]
 
-distances_sorted = distances[iso_sort]
-
-
-
-t = Table.read(repo_path+"/data/bpw25_catalogs/%s.fits"%orbit, format='fits')
-mG_cat = t['phot_g_mean_mag']
-cat_sort = np.argsort(mG_cat)
-N_jarvis = 679
-N = N_jarvis
+# distances_sorted = distances[iso_sort]
 
 
-t_use = t[cat_sort][:N]
-G_cat = paf.M_from_m(t_use['phot_g_mean_mag'], distances_sorted[:N])
-BP_RP_cat = t_use['bp_rp']
+# t = Table.read(repo_path+"/data/bpw25_catalogs/%s.fits"%orbit, format='fits')
+# mG_cat = t['phot_g_mean_mag']
+# cat_sort = np.argsort(mG_cat)
+# N_jarvis = 679
+# N = N_jarvis
 
-# get nearest analog in iso_table??
-iso_track = isochrone_cmd_track(isocmd) #<-- EEP-ordered, post-AGB/WD tail dropped
-nearest = nearest_isochrone_point(G_cat, BP_RP_cat, iso_track) #<-- default sigma_G=0.2, sigma_color=0.05
-logTeff_cat = nearest['log_Teff']
-print('match dist (sigma units) 50/90/99:', np.nanpercentile(nearest['dist'], [50, 90, 99]))
 
-fig, ax = plt.subplots()
-ax.plot(iso_track['BP_RP'], iso_track['G'], 'k-', lw=0.8)
-ax.plot(np.vstack([BP_RP_cat, nearest['BP_RP']]), np.vstack([G_cat, nearest['G']]), 'r-', lw=0.3)
-im = ax.scatter(BP_RP_cat, G_cat, c=logTeff_cat, s=5)
-plt.colorbar(im, ax=ax, label=r'$\log T_{\rm eff}$')
-ax.set_xlim(0, 2); ax.set_ylim(8, -3)
+# t_use = t[cat_sort][:N]
+# G_cat = paf.M_from_m(t_use['phot_g_mean_mag'], distances_sorted[:N])
+# BP_RP_cat = t_use['bp_rp']
+
+# # get nearest analog in iso_table??
+# iso_track = isochrone_cmd_track(isocmd) #<-- EEP-ordered, post-AGB/WD tail dropped
+# nearest = nearest_isochrone_point(G_cat, BP_RP_cat, iso_track) #<-- default sigma_G=0.2, sigma_color=0.05
+# logTeff_cat = nearest['log_Teff']
+# print('match dist (sigma units) 50/90/99:', np.nanpercentile(nearest['dist'], [50, 90, 99]))
+
+# fig, ax = plt.subplots()
+# ax.plot(iso_track['BP_RP'], iso_track['G'], 'k-', lw=0.8)
+# ax.plot(np.vstack([BP_RP_cat, nearest['BP_RP']]), np.vstack([G_cat, nearest['G']]), 'r-', lw=0.3)
+# im = ax.scatter(BP_RP_cat, G_cat, c=logTeff_cat, s=5)
+# plt.colorbar(im, ax=ax, label=r'$\log T_{\rm eff}$')
+# ax.set_xlim(0, 2); ax.set_ylim(8, -3)
 
 # check that the distance translation for the gaia data doesn't make
 # things look absolutely crazy... I'm pretty happy with it i would say. 
-fig, axs = plt.subplots(1,2)
-axs[0].scatter(t_use["bp_rp"], t_use["phot_g_mean_mag"], s=5)
-axs[1].scatter(BP_RP_cat, G_cat, s=5)
-axs[1].scatter(BP_sorted[:N]-RP_sorted[:N], G_sorted[:N])
-axs[0].scatter(BP_sorted[:N]-RP_sorted[:N], mG_sorted[:N])
-for ax in axs:
-    ax.invert_yaxis()
-
-# %%
+# fig, axs = plt.subplots(1,2)
+# axs[0].scatter(t_use["bp_rp"], t_use["phot_g_mean_mag"], s=5)
+# axs[1].scatter(BP_RP_cat, G_cat, s=5)
+# axs[1].scatter(BP_sorted[:N]-RP_sorted[:N], G_sorted[:N])
+# axs[0].scatter(BP_sorted[:N]-RP_sorted[:N], mG_sorted[:N])
+# for ax in axs:
+#     ax.invert_yaxis()
 
 
-# %%
 
-
-def assign_photometry_from_catalog(gaia_iso, distances,
-                                   catalog, N=None):
+def assign_photometry_from_catalog(gaia_iso, distances, catalog, track,
+                                   N=None, eligible=None, G_key='Gaia_G_EDR3',
+                                   **nearest_kwargs):
     """
-    gaia_iso should be [G, BP, RP] from the isochrone. 
+    Paint real catalog photometry onto the N-body stars by rank in apparent G:
+    the brightest N-body star gets the brightest catalog star's G and BP-RP,
+    the second brightest the second, etc. log_Teff is then read off the
+    nearest point on the isochrone (for viamock).
 
-    returns photometry row matched brightest to faintest. 
-    below the catalog limit (or after N bright stars) rest of photometry 
-    is nans. 
-    will return mG, BP_RP matched to catalog data. 
+    Parameters
+    ----------
+    gaia_iso : dict, the `phot` output of isochrone_photometry (absolute mags,
+        NaN off the isochrone). only `G_key` is used -- it sets the ranking.
+    distances : (N_sim,) astropy Quantity, heliocentric distances of the same
+        stars (e.g. coords_obs.distance). used both ways: iso G -> apparent
+        for the ranking, catalog apparent G -> absolute for the Teff lookup.
+    catalog : astropy Table with 'phot_g_mean_mag' and 'bp_rp'
+        (e.g. load_gaia_catalog(orbit)). rows with non-finite G or BP-RP
+        are skipped.
+    track : dict from isochrone_cmd_track, for the Teff lookup.
+    N : int or None. match this many of the brightest stars. None -> all
+        usable catalog rows. capped at the number of rankable N-body stars.
+    eligible : (N_sim,) bool or None. only these N-body stars can receive
+        catalog photometry (e.g. unbound & nonrem & trim, so the catalog isn't
+        spent on progenitor stars). None -> every star with a finite apparent G.
+    nearest_kwargs : go to nearest_isochrone_point (sigma_G, sigma_color).
 
-    catalog should be an astropy table object. can load with the function above. 
+    Returns
+    -------
+    phot : dict of (N_sim,) float64 in the original N-body order, NaN where
+        unmatched. same keys as final_datasets' photdict -- 'G', 'BP_RP', 'z',
+        'log_Teff' (absolute), 'mG', 'mz' (apparent) -- plus
+        'iso_dist' (distance to the isochrone in sigma units; > ~3 means
+        the catalog star is off this isochrone and its Teff is extrapolated)
+        and 'catalog_index' (int, row of `catalog` used, -1 if unmatched).
+    matched : (N_sim,) bool, True where catalog photometry was assigned.
     """
-    N_jarvis = 679 #<-- # stars in the jarvis catalog. 
-    # STEP 1: 
-    #   compute apparent magnitudes given the gaia isochrones and distances
-    #
-    # STEP 2: 
-    #   order the iso tables and the 
-    #   catalog by aparent G-band magnitude. for the
-    #   catalog, the column will be named phot_g_mean_mag
-    #
-    # STEP 3:
-    #   assign the brightest N stars from the isochrone to the
-    #   brightest N stars in the catalog. if N is None, assign the 
-    #   brightest len(catalog) stars from the isochrone to the mags 
-    #   from the catalog. I care about keeping the catalog apparent G mags
-    #   and BP-RP colors. 
-    #   make all other rows of the isochrone table should be nan. 
-    #
-    # STEP 4:
-    #   use the distances to convert the catalog apparent magnitudes
-    #   back to aboslute magnitudes. we now have G, BP-RP (absolute) 
-    #   from catalogs.
-    # 
-    # STEP 5: 
-    #   look up what the Teffs should be given G, BP, RP using the provided
-    #   function Teff_from_gaia_isochrone. Because this is in real data world
-    #   the points won't lie exactly on the isochrone, so find the nearest point
-    #   on like idk the interpolated isochrone or something and assign the Teff
-    #   that way?
-    #
-    # STEP 6:
-    #   put the row-matched table back in the original order, return a flag
-    #   for stuff that got successfully matched to photometry. 
-    return
+    ### STEP 1: apparent G of the N-body stars from the isochrone
+    G_iso = np.asarray(gaia_iso[G_key], dtype=np.float64)
+    mG_iso = paf.m_from_M(G_iso, dist=distances)
+    mG_iso = np.asarray(getattr(mG_iso, 'value', mG_iso), dtype=np.float64)
+    n_sim = len(mG_iso)
+
+    rankable = np.isfinite(mG_iso)
+    if eligible is not None:
+        rankable &= np.asarray(eligible, dtype=bool)
+
+    mG_cat = np.ma.filled(np.ma.asarray(catalog['phot_g_mean_mag'], dtype=np.float64), np.nan)
+    BP_RP_cat = np.ma.filled(np.ma.asarray(catalog['bp_rp'], dtype=np.float64), np.nan)
+    usable = np.isfinite(mG_cat) & np.isfinite(BP_RP_cat)
+
+    ### STEP 2: rank both by apparent G, brightest first.
+    # argsort over index subsets, so NaNs / ineligible stars never enter
+    sim_rank = np.flatnonzero(rankable)
+    sim_rank = sim_rank[np.argsort(mG_iso[sim_rank], kind='stable')]
+    cat_rank = np.flatnonzero(usable)
+    cat_rank = cat_rank[np.argsort(mG_cat[cat_rank], kind='stable')]
+
+    n_match = len(cat_rank) if N is None else int(N)
+    if n_match > len(cat_rank):
+        print(f'assign_photometry_from_catalog: N={n_match} > {len(cat_rank)} '
+              'usable catalog rows; matching all of them')
+        n_match = len(cat_rank)
+    if n_match > len(sim_rank):
+        print(f'assign_photometry_from_catalog: only {len(sim_rank)} rankable '
+              f'N-body stars for {n_match} catalog rows; matching {len(sim_rank)}')
+        n_match = len(sim_rank)
+
+    ### STEP 3: brightest n_match N-body stars <- brightest n_match catalog stars.
+    # indexing straight into the original order also does STEP 6's un-sort.
+    sim_idx = sim_rank[:n_match]
+    cat_idx = cat_rank[:n_match]
+
+    matched = np.zeros(n_sim, dtype=bool)
+    matched[sim_idx] = True
+    catalog_index = np.full(n_sim, -1, dtype=int)
+    catalog_index[sim_idx] = cat_idx
+
+    mG = np.full(n_sim, np.nan)
+    BP_RP = np.full(n_sim, np.nan)
+    mG[sim_idx] = mG_cat[cat_idx]
+    BP_RP[sim_idx] = BP_RP_cat[cat_idx]
+
+    ### STEP 4: back to absolute with the N-body distances (NaN rows stay NaN)
+    G = paf.M_from_m(mG, dist=distances)
+    G = np.asarray(getattr(G, 'value', G), dtype=np.float64)
+
+    ### STEP 5: Teff off the nearest point on the isochrone track
+    nearest = nearest_isochrone_point(G, BP_RP, track, **nearest_kwargs)
+
+    ### STEP 6: already in the original order. z via RTN-099 for DESI.
+    z = gaia_g_to_lsst_z(G, BP_RP)
+    phot = {
+        'G': G,
+        'BP_RP': BP_RP,
+        'z': z,
+        'mG': mG,
+        'mz': gaia_g_to_lsst_z(mG, BP_RP),
+        'log_Teff': nearest['log_Teff'],
+        'iso_dist': nearest['dist'],
+        'catalog_index': catalog_index,
+    }
+    return phot, matched
 
 
 # %%
