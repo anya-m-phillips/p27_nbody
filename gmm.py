@@ -542,7 +542,7 @@ table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
 make_plots=True
 constrain_widths=False
-noise = 'via' #<-- None or 'via' or 'desi'
+noise = 'desi' #<-- None or 'via' or 'desi'
 include_binaries=True
 
 if noise is None:
@@ -934,13 +934,7 @@ fig, ax = plt.subplots()
 ax.scatter(tt['S_ts'][:,3], tt['S_c'][:,3], c=tt['Rvir0'], cmap='cool')
 ax.set_xlim(left=0)
 ax.set_ylim(bottom=0)
-# %%
 
-# %%
-
-# %%
-
-# %%
 
 # %%
 fig, ax = plt.subplots()
