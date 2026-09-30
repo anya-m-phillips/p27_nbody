@@ -107,11 +107,12 @@ init_displacements = [
     grid_info.c19_init_displacement]
 masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
-# %%
+
+
 print("beginning loop...")
 for ii, orbit in enumerate(orbits): #<--- this i can do later i think. 
-    # if orbit !='pa5':
-    #     continue
+    if orbit !='gd1': #<-- hello me coming back and redoing this later..
+        continue
 
     if orbit !='aau':
         copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice there are <=5x copies per sim.
@@ -350,8 +351,8 @@ for ii, orbit in enumerate(orbits): #<--- this i can do later i think.
         
 
         isotrack = noise.isochrone_cmd_track(isocmd) #<-- make a teff query-able track from the cmd. 
-        N_jarvis = 679 #<-- length of jarvis catalog. 
-        N = len(t) if orbit != 'gd1' else N_jarvis
+        # N_jarvis = 679 #<-- length of jarvis catalog. 
+        N = len(t) # if orbit != 'gd1' else N_jarvis #<-- **going to impose this later!!! 
 
         # filtering out bound/trimmed stars so we don't waste good photometry on them idk
         cut = unbound & trim_new & nonrem

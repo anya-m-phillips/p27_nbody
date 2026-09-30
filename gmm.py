@@ -537,13 +537,17 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 
 # %%
 # if __name__=="__main__":
+print("defining data path/where to put tables")
 datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
+
+### currently the determination of a "case" is all manual.. might be nice to automate running all of the [whatever cases i care about]
+print("deciding on case")
 make_plots=True
 constrain_widths=False
-noise = 'desi' #<-- None or 'via' or 'desi'
-include_binaries=True
+noise = None #'via10hr' #<-- None or 'via' or 'desi'
+include_binaries=False
 
 if noise is None:
     cd0 = 'noiseless'
@@ -565,7 +569,7 @@ case_name = cd0+"_"+cd1+cd2
 print("running case:", case_name)
 
 
-
+print("loading grid")
 grid_info = paf.extended_grid_info(scratch=False) 
 lm_colors, hm_colors, simcolors = paf.define_simcolors()
 reordered_colors = hm_colors + lm_colors[::-1]
@@ -600,7 +604,7 @@ keys = ['phi2','v_phi1','v_phi2','v_gsr'] #<-- for GMM fitting.
 
 tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], []
 
-
+print("starting loop...")
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
     # if orbit!='aau':
     #     continue
@@ -694,14 +698,25 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
             cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
             good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
             
-            if noise=='via':
+            if noise in ['via', 'via10hr']:
                 good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
                 # use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
 
 
             
-            else:
-                good_RV = rverr<10. #km/s
+            if noise=='desi':
+                ### IN THIS CASE I WANT TO ONLY USE THE BRIGHTEST N_jarvis STARS!!! 
+                N_jarvis = 679 #<-- length of jarvis catalog. 
+                particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
+
+                
+                bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
+                ordered_IDs = particle_IDs[bright_ordering]
+                used_IDs = ordered_IDs[:N_jarvis]
+
+                top_N_jarvis = np.isin(particle_IDs, used_IDs)
+
+                good_RV = (top_N_jarvis) & (rverr<10.) #km/s
                 # use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
 
 
@@ -930,13 +945,7 @@ t_out.write(table_path+case_name+".fits", overwrite=True)
 
 # %%
 tt = Table.read(table_path+case_name+".fits", format="fits")
-fig, ax = plt.subplots()
-ax.scatter(tt['S_ts'][:,3], tt['S_c'][:,3], c=tt['Rvir0'], cmap='cool')
-ax.set_xlim(left=0)
-ax.set_ylim(bottom=0)
 
-
-# %%
 fig, ax = plt.subplots()
 
 okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
