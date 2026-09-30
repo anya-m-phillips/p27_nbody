@@ -111,8 +111,8 @@ rvirs = [0.75, 1.5, 3, 6]
 
 print("beginning loop...")
 for ii, orbit in enumerate(orbits): #<--- this i can do later i think. 
-    if orbit !='gd1': #<-- hello me coming back and redoing this later..
-        continue
+    # if orbit !='gd1': #<-- hello me coming back and redoing this later..
+    #     continue
 
     if orbit !='aau':
         copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice there are <=5x copies per sim.

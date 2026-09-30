@@ -449,7 +449,7 @@ axs[1,0].remove()
 
 plot_filename = "summary_"+case_name
 
-# plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
+plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
 
 # %%
 #-----------------------------------------------------#
@@ -461,11 +461,22 @@ tt = Table.read(table_path+case+".fits", format="fits")
 c_labels = ['orange','white','midnightblue']
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-rvir=6.0 #0.75
+rvir0s = [0.75, 1.5, 3.0, 6.0]
 
 fig, ax = plt.subplots()
 
-for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i think. 
+# for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i think. 
+
+fbins_ts = []
+fbls_ts = []
+fbus_ts = []
+
+fbins_c = []
+fbls_c = []
+fbus_c = []
+
+for rvir in rvir0s:
+    orbit = 'gd1' #<-- idk. 
     #### extract info about the mixture modele from the saved table:
     print(orbit, rvir)
     row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
@@ -551,26 +562,38 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
     p_ts, P_ts = paf.Prob_of_frac(nbin_ts, n_ts)
     lo_ts,m_ts,up_ts = paf.percentile(p_ts, P_ts)
     xerr_l, xerr_u = m_ts-lo_ts, up_ts-m_ts
+    fbins_ts.append(m_ts)
+    fbls_ts.append(xerr_l)
+    fbus_ts.append(xerr_u)
 
     p_c, P_c = paf.Prob_of_frac(nbin_c, n_c)
     lo_c,m_c,up_c = paf.percentile(p_c, P_c)
     yerr_l, yerr_u = m_c-lo_c, up_c-m_c
+    fbins_c.append(m_c)
+    fbls_c.append(yerr_l)
+    fbus_c.append(yerr_u)
 
 
+    # ax.errorbar([m_ts], [m_c], c=ccc[ii],
+    #             xerr=[[xerr_l], [xerr_u]], yerr=[[yerr_l], [yerr_u]], 
+    #             markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
+    #            label=orbit)#+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
 
-    ax.errorbar([m_ts], [m_c], c=ccc[ii],
-                xerr=[[xerr_l], [xerr_u]], yerr=[[yerr_l], [yerr_u]], 
-                markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
-               label=orbit)#+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
-
-ax.legend(loc='lower right')
+ax.errorbar(rvir0s, fbins_c, yerr=[fbls_c, fbus_c], label='cocoon', capsize=3, marker='o', 
+            markeredgecolor='k')
+ax.errorbar(rvir0s, fbins_ts, yerr=[fbls_ts, fbus_ts], label='thin stream', capsize=3, marker='o', 
+            markeredgecolor='k')
+ax.set_xlabel(r'$R_{\rm vir,0}~[\rm pc]$')
+ax.set_ylabel(r'$f_{\rm bin}$')
+ax.set_title(orbit)
+# ax.legend(loc='lower right')
 l = [0,0.4]
 # ax.set_xlim(l)
 # ax.set_ylim(l)
-ax.plot(l,l, c='k', lw=1)
-ax.set_xlabel(r'$f_{\rm bin, ts}$')
-ax.set_ylabel(r'$f_{\rm bin, c}$')
-ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
+# ax.plot(l,l, c='k', lw=1)
+# ax.set_xlabel(r'$f_{\rm bin, ts}$')
+# ax.set_ylabel(r'$f_{\rm bin, c}$')
+# ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
 
 # plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
 # %%
@@ -584,17 +607,17 @@ ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
 #--------------------------------------------------------#
 # %%
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
-include_binaries=False
+include_binaries=True
 # case_name = 'desi_noise_CoM'
-case_name = 'noiseless_CoM'
+case_name = 'noiseless_binaries'
 noise = None
 tt = Table.read(table_path+case_name+".fits", format="fits")
 c_labels = ["#CCC9E7", "#2F2F2F"]
 # c_labels = ['orange','white','midnightblue']
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-orbit = 'jet'
-rvir_index=0
+orbit = 'gd1'
+rvir_index=3
 rvir = rvirs[rvir_index]
 
 
@@ -715,7 +738,7 @@ for jj, key in enumerate(keys):
                 c=p_cocoon[order], #s=50, edgecolor='k', lw=.5,
                 cmap=cocoon_cmap,
                 rasterized=True) 
-    # ax.set_ylim(-cut,cut)
+    ax.set_ylim(-cut,cut)
 
     # ax.set_xlim(orbit_lim_map[orbit])
 
@@ -737,7 +760,7 @@ for jj, key in enumerate(keys):
             lw=2, 
             color=c_labels[-1],orientation='horizontal',
             bins=bins)
-    # ax.set_ylim(-cut,cut)
+    ax.set_ylim(-cut,cut)
 
 
 
