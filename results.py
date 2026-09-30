@@ -634,10 +634,10 @@ l = [0,0.4]
 #--------------------------------------------------------#
 # %%
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
-include_binaries=True
-case_name = 'via_noise_binaries'
+include_binaries=False
+case_name = 'desi_noise_CoM'
 # case_name = 'noiseless_CoM'
-noise = 'via' #<-- None, 'via', 'via10hr', 'desi'. has to match case_name!
+noise = 'desi' #<-- None, 'via', 'via10hr', 'desi'. has to match case_name!
 tt = Table.read(table_path+case_name+".fits", format="fits")
 c_labels = ["#CCC9E7", "#2F2F2F"]
 # c_labels = ['orange','white','midnightblue']
@@ -769,6 +769,9 @@ for ii, rvir_index in enumerate(rvir_indices):
     if noise is None:
         axs[0, ii].set_title(r'$R_{\rm vir,0}=%.2f$ pc, $f_{\rm c}=%.2f$'%(rvir, row['f_cocoon'][0]), fontsize=13)
 
+    if noise is not None:
+        axs[0, ii].set_title(
+            r'$f_{\rm c}=%.2f, \sigma_{\phi_2, c} = %.2f~\degree, \sigma_{v_{\rm GSR}, c} = %.2f~\mathrm{km~s^{-1}} $'%(row['f_cocoon'][0], row['S_c'][:,0][0], row['S_c'][:,-1][0]))
     
     
     axs[-1, ii].set_xlabel(r'$\phi_1~[\degree]$')
