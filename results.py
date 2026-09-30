@@ -163,6 +163,8 @@ figg, axx = plt.subplots()
 
 bins = np.linspace(0, 40, 100)
 
+
+orbit_titles = ['GD-1', 'AAU','Pal 5','Jet','C-19']
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
 
     pr = prog_tab[prog_tab['name']==orbit] #<-- prog row
@@ -170,8 +172,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     orbit_obj = paf.integrate_prog_orbit(disp, steps=10000, dt=1*u.Myr)
 
     peri = orbit_obj.pericenter().to(u.kpc).value
+    pericenters_kpc.append(peri)
     apo = orbit_obj.apocenter().to(u.kpc).value
-
+    apocenters_kpc.append(apo)
 
     x,y,z = disp[:3]
     r = np.sqrt(x**2 + y**2 + z**2)
@@ -191,8 +194,17 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     unbound = data_dict['unbound']
 
     nonrem = data_dict['nonrem']
-    phot = data_dict['phot']
-    noise_dict = data_dict['noise']
+    phot = data_dict['catalog_photometry']
+
+    phot_iso = data_dict['phot']
+
+    cut = data_dict['cut_for_catalog_photometry']
+    matched_flag = data_dict['matched_to_catalog_photometry']
+    matched_full = np.full(len(cut), fill_value = False)
+    matched_full[cut] = matched_flag
+
+
+    noise_dict = data_dict['noise_catalog_photometry']
     noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
     rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
     alive = data_dict['alive']
@@ -200,17 +212,25 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
     good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
 
-    if noise=='via':
-        good_RV = rverr<1.0 #km/s #<--- pretty happy with how this mag distribution comes out...
+
+    if noise=='desi':
+        N_jarvis = 679 #<-- length of jarvis catalog. 
+        particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
+
+        
+        bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
+        ordered_IDs = particle_IDs[bright_ordering]
+        used_IDs = ordered_IDs[:N_jarvis]
+
+        top_N_jarvis = np.isin(particle_IDs, used_IDs)
+
+        good_RV = (top_N_jarvis) & (rverr<10.) #km/s       
+
     else:
-        good_RV = rverr<10. #km/s
-
-    good_RV5 = rverr<5.0
+        good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
 
 
-
-    use = trim_new & unbound & nonrem & alive & acceptable_G & nonrem & good_RV
-    use5 = trim_new & unbound & nonrem & alive & acceptable_G & nonrem & good_RV5
+    use = cut & matched_full & good_pm & good_RV #& nonrem
 
     # lw=3
     # ax.hist(distances[use], bins=40,# bins=bins, 
@@ -222,23 +242,28 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         x+=40*u.degree
 
     axx.scatter(x[unbound & trim_new], distances[unbound & trim_new], c='0.9', s=5, rasterized=True)
-    axx.scatter(x[use5], distances[use5], c='0.7', s=5, rasterized=True)
     axx.scatter(x[use], distances[use], c=ccc[ii], s=20, rasterized=True,
                 edgecolor='k', lw=0.2)
     axx.set_xlabel(r'$\phi_1~[\degree]$')
     axx.set_ylabel(r'Distance [kpc]')
-    axx.set_title(noise)
+    # axx.set_title(noise)
     # axx.set_ylim(0, 20)
 
-    fig, cmd = plt.subplots()
-    cmd.scatter(phot['BP_RP'][use5], phot['mG'][use5], c='0.7' )# ccc[ii])
-    cmd.scatter(phot['BP_RP'][use], phot['mG'][use], c=ccc[ii])
-
-    cmd.scatter(phot['BP_RP'][unbound & trim_new], phot['mG'][unbound & trim_new], c='0.9', zorder=0)
+    fig_cmd, cmd = plt.subplots()
+    cmd.scatter(phot_iso['BP_RP'][unbound & trim_new], phot_iso['mG'][unbound & trim_new], c='0.9', zorder=0,
+                label='all isochrone photometry', rasterized=True)
+    cmd.scatter(phot_iso['BP_RP'][use], phot_iso['mG'][use], c='0.7', label='matched stars', rasterized=True)
+    cmd.scatter(phot['BP_RP'][use], phot['mG'][use], c=ccc[ii], label='catalog photometry', rasterized=True)
+    cmd.set_xlabel(r'$G_{B_P}-G_{R_P}$')
+    cmd.set_ylabel(r'$G$')
     cmd.invert_yaxis()
-    cmd.set_title(orbit)
+    cmd.set_title(orbit_titles[ii])
+    # cmd.set_lim(bottom=)
+    if orbit=='gd1':
+        cmd.legend(loc='lower left')
+    fig_cmd.savefig(repo_path+"/plots/photometry_explainer/%s.pdf"%orbit, dpi=300, bbox_inches='tight')
 
-# ax.legend()
+figg.savefig(repo_path+"/plots/photometry_explainer/distance_phi1.pdf", dpi=300, bbox_inches='tight')
 
 
 med_distances = np.array(med_distances)
@@ -252,74 +277,69 @@ orbits = np.array(orbits)
 eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
 
 
+# tt = Table.read(table_path+case_name+".fits", format="fits")
+# okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
+# rvir_cut = tt['Rvir0']<6.
 
+# reordered = np.argsort(pericenters_kpc )
 
+# ccc = cc[1:]
+# fig, axs = plt.subplots(2,3,figsize=[21,14])
+# plt.subplots_adjust(wspace=0.2, hspace=0.2)
+# for ii, orbit in enumerate(tqdm(orbits[reordered])):
+#     orbsel = tt['orbit'] == orbit
 
+#     selection=orbsel & np.logical_and.reduce(okay_mean.T) #& rvir_cut
 
-# %%
-tt = Table.read(table_path+case_name+".fits", format="fits")
-okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
-rvir_cut = tt['Rvir0']<6.
-
-reordered = np.argsort(pericenters_kpc )
-
-ccc = cc[1:]
-fig, axs = plt.subplots(2,3,figsize=[21,14])
-plt.subplots_adjust(wspace=0.2, hspace=0.2)
-for ii, orbit in enumerate(tqdm(orbits[reordered])):
-    orbsel = tt['orbit'] == orbit
-
-    selection=orbsel & np.logical_and.reduce(okay_mean.T) #& rvir_cut
-
-    f_cocoons_this_orbit = tt['f_cocoon'][selection]
+#     f_cocoons_this_orbit = tt['f_cocoon'][selection]
 
     
-    x = tt['Rvir0'][selection]
-    axs[0,0].plot(x, f_cocoons_this_orbit, 
-                label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
-                # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
-                # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
-                marker='o', color=ccc[ii], markersize=10)
+#     x = tt['Rvir0'][selection]
+#     axs[0,0].plot(x, f_cocoons_this_orbit, 
+#                 label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
+#                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
+#                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
+#                 marker='o', color=ccc[ii], markersize=10)
 
 
-    ### cocoon ! ! !
-    phi2_dispersions_this_orbit = tt['S_c'][:,0][selection] #<-- TODO: translate back to angle from distance. 
-    # phi2_dispersions_this_orbit = (dphi2_dispersions_this_orbit / med_distances[ii]) * u.radian.to(u.degree)
+#     ### cocoon ! ! !
+#     phi2_dispersions_this_orbit = tt['S_c'][:,0][selection] #<-- TODO: translate back to angle from distance. 
+#     # phi2_dispersions_this_orbit = (dphi2_dispersions_this_orbit / med_distances[ii]) * u.radian.to(u.degree)
     
-    vgsr_dispersions_this_orbit = tt['S_c'][:,-1][selection]
+#     vgsr_dispersions_this_orbit = tt['S_c'][:,-1][selection]
 
-    axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
-    axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
+#     axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
+#     axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
 
-    ### thin ! ! !
-    phi2_dispersions_this_orbit = tt['S_ts'][:,0][selection] #<-- TODO: translate back to angle from distance. 
-    vgsr_dispersions_this_orbit = tt['S_ts'][:,-1][selection]
-    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
-    axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
+#     ### thin ! ! !
+#     phi2_dispersions_this_orbit = tt['S_ts'][:,0][selection] #<-- TODO: translate back to angle from distance. 
+#     vgsr_dispersions_this_orbit = tt['S_ts'][:,-1][selection]
+#     axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
+#     axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
 
-for ax in np.concatenate([axs[0], axs[1]]):
-    ax.set_ylim(bottom=0)
-    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
-    ax.minorticks_off()
-    ax.set_xticks([.75, 1.5, 3., 6.])
+# for ax in np.concatenate([axs[0], axs[1]]):
+#     ax.set_ylim(bottom=0)
+#     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+#     ax.minorticks_off()
+#     ax.set_xticks([.75, 1.5, 3., 6.])
 
 
 
-axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
-axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
-# axs[0,0].set_ylim(0.0, 0.2)
+# axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
+# axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+# # axs[0,0].set_ylim(0.0, 0.2)
 
-axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
-axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
+# axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
+# axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
 
-axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
-axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
+# axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
+# axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
 
-axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
+# axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
 
-axs[1,0].remove()
+# axs[1,0].remove()
 
-plot_filename = "summary_"+case_name
+# plot_filename = "summary_"+case_name
 # plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
 # %%
 #----------------------------#
@@ -386,7 +406,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
 
     axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
     axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
-
+    # axs[0,2].set_yscale('log')
 
     ### thin ! ! !
     phi2_dispersions_this_orbit = tt['S_ts'][:,0][selection] #<-- TODO: translate back to angle from distance. 
@@ -435,13 +455,13 @@ plot_filename = "summary_"+case_name
 #-----------------------------------------------------#
 #   binary fractions in thin stream vs cocoon         # 
 #-----------------------------------------------------#
-case = "noiseless_binaries"
+case = "noiseless_CoM"
 tt = Table.read(table_path+case+".fits", format="fits")
 # c_labels = ["#CCC9E7", "#2F2F2F"]
 c_labels = ['orange','white','midnightblue']
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-rvir=0.75
+rvir=6.0 #0.75
 
 fig, ax = plt.subplots()
 
@@ -460,6 +480,8 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
         1-row['f_cocoon'][0], row['f_cocoon'][0]
     ])
 
+    print(sigmas_fit[-1])
+
     ##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
     filename = datapath+"%s_%.2f.pickle"%(orbit, rvir) #<-- go for the 
     with open(filename, 'rb') as handle:
@@ -467,10 +489,10 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
 
     coords_obs = data_dict['coords_obs']
     kk = 'sc_straighter'
-    tt = 'trim_new'
+    tn = 'trim_new'
     if 'binaries' in case:
         kk+='_primaries'
-        tt+='_primaries'
+        # tt+='_primaries'
     sc_straighter = data_dict[kk]
 
     distances = coords_obs.distance.to(u.kpc).value
@@ -479,7 +501,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
 
     # all_IDs = data_dict['IDs']
 
-    unbound, trim_new = data_dict['unbound'], data_dict[tt]
+    unbound, trim_new = data_dict['unbound'], data_dict[tn]
 
     #### put things into thin stream vs cocoon: 
     keys = ['phi2','v_phi1','v_phi2','v_gsr']
@@ -539,17 +561,20 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i
     ax.errorbar([m_ts], [m_c], c=ccc[ii],
                 xerr=[[xerr_l], [xerr_u]], yerr=[[yerr_l], [yerr_u]], 
                 markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
-               label=orbit+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
+               label=orbit)#+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
 
 ax.legend(loc='lower right')
 l = [0,0.4]
-ax.set_xlim(l)
-ax.set_ylim(l)
+# ax.set_xlim(l)
+# ax.set_ylim(l)
 ax.plot(l,l, c='k', lw=1)
 ax.set_xlabel(r'$f_{\rm bin, ts}$')
 ax.set_ylabel(r'$f_{\rm bin, c}$')
+ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
 
 # plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
+# %%
+
 # %%
 #
 #
@@ -559,14 +584,16 @@ ax.set_ylabel(r'$f_{\rm bin, c}$')
 #--------------------------------------------------------#
 # %%
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
-include_binaries=True
-case_name = 'desi_noise_CoM'
+include_binaries=False
+# case_name = 'desi_noise_CoM'
+case_name = 'noiseless_CoM'
+noise = None
 tt = Table.read(table_path+case_name+".fits", format="fits")
-# c_labels = ["#CCC9E7", "#2F2F2F"]
-c_labels = ['orange','white','midnightblue']
+c_labels = ["#CCC9E7", "#2F2F2F"]
+# c_labels = ['orange','white','midnightblue']
 cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-orbit = 'gd1'
+orbit = 'jet'
 rvir_index=0
 rvir = rvirs[rvir_index]
 
@@ -685,10 +712,11 @@ for jj, key in enumerate(keys):
     ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
             y, # plot cocoon on top. 
             # x_data[:,ii],
-                c=p_cocoon[order], s=50, edgecolor='k', lw=.5,
+                c=p_cocoon[order], #s=50, edgecolor='k', lw=.5,
                 cmap=cocoon_cmap,
                 rasterized=True) 
-    ax.set_ylim(-cut,cut)
+    # ax.set_ylim(-cut,cut)
+
     # ax.set_xlim(orbit_lim_map[orbit])
 
     # ax.set_ylim(-3*cut, 3*cut)
@@ -701,22 +729,19 @@ for jj, key in enumerate(keys):
 
 
     ax.hist(y[~cocoon_selection], 
-            alpha=1., density=False, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
+            alpha=1.,# density=False, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
             color=c_labels[0],orientation='horizontal',
             bins=bins)
     ax.hist(y[cocoon_selection],
-            histtype='step', density=False, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
+            histtype='step', #density=False, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
             lw=2, 
             color=c_labels[-1],orientation='horizontal',
             bins=bins)
-    ax.set_ylim(-cut,cut)
+    # ax.set_ylim(-cut,cut)
 
 
 
-    # too annoying to get the limits to work out. being unrigorous for now...
-    # ax.set_xticks([])
-    # ax.set_xticklabels([])
-    ax.set_xlim(0, 0.4)
+    # ax.set_xlim(0, 0.4)
     ax.set_yticks([])
     ax.set_yticklabels([])
 

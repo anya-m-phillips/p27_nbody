@@ -204,10 +204,10 @@ for ii, orbit in enumerate(orbits): #<--- this i can do later i think.
         ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
         inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. keep everything true but make the mask so functions downstream still work. 
         trim_new = trim_obstream_percentile(sc) 
-        # trim_new_primaries = trim_obstream_percentile(sc_primaries) #<-- deciding i don't care about this. 
+        trim_new_primaries = trim_obstream_percentile(sc_primaries) # oops i actually do still care about this......
         data_dict['inMW_na'] = inMW_na
         data_dict['trim_new'] = trim_new
-        # data_dict['trim_new_primaries'] = trim_new_primaries
+        data_dict['trim_new_primaries'] = trim_new_primaries
 
 
         # print("straightening with polynomial")
@@ -373,18 +373,6 @@ for ii, orbit in enumerate(orbits): #<--- this i can do later i think.
         for key in phot_cheating.keys():
             full_phot_dict[key][cut] = phot_cheating[key]
 
-
-        ### test test test that this is looking good and doesn't have 
-        #   any nan-related issues... 
-        # fig, ax = plt.subplots()
-        # ax.scatter(full_phot_dict['BP_RP'], full_phot_dict['mG'])
-        # ax.scatter(full_phot_dict['BP_RP'][cut][matched_flag], 
-        #            full_phot_dict['mG'][cut][matched_flag], s=1, c='r')
-
-        # ax.invert_yaxis()
-        # full_phot_dict
-
-
         data_dict['catalog_photometry'] = full_phot_dict
         data_dict['cut_for_catalog_photometry'] = cut
         data_dict['matched_to_catalog_photometry'] = matched_flag  #<-- length determined after catalog photometry.        
@@ -445,37 +433,11 @@ for ii, orbit in enumerate(orbits): #<--- this i can do later i think.
 
         data_dict['noise_catalog_photometry'] = noise_dict
 
+        ###################### DOING THAT ALL AGAIN FOR JUST THE CUT_PRIMARIES
+        #   because evidently it is helpful to trim 1-99th percentile ???? idk man let's call it outlier clipping
+         
         
         
-        
-        # print(phot_cheating.keys())
-        #   ME TOMORROW START HERE: 
-        # TODO: save this in a way that is comprehensible, possibly with singles/binaries treatment options
-        #   like because for cut, I would either be using trim_new or trim_new_primaries. 
-        #   a thought is that it should always just be trim_new. this is not a cut that i would make on observed data
-        #   it is a cut to make the n-body data easier to work with. so perhaps i want to 
-        #   stop using trim_new_primaries in the GMM section. 
-        # ^^ EDIT: I think this is done
-
-        ### SOME QUICK COMPARISON FIGURES TO MAKE SURE THE FUDGED STLLAR POPULATIONS 
-        #   look somewhat reasonable: 
-        # fig, axs = plt.subplots(1,2,figsize=[14,7])
-        # axs[0].scatter(BP[cut][matched_flag]-RP[cut][matched_flag], mG[cut][matched_flag],  label='isochrone photometry')
-        # axs[0].scatter(phot_cheating['BP_RP'], phot_cheating['mG'], label='fudged photometry')
-        # axs[0].set_xlabel(r'$G_{B_P}-G_{R_P}$')
-        # axs[0].set_ylabel(r'$G$')
-        # axs[0].invert_yaxis()
-        # axs[0].legend(loc='upper left')
-
-
-        # axs[1].hist(log_Teff[cut][matched_flag], bins=30, histtype='step', lw=3, density=True)
-        # axs[1].hist(phot_cheating['log_Teff'], bins=30, histtype='step', lw=3, density=True)
-        # axs[1].set_xlabel(r'$\log{T_{\rm eff}/\rm K}$')
-        # ax.scatter(log_Teff[cut & (mG>)])
-        # ax.invert_yaxis()
-
-
-
         ### dump everything in scratch until I figure out how large the files will be all together...
         datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
         rvir = rvirs[rvir_index]
