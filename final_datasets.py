@@ -109,9 +109,9 @@ masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
 # %%
 print("beginning loop...")
-for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-    if orbit !='pa5':
-        continue
+for ii, orbit in enumerate(orbits): #<--- this i can do later i think. 
+    # if orbit !='pa5':
+    #     continue
 
     if orbit !='aau':
         copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice there are <=5x copies per sim.
@@ -151,22 +151,22 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     t = noise.load_gaia_catalog(orbit)
 
 
-    for rvir_index in range(4):
-        if rvir_index!=0:
-            continue
-        print(rvir_index)
+    for rvir_index in tqdm(range(4)):
+        # if rvir_index!=0:
+        #     continue
+        # print(rvir_index)
 
 
-        print("loading data")
+        # print("loading data")
         (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
             simspect.prepare_nbody_data_anycopy(
                 orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
                 include_photometry=False, N_rtid_boundary = tidal_boundary, #<--- not sure what i'm going to use for tthis: 
-                verbose=True
+                verbose=False #<-- just prints which copy
             )
 
 
-        print("getting stream coordinates")
+        # print("getting stream coordinates")
         coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
         distances = coords_obs.distance
         data_dict['coords_obs'] = coords_obs
@@ -175,7 +175,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
 
 
-        print("getting m0s and types")
+        # print("getting m0s and types")
         stellar_types = lumdict['type']
         nonrem = stellar_types<10
         unbound = ~CMdict['in_rtid'] #<-- flag what's unbound from the cluster. 
@@ -186,11 +186,11 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         # Teff = noise.get_Teff(R, L).to(u.K)
 
         # straightened coords. first with an orbit, 
-        print("straightening coords")
+        # print("straightening coords")
         sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
 
 
-        print("loading info about binaries")
+        # print("loading info about binaries")
         # straightened coords with primaries 
         PM_treatment = 'CoM'#<-- DECISION ABOUT PROPER MOTIONS BEING MADE HERE!!! 'CoM' or 'primary
         sc_primaries = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab,
@@ -199,20 +199,25 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                                                                     )
 
 
-        print("trimming and saving criteria:")
+        # print("trimming and saving criteria:")
         ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
         inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. keep everything true but make the mask so functions downstream still work. 
         trim_new = trim_obstream_percentile(sc) 
-        trim_new_primaries = trim_obstream_percentile(sc_primaries)
+        # trim_new_primaries = trim_obstream_percentile(sc_primaries) #<-- deciding i don't care about this. 
         data_dict['inMW_na'] = inMW_na
         data_dict['trim_new'] = trim_new
-        data_dict['trim_new_primaries'] = trim_new_primaries
+        # data_dict['trim_new_primaries'] = trim_new_primaries
 
 
-        print("straightening with polynomial")
+        # print("straightening with polynomial")
         sc_straighter = simspect.poly_straightening(sc, tc=[inMW_na, trim_new]) #<-- provide tc (trim criteria) so that the fitter doesn't lock to outliers but they're still included in the dataset. can exclude them later. 
-        sc_straighter_primaries = simspect.poly_straightening(sc_primaries, tc=[inMW_na, trim_new_primaries])
+        sc_straighter_primaries = simspect.poly_straightening(sc_primaries, tc=[inMW_na, trim_new]) #<-- *not trim_new_primaries. 
 
+
+
+
+
+        ##### GETTING A HANDLE ON THE CM VS PRIMARY TREATMENT FOR WHAT PROPER MOTIONS 
 
         # use = unbound & trim_new
         # fig, ax = plt.subplots(figsize=[9,3])
@@ -220,8 +225,6 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         #             c='k', s=.01)
         # ax.set_xlim(-20,20)
 
-
-        ##### GETTING A HANDLE ON THE CM VS PRIMARY TREATMENT FOR WHAT PROPER MOTIONS 
         #   THE BINARIES GET: 
         # fig, ax = plt.subplots()
         # nsin = data_dict['nsingles']
@@ -246,7 +249,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         # ax.set_xlim(-20,20)
         # ax.legend(loc='upper left', bbox_to_anchor=(1,1))
 
-        print("saving straightened coords")
+        # print("saving straightened coords")
         data_dict['sc_straighter'] = sc_straighter # <--- same length as coords_obs. 
         data_dict['sc_straighter_primaries'] = sc_straighter_primaries
         ###### get noise: 
@@ -254,87 +257,89 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
         #   "rigorous" and solid way to get photometry by mapping zams masses to 
         #   a MIST isochrone:
-        print("isochrone-based photometry sampling")
+        # print("isochrone-based photometry sampling")
         iso_phot, on_iso = noise.isochrone_photometry(m0s, m0_grid, iso_table)
         G  = iso_phot['Gaia_G_EDR3']
         BP = iso_phot['Gaia_BP_EDR3']
         RP = iso_phot['Gaia_RP_EDR3']
         log_Teff = iso_phot['log_Teff']
-        mz = paf.m_from_M(z, dist=distances)
-        mG = paf.m_from_M(G, dist=distances)
         BP_RP = BP-RP
         z = noise.gaia_g_to_lsst_z(G, BP_RP)
 
 
+        mz = paf.m_from_M(z, dist=distances)
+        mG = paf.m_from_M(G, dist=distances)
+
+
         ### UNCOMMENT THE FOLLOWING EVENTUALLY
-        # alive = on_iso #<-- removes high mass things that are remnants; should already be removed by remnants cut tho? 
-        # acceptable_G_viamock = (mG>5) & (mG<30)
-        # data_dict['alive'] = alive
-        # data_dict['acceptable_G'] = acceptable_G_viamock
+        alive = on_iso #<-- removes high mass things that are remnants; should already be removed by remnants cut tho? 
+        acceptable_G_viamock = (mG>5) & (mG<30)
+        data_dict['alive'] = alive
+        data_dict['acceptable_G'] = acceptable_G_viamock
 
-        # photdict = {
-        #     "G":G,
-        #     "BP_RP":BP_RP,
-        #     "z":z,
-        #     'mG':mG,
-        #     'mz':mz,
-        #     'log_Teff':log_Teff
-        # }
-        # data_dict['phot'] = photdict #<-- add a bunch more numbers
+        photdict = {
+            "G":G,
+            "BP_RP":BP_RP,
+            "z":z,
+            'mG':mG,
+            'mz':mz,
+            'log_Teff':log_Teff
+        }
+        data_dict['phot'] = photdict #<-- add a bunch more numbers
 
-        # #### RV, POSITION, and PM errors 
+        #### RV, POSITION, and PM errors 
         # print("getting noise")
-        # rverr_desi = noise.desi_RVerr(zmag=mz, feh=-2.0)
+        rverr_desi = noise.desi_RVerr(zmag=mz, feh=-2.0)
 
-        # rverr_via = np.full(len(mG), fill_value = np.nan)
-        # rverr_via[acceptable_G_viamock] = noise.via_RVerr(
-        #     G = mG[acceptable_G_viamock],
-        #     feh = -2.0,
-        #     log_Teff=log_Teff[acceptable_G_viamock],
-        #     exptime_s = 3600,
-        #     nexp=1 #<-- a choice to make
-        #     ### could also add seeing, airmass, moon, etc. 
-        # ) #<-- if G is out of the viamock table range (5-30) I will just have nan values. 
+        rverr_via = np.full(len(mG), fill_value = np.nan)
+        rverr_via[acceptable_G_viamock] = noise.via_RVerr(
+            G = mG[acceptable_G_viamock],
+            feh = -2.0,
+            log_Teff=log_Teff[acceptable_G_viamock],
+            exptime_s = 3600,
+            nexp=1 #<-- a choice to make
+            ### could also add seeing, airmass, moon, etc. 
+        ) #<-- if G is out of the viamock table range (5-30) I will just have nan values. 
 
-        # rverr_via_10hr = np.full(len(mG), fill_value = np.nan)
-        # rverr_via_10hr[acceptable_G_viamock] = noise.via_RVerr(
-        #     G = mG[acceptable_G_viamock],
-        #     feh=-2.0,
-        #     log_Teff=log_Teff[acceptable_G_viamock],
-        #     exptime_s=int(3600*10),
-        #     nexp=10
-        # )
-
-
-        # vgsr_noise_via = rng.normal(0, rverr_via)
-        # vgsr_noise_via_10hr = rng.normal(0, rverr_via_10hr) 
-        # vgsr_noise_desi = rng.normal(0, rverr_desi)
+        rverr_via_10hr = np.full(len(mG), fill_value = np.nan)
+        rverr_via_10hr[acceptable_G_viamock] = noise.via_RVerr(
+            G = mG[acceptable_G_viamock],
+            feh=-2.0,
+            log_Teff=log_Teff[acceptable_G_viamock],
+            exptime_s=int(3600*10),
+            nexp=10
+        )
 
 
+        vgsr_noise_via = rng.normal(0, rverr_via)
+        vgsr_noise_via_10hr = rng.normal(0, rverr_via_10hr) 
+        vgsr_noise_desi = rng.normal(0, rverr_desi)
 
-        # pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
-        # pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
 
-        # pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-        # pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-        # phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
-        # phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
 
-        # noise_dict = {
-        #     'phi1': phi1_noise.to(u.degree).value,
-        #     'phi2': phi2_noise.to(u.degree).value,
-        #     'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
-        #     'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
-        #     'v_gsr_via': vgsr_noise_via,#<-- the sampled RV noise from a gausian of std rverr_[survey]
-        #     'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
-        #     'rverr_via': rverr_via, #<-- the rv uncertainties
-        #     'rverr_desi': rverr_desi, #<-- the rv uncertainties
-        #     'pm_err_gaia': pm_err, #<-- pm uncertainty ( total / sqrt2 )
-        #     'rverr_via10hr':rverr_via_10hr,
-        #     'v_gsr_via10hr':vgsr_noise_via_10hr
-        #     }
+        pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
+        pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
 
-        # data_dict['noise'] = noise_dict
+        pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+        pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+        phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+        phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+
+        noise_dict = {
+            'phi1': phi1_noise.to(u.degree).value,
+            'phi2': phi2_noise.to(u.degree).value,
+            'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
+            'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
+            'v_gsr_via': vgsr_noise_via,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+            'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+            'rverr_via': rverr_via, #<-- the rv uncertainties
+            'rverr_desi': rverr_desi, #<-- the rv uncertainties
+            'pm_err_gaia': pm_err, #<-- pm uncertainty ( total / sqrt2 )
+            'rverr_via10hr':rverr_via_10hr,
+            'v_gsr_via10hr':vgsr_noise_via_10hr
+            }
+
+        data_dict['noise'] = noise_dict
 
 
         #------------------------------------------------------------#
@@ -348,8 +353,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         N_jarvis = 679 #<-- length of jarvis catalog. 
         N = len(t) if orbit != 'gd1' else N_jarvis
 
-        # TODO: need to filter out e.g. things outside of trim_new, things still bound to progenitor
-        # so that I don't waste them on the good photometry as it gets matched. 
+        # filtering out bound/trimmed stars so we don't waste good photometry on them idk
         cut = unbound & trim_new & nonrem
         iso_phot_use = {key:iso_phot[key][cut] for key in iso_phot.keys()} #<---- trim it down here maybe. same w distances eventually. 
         distances_use = distances[cut]
@@ -358,6 +362,91 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
                                                                            catalog=t,
                                                                            track=isotrack, 
                                                                            N=N)
+
+        # placeholder dictionary with all the keys but empty arrays
+        full_phot_dict = {
+            k:np.full(len(photdict['G']), fill_value=np.nan) for k in phot_cheating.keys()
+        }
+
+        ### go throught and replace all of the filled nans with the matched values:
+        for key in phot_cheating.keys():
+            full_phot_dict[key][cut] = phot_cheating[key]
+
+
+        ### test test test that this is looking good and doesn't have 
+        #   any nan-related issues... 
+        # fig, ax = plt.subplots()
+        # ax.scatter(full_phot_dict['BP_RP'], full_phot_dict['mG'])
+        # ax.scatter(full_phot_dict['BP_RP'][cut][matched_flag], 
+        #            full_phot_dict['mG'][cut][matched_flag], s=1, c='r')
+
+        # ax.invert_yaxis()
+        # full_phot_dict
+
+
+        data_dict['catalog_photometry'] = full_phot_dict
+        data_dict['cut_for_catalog_photometry'] = cut
+        data_dict['matched_to_catalog_photometry'] = matched_flag  #<-- length determined after catalog photometry.        
+
+        ### THEN Have to go through and get the noise based on fudged
+        #   stellar population. susceptible to bugs here because I"m not updating
+        #   a lot of the variable names. 
+        rverr_desi = noise.desi_RVerr(zmag=full_phot_dict['mz'], feh=-2.0)
+
+        acceptable_G_viamock = (full_phot_dict['mG']>5) & (full_phot_dict['mG']<30)
+        rverr_via = np.full(len(full_phot_dict['mG']), fill_value = np.nan)
+        rverr_via[acceptable_G_viamock] = noise.via_RVerr(
+            G = full_phot_dict['mG'][acceptable_G_viamock],
+            feh = -2.0,
+            log_Teff=full_phot_dict['log_Teff'][acceptable_G_viamock],
+            exptime_s = 3600,
+            nexp=1 #<-- a choice to make
+            ### could also add seeing, airmass, moon, etc. 
+        ) #<-- if G is out of the viamock table range (5-30) I will just have nan values. 
+
+        rverr_via_10hr = np.full(len(full_phot_dict['mG']), fill_value = np.nan)
+        rverr_via_10hr[acceptable_G_viamock] = noise.via_RVerr(
+            G = full_phot_dict['mG'][acceptable_G_viamock],
+            feh=-2.0,
+            log_Teff=full_phot_dict['log_Teff'][acceptable_G_viamock],
+            exptime_s=int(3600*10),
+            nexp=10
+        )
+
+
+        vgsr_noise_via = rng.normal(0, rverr_via)
+        vgsr_noise_via_10hr = rng.normal(0, rverr_via_10hr) 
+        vgsr_noise_desi = rng.normal(0, rverr_desi)
+
+
+
+        pm_err = total_proper_motion_uncertainty(full_phot_dict['mG'], 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
+        pos_err = total_position_uncertainty(full_phot_dict['mG'], 'dr3') / np.sqrt(2)
+
+        pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+        pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+        phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+        phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+
+        noise_dict = {
+            'phi1': phi1_noise.to(u.degree).value,
+            'phi2': phi2_noise.to(u.degree).value,
+            'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
+            'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
+            'v_gsr_via': vgsr_noise_via,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+            'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+            'rverr_via': rverr_via, #<-- the rv uncertainties
+            'rverr_desi': rverr_desi, #<-- the rv uncertainties
+            'pm_err_gaia': pm_err, #<-- pm uncertainty ( total / sqrt2 )
+            'rverr_via10hr':rverr_via_10hr,
+            'v_gsr_via10hr':vgsr_noise_via_10hr
+            }
+
+        data_dict['noise_catalog_photometry'] = noise_dict
+
+        
+        
+        
         # print(phot_cheating.keys())
         #   ME TOMORROW START HERE: 
         # TODO: save this in a way that is comprehensible, possibly with singles/binaries treatment options
@@ -365,6 +454,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         #   a thought is that it should always just be trim_new. this is not a cut that i would make on observed data
         #   it is a cut to make the n-body data easier to work with. so perhaps i want to 
         #   stop using trim_new_primaries in the GMM section. 
+        # ^^ EDIT: I think this is done
 
         ### SOME QUICK COMPARISON FIGURES TO MAKE SURE THE FUDGED STLLAR POPULATIONS 
         #   look somewhat reasonable: 
@@ -383,11 +473,12 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         # ax.scatter(log_Teff[cut & (mG>)])
         # ax.invert_yaxis()
 
-# %%
+
+
         ### dump everything in scratch until I figure out how large the files will be all together...
         datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
         rvir = rvirs[rvir_index]
-        print("dumping to pkl file...")
+        # print("dumping to pkl file...")
         with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
             pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
