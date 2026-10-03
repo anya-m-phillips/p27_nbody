@@ -33,7 +33,7 @@ the live ones, collected here. details are in each script's section below.
 - `get_init_displacements.py`: rewrite so orbit rows are looked up by the short keys (see its section -- right now it silently writes an empty file).
 - observed-frame straightening: not 100% convinced it's successful for M3 or Pal 5, which have notable diverging tails that end up in the cocoon. (M3 is currently dropped from the pipeline anyway.)
 - `m3` frame: may settle for "stream on an M3-like orbit" (see the gala gotchas section).
-- `animations/`: make the movie scripts array jobs (one sub-job per frame) instead of looping.
+- `animations/`: make the movie scripts array jobs (one sub-job per frame) instead of looping. (`particle_spray_vs_nbody.py` already is.)
 - GMM: emcee for posteriors after maximum likelihood (see the GMM "next" section).
 
 
@@ -50,7 +50,7 @@ the live ones, collected here. details are in each script's section below.
 - `PETAR_ANALYSIS_FUNCTIONS.py`: a bunch of functions, mostly migrated from other projects; imported as `paf`. see the notes section below for the parts that are actually load-bearing.
 - `streamframe.py`: credit Jake Nibauer, transformation to stream frame coordinates as seen from the Galactic center
 - `read_mist_models.py`: the MIST team's reader (`ISOCMD`). no longer on the live path -- the isochrone now comes from `artpop` -- but `noise.py` still imports it.
-- `vedant.mplstyle`: credit Vedant Chandra, plotting style stuff
+- `vedant.mplstyle`: credit Vedant Chandra, plotting style stuff. note it sets `savefig.format : pdf`, `savefig.dpi : 300` and `savefig.bbox : tight`, so movie frames saved as png should pass a lower `dpi` (a 14x14 inch figure at 300 dpi is ~4200 px a side).
 
 ## `/old`
 stuff that is superseded or migrated from older repositories (esp. `~/stream_velocity_structures`). kept for reference, not imported by anything live.
@@ -61,6 +61,30 @@ stuff that is superseded or migrated from older repositories (esp. `~/stream_vel
 
 ## `/animations`
 `velocity_movie.py`, `grid_movie.py`, `grid_movie_long.py`, `grid_rotation_movie.py`: scripts to run with a slurm wrapper for animations. TODO: make these parallel so that the wrapper is submitted as an array job where each sub-job generates one frame. way faster than doing this in a loop.
+- `grid_movie.py`, `grid_movie_long.py` and `grid_rotation_movie.py` all build `extended_grid_info(scratch=True)`, i.e. the purged netscratch copy -- switch to `scratch=False` before re-running them (see `extended_grid_info`).
+- `grid_movie_long.py` line 25 does `sys.path.append(rotated_pos)` before `rotated_pos` exists, so it dies with `NameError` at import. delete the line.
+- frames go to `/n/netscratch/conroy_lab/Lab/amphillips/movies/<movie name>/frame_<index:05d>.png`.
+
+### `particle_spray_vs_nbody.py`
+2x2 movie comparing direct N-body (left column) with a gala particle spray (right column) for the same progenitor: `gd1`, `hm`, rvir0 = 0.75 pc, copy 0 (constants at the top). top row is galactocentric x-z (±30 kpc); bottom row is a zoom on the progenitor (`zoom_half_width`, in pc) -- the N-body in the **core frame**, the spray relative to its **integrated** progenitor, because the petar core drifts off the non-interacting orbit (~300 pc at 1.7 Gyr, ~480 pc at present day for this sim). already an array job:
+
+```
+python particle_spray_vs_nbody.py --make-spray   # once (~1.5 min): writes spray_gd1_hm_0.75_0.h5 next to the frames
+python particle_spray_vs_nbody.py -i 170         # one frame (~12 s); index = petar file index, t = 10*index Myr
+```
+
+- frame index == petar file index, 0..`age/10` (0..270 for gd1, 270 = present day; 170 = 1 Gyr before present).
+- N-body positions are singles + binary CoMs straight from `data.<k>.single`/`.binary` (already core frame), plus `core.pos[k]` for galactocentric. no `prepare_nbody_data`, which is slow and does streamframe/straightening work a movie doesn't need.
+- the spray is integrated at dt = 1 Myr and snapshotted every 10 Myr into gala's HDF5 file, so output index `j` is t = 10 j Myr and lines up with `data.<j>` (the frame asserts this). it starts from the same t = 0 `init_displacement` in the same `BovyMWPotential2014`.
+- **exactly 5000 particles** at present day: an `n_particles` array with one release per tail at 2500 evenly spaced steps, rather than `release_every`.
+- the Chen DF's progenitor mass follows the N-body **bound mass** from `data.tidal`; the progenitor *potential* is a fixed Plummer at the initial mass with b = rvir0 x 3pi/16 (gala can't evolve it). debatable; the alternative is a constant mass.
+- what the frames show: the spray has essentially no particles inside a few tens of pc of the progenitor (Chen releases near the Jacobi radius, ~40 pc here), and the N-body stream is much longer and more diffuse at large scale, with escapers out to ±25 kpc by 1.7 Gyr (probably early escapers from the first ~100 Myr of massive-star mass loss; not checked).
+
+### gala mockstream notes (gala 1.9.1)
+- `MockStreamGenerator.run(..., n_particles=...)` takes an **array the length of the time grid** (particles per tail per step), which is how to hit an exact total; an int is combined with `release_every`.
+- `prog_mass` may be an **array** over the time grid -- it only sets the DF's release scale, **not** the progenitor potential's mass.
+- with `output_every` you must also pass `output_filename`; the file has `stream/pos`, `stream/vel` shaped `(3, n_outputs, n_particles)` (kpc, kpc/Myr), `nbody/pos`/`vel` with the progenitor at index 0, and `stream/time`. **not-yet-released particles are NaN** (h5 `fillvalue`), so mask with `isfinite`. n_outputs = `(ntimes-1)//output_every + 1`, plus one if the last step doesn't land on the cadence.
+- `paf.gen_stream` is the older wrapper (int `release_every`, scalar mass, Plummer b = 0.75 pc default); the movie script doesn't use it.
 
 ## `/plots`
 `summary_<case>.pdf` and friends, made by `results.py` (the `savefig` lines there are mostly commented out, so these are only regenerated by hand). `orbit_summary.pdf` is from `get_init_displacements.py`. `plots/old/` is from the hand-cut and early-GMM era.
@@ -202,6 +226,7 @@ notebook-style cells making the (nice) plots from the tables and pickles: `f_coc
   - both: `load_coords_v2(path, i, ..., file_index=...)` takes time as `i` *and* index as `file_index`; `straighten_stream_orbit_interp(coords, yval, core, i, ...)` wants `i` as a time when `use_core=False` and a file index when `use_core=True`.
   - `file_naming_convention="every integer"` is the *default* on `load_particle`/`xform_to_core_frame`/`clip_outside_rtid`, which is the OLD grid's convention. for the new grid pass `"every 10"` (or pass the file index directly).
 - **`data.core` is written at the same 10 Myr cadence as the snapshots**, so `core.pos[file_index]` lines up. (checked against `m3/lm/0.75/0`: 501 snapshots, core time column steps by 10.)
+- **the sims keep running past the present day.** the present day is `data.<age/10>` (`age` from `retrieve_sim_info`, which already includes the +100 Myr), but e.g. `gd1/hm/0.75/0` has snapshots up to `data.1500` (15 Gyr) and 1501 rows in `data.core`/`data.tidal`. so "last file in the directory" is **not** the present day.
 - **units.** petar outputs pc, pc/Myr, Msun. `StreamFrame` wants kpc, kpc/Myr and returns deg, mas/yr, kpc, km/s. most `paf` functions hand back astropy quantities, but the streamframe coord dicts are bare floats.
 - **`init_displacement` is kpc, km/s** everywhere it is *consumed* (`prog_position`, `integrate_prog_orbit`, `straighten_stream_orbit_interp` all do `init_displacement[:3] * u.kpc`), but `data/init_displacements.txt` *writes* it in pc because that's what petar wants. `extended_grid_info.__init__` does the pc->kpc conversion once, at the bottom, for the six real orbits (`circ` was always already in kpc). **this was a silent 1000x bug** -- it put the progenitor reference at 16.6 Mpc instead of 16.6 kpc, where the potential is negligible, so the "orbit" free-streamed in a straight line. sanity check if you ever touch it: `paf.prog_position(init_displacement, age)` must reproduce that orbit's row in `FINAL_ics_nolmc.csv` (it does, to 0.0000 kpc, for all six).
   - **`init_displacement` is the *initial* (t = -(age+100) Myr) phase space position, not the present day.** the present day is the orbit's row in `FINAL_ics_nolmc.csv`. easy to mix up -- see the orbital phase bug.
@@ -274,12 +299,16 @@ the six `*_init_displacement` literals are pasted verbatim from `init_displaceme
 | c19 | Y . . . Y | . . Y Y Y | Y Y Y Y Y | Y Y Y Y Y |
 | jet | Y Y . . Y | . . . Y Y | Y . Y Y Y | Y Y Y Y Y |
 
+the one `hm` cell checked so far: `gd1` rvir_index=0 has all five copies finished (3 Oct 2026).
+
 sharp edges:
 - `retrieve_sim_info` is a chain of bare `if`s with no `else`, so a typo'd orbit string gives `UnboundLocalError` on `base_paths`.
 - `circ` is the odd one out (not used by `final_datasets.py`/`gmm.py`): it comes from the OLD grid under `conroy_lab/Lab/amphillips/finished_grid/`, has one realization per rvir (no `copy` subdir), `circ_lm_paths[0]` is flagged unfinished, and `retrieve_sim_info` returns `age = 10000*10 = 100000` -- which is why `prepare_nbody_data_anycopy` hardcodes `i=30000` for circ instead of using the returned age.
 
 ## loading petar data
 `load_core(path)`, `load_tidal(path)`, `load_particle(path, i)` are thin `petar.*` wrappers. `is_dissolved(path, i, threshold=100)` = fewer than 100 stars inside the tidal radius at index `i`.
+
+`data.tidal` (via `load_tidal`) is a cheap way to get the cluster's evolution without loading snapshots: columns `time` [Myr], `rtid` [pc], `mass` (**bound** mass, Msun), `n` (bound count), `pot`, at the same 10 Myr cadence. e.g. `gd1/hm/0.75/0`: rtid 48.8 / 37.1 / 25.7 pc, bound mass 9940 / 3384 / 2388 Msun, n 14999 / 9054 / 6205 at t = 0 / 1700 / 2700 Myr (at t = 0 everything is bound, so `tidal.mass[0]` is the initial cluster mass).
 
 **which frame a file is in** (this is the thing that bites):
 - `data.<i>` (all particles) is in the **CM frame**; the offset to galactocentric lives in the file header (`petar.PeTarDataHeader(...).pos_offset/vel_offset`). use `CM_to_galcen_frame`.
@@ -645,6 +674,7 @@ in rough order of how much they'd hurt:
 - `load_coords_v2` builds the all-particles filename from the raw `file_index` kwarg, so `file_index=None` + `load_all=True` opens `data.None`.
 - `core_to_galcen_frame` still adds the raw `core.vel` rather than the `fix_core_vel` version.
 - `correct_core` is dead code that also strips units.
+- `animations/grid_movie_long.py` `NameError`s at import (`sys.path.append(rotated_pos)`), and the three grid movie scripts use the purged `scratch=True` grid.
 - the `m3` great circle doesn't describe the whole stream (phi2 residual std 0.786 vs ~0.2 for everything else).
 - the isochrone age (requested 12 Gyr, actually 12.6 Gyr, and v/vcrit = 0.4 by artpop's default) doesn't match the dynamical ages; the isochrone cut (`alive`) throws out every star above 0.793574 Msun (artpop isochrone).
 - `straighten_stream_orbit_interp_arbitrary_frame` in `paf` is a commented-out stub.
@@ -659,6 +689,7 @@ in rough order of how much they'd hurt:
 ## derived data products:
 - pickles (`final_datasets.py`): `/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/<orbit>_<rvir:.2f>.pickle` -- scratch, see the purge warning.
 - GMM sanity plots (`gmm.py`): `/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/<case_name>/` -- one subdir per case, must exist before running.
+- movie frames (`animations/`): `/n/netscratch/conroy_lab/Lab/amphillips/movies/<movie name>/`. `particle_spray_vs_nbody/` also holds the cached spray (`spray_gd1_hm_0.75_0.h5`); scratch, so regenerate with `--make-spray` if it's been purged.
 - GMM tables: `data/gmm_tables/` in the repo.
 - Jarvis+26 table 7 (DESI GD-1 members, for the mag-distribution comparison and the photometry-matching TODO): `data/jarvis26_Table7.fits` in the repo (identical copy at `/n/home02/amphillips/data/jarvis26_Table7.fits`).
 - Bonaca & Price-Whelan (2025) Gaia member catalogs: `data/bpw25_catalogs/<orbit>.fits`.
