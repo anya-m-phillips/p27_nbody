@@ -124,7 +124,6 @@ for x, y, name in zip(peris, eccs, names):
 
 
     if name in nll:
-        # if 
         n = name_map[name]
         plt.annotate(n, (x,y), xytext=(5,6),
                     textcoords='offset points', 
