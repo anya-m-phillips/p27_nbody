@@ -72,6 +72,63 @@ def trim_obstream_percentile(sc, p=[1,99],
     trim_criteria = np.logical_and.reduce(criteria)
     return trim_criteria
 
+
+def survey_noise(mG, mz, log_Teff, rng):
+    """
+    DESI / Via (1 hr, 10 hr) RV errors and Gaia DR3 position + PM errors from
+    apparent mags (+ log_Teff for viamock), and one noise draw from each.
+    draw order on `rng` is via, via10hr, desi, pm_phi1, pm_phi2, phi1, phi2 --
+    don't reorder, or every downstream realization changes.
+    """
+    rverr_desi = noise.desi_RVerr(zmag=mz, feh=-2.0)
+
+    acceptable_G_viamock = (mG>5) & (mG<30) #<-- viamock table range; outside it the via errors are nan.
+    rverr_via = np.full(len(mG), fill_value = np.nan)
+    rverr_via[acceptable_G_viamock] = noise.via_RVerr(
+        G = mG[acceptable_G_viamock],
+        feh = -2.0,
+        log_Teff=log_Teff[acceptable_G_viamock],
+        exptime_s = 3600,
+        nexp=1 #<-- a choice to make
+        ### could also add seeing, airmass, moon, etc.
+    )
+
+    rverr_via_10hr = np.full(len(mG), fill_value = np.nan)
+    rverr_via_10hr[acceptable_G_viamock] = noise.via_RVerr(
+        G = mG[acceptable_G_viamock],
+        feh=-2.0,
+        log_Teff=log_Teff[acceptable_G_viamock],
+        exptime_s=int(3600*10),
+        nexp=10
+    )
+
+    vgsr_noise_via = rng.normal(0, rverr_via)
+    vgsr_noise_via_10hr = rng.normal(0, rverr_via_10hr)
+    vgsr_noise_desi = rng.normal(0, rverr_desi)
+
+    pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
+    pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
+
+    pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+    pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
+    phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+    phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
+
+    noise_dict = {
+        'phi1': phi1_noise.to(u.degree).value,
+        'phi2': phi2_noise.to(u.degree).value,
+        'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
+        'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
+        'v_gsr_via': vgsr_noise_via,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+        'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
+        'rverr_via': rverr_via, #<-- the rv uncertainties
+        'rverr_desi': rverr_desi, #<-- the rv uncertainties
+        'pm_err_gaia': pm_err, #<-- pm uncertainty ( total / sqrt2 ), microarcsec/yr
+        'rverr_via10hr':rverr_via_10hr,
+        'v_gsr_via10hr':vgsr_noise_via_10hr
+        }
+    return noise_dict, acceptable_G_viamock
+
 # %%
 
 # if __name__=="__main__": #<-- i think these dictionaries should have _all_ the info I need, so will just run as a notebook, once which gives me the data I need for every "case"
@@ -288,58 +345,9 @@ for ii, orbit in enumerate(orbits): #<--- this i can do later i think.
         }
         data_dict['phot'] = photdict #<-- add a bunch more numbers
 
-        #### RV, POSITION, and PM errors 
+        #### RV, POSITION, and PM errors
         # print("getting noise")
-        rverr_desi = noise.desi_RVerr(zmag=mz, feh=-2.0)
-
-        rverr_via = np.full(len(mG), fill_value = np.nan)
-        rverr_via[acceptable_G_viamock] = noise.via_RVerr(
-            G = mG[acceptable_G_viamock],
-            feh = -2.0,
-            log_Teff=log_Teff[acceptable_G_viamock],
-            exptime_s = 3600,
-            nexp=1 #<-- a choice to make
-            ### could also add seeing, airmass, moon, etc. 
-        ) #<-- if G is out of the viamock table range (5-30) I will just have nan values. 
-
-        rverr_via_10hr = np.full(len(mG), fill_value = np.nan)
-        rverr_via_10hr[acceptable_G_viamock] = noise.via_RVerr(
-            G = mG[acceptable_G_viamock],
-            feh=-2.0,
-            log_Teff=log_Teff[acceptable_G_viamock],
-            exptime_s=int(3600*10),
-            nexp=10
-        )
-
-
-        vgsr_noise_via = rng.normal(0, rverr_via)
-        vgsr_noise_via_10hr = rng.normal(0, rverr_via_10hr) 
-        vgsr_noise_desi = rng.normal(0, rverr_desi)
-
-
-
-        pm_err = total_proper_motion_uncertainty(mG, 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
-        pos_err = total_position_uncertainty(mG, 'dr3') / np.sqrt(2)
-
-        pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-        pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-        phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
-        phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
-
-        noise_dict = {
-            'phi1': phi1_noise.to(u.degree).value,
-            'phi2': phi2_noise.to(u.degree).value,
-            'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
-            'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
-            'v_gsr_via': vgsr_noise_via,#<-- the sampled RV noise from a gausian of std rverr_[survey]
-            'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
-            'rverr_via': rverr_via, #<-- the rv uncertainties
-            'rverr_desi': rverr_desi, #<-- the rv uncertainties
-            'pm_err_gaia': pm_err, #<-- pm uncertainty ( total / sqrt2 )
-            'rverr_via10hr':rverr_via_10hr,
-            'v_gsr_via10hr':vgsr_noise_via_10hr
-            }
-
+        noise_dict, _ = survey_noise(mG, mz, log_Teff, rng)
         data_dict['noise'] = noise_dict
 
 
@@ -354,90 +362,38 @@ for ii, orbit in enumerate(orbits): #<--- this i can do later i think.
         # N_jarvis = 679 #<-- length of jarvis catalog. 
         N = len(t) # if orbit != 'gd1' else N_jarvis #<-- **going to impose this later!!! 
 
-        # filtering out bound/trimmed stars so we don't waste good photometry on them idk
-        cut = unbound & trim_new & nonrem
-        iso_phot_use = {key:iso_phot[key][cut] for key in iso_phot.keys()} #<---- trim it down here maybe. same w distances eventually. 
-        distances_use = distances[cut]
-        phot_cheating, matched_flag = noise.assign_photometry_from_catalog(iso_phot_use, 
-                                                                           distances_use, 
-                                                                           catalog=t,
-                                                                           track=isotrack, 
-                                                                           N=N)
+        # done twice: once with the CoM trim (keys as before) and once with the
+        #   trim that includes binary orbital motion (keys get '_primaries'), so
+        #   gmm.py can pick both the trim and the noise products with one suffix.
+        #   CoM goes first so its noise draw on `rng` is the same as before.
+        for trim, suffix in [(trim_new, ''), (trim_new_primaries, '_primaries')]:
+            # filtering out bound/trimmed stars so we don't waste good photometry on them idk
+            cut = unbound & trim & nonrem
+            iso_phot_use = {key:iso_phot[key][cut] for key in iso_phot.keys()} #<---- trim it down here maybe. same w distances eventually.
+            distances_use = distances[cut]
+            phot_cheating, matched_flag = noise.assign_photometry_from_catalog(iso_phot_use,
+                                                                               distances_use,
+                                                                               catalog=t,
+                                                                               track=isotrack,
+                                                                               N=N)
 
-        # placeholder dictionary with all the keys but empty arrays
-        full_phot_dict = {
-            k:np.full(len(photdict['G']), fill_value=np.nan) for k in phot_cheating.keys()
-        }
-
-        ### go throught and replace all of the filled nans with the matched values:
-        for key in phot_cheating.keys():
-            full_phot_dict[key][cut] = phot_cheating[key]
-
-        data_dict['catalog_photometry'] = full_phot_dict
-        data_dict['cut_for_catalog_photometry'] = cut
-        data_dict['matched_to_catalog_photometry'] = matched_flag  #<-- length determined after catalog photometry.        
-
-        ### THEN Have to go through and get the noise based on fudged
-        #   stellar population. susceptible to bugs here because I"m not updating
-        #   a lot of the variable names. 
-        rverr_desi = noise.desi_RVerr(zmag=full_phot_dict['mz'], feh=-2.0)
-
-        acceptable_G_viamock = (full_phot_dict['mG']>5) & (full_phot_dict['mG']<30)
-        rverr_via = np.full(len(full_phot_dict['mG']), fill_value = np.nan)
-        rverr_via[acceptable_G_viamock] = noise.via_RVerr(
-            G = full_phot_dict['mG'][acceptable_G_viamock],
-            feh = -2.0,
-            log_Teff=full_phot_dict['log_Teff'][acceptable_G_viamock],
-            exptime_s = 3600,
-            nexp=1 #<-- a choice to make
-            ### could also add seeing, airmass, moon, etc. 
-        ) #<-- if G is out of the viamock table range (5-30) I will just have nan values. 
-
-        rverr_via_10hr = np.full(len(full_phot_dict['mG']), fill_value = np.nan)
-        rverr_via_10hr[acceptable_G_viamock] = noise.via_RVerr(
-            G = full_phot_dict['mG'][acceptable_G_viamock],
-            feh=-2.0,
-            log_Teff=full_phot_dict['log_Teff'][acceptable_G_viamock],
-            exptime_s=int(3600*10),
-            nexp=10
-        )
-
-
-        vgsr_noise_via = rng.normal(0, rverr_via)
-        vgsr_noise_via_10hr = rng.normal(0, rverr_via_10hr) 
-        vgsr_noise_desi = rng.normal(0, rverr_desi)
-
-
-
-        pm_err = total_proper_motion_uncertainty(full_phot_dict['mG'], 'dr3') / np.sqrt(2) #<-- we'll add some in two dimensions
-        pos_err = total_position_uncertainty(full_phot_dict['mG'], 'dr3') / np.sqrt(2)
-
-        pmphi1_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-        pmphi2_noise = (rng.normal(0, pm_err) * u.microarcsecond / u.yr).to(u.mas/u.yr)
-        phi1_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
-        phi2_noise = (rng.normal(0, pos_err) * u.microarcsecond).to(u.degree)
-
-        noise_dict = {
-            'phi1': phi1_noise.to(u.degree).value,
-            'phi2': phi2_noise.to(u.degree).value,
-            'pm_phi1': pmphi1_noise.to(u.mas/u.yr).value,
-            'pm_phi2': pmphi2_noise.to(u.mas/u.yr).value,
-            'v_gsr_via': vgsr_noise_via,#<-- the sampled RV noise from a gausian of std rverr_[survey]
-            'v_gsr_desi':vgsr_noise_desi,#<-- the sampled RV noise from a gausian of std rverr_[survey]
-            'rverr_via': rverr_via, #<-- the rv uncertainties
-            'rverr_desi': rverr_desi, #<-- the rv uncertainties
-            'pm_err_gaia': pm_err, #<-- pm uncertainty ( total / sqrt2 )
-            'rverr_via10hr':rverr_via_10hr,
-            'v_gsr_via10hr':vgsr_noise_via_10hr
+            # placeholder dictionary with all the keys but empty arrays
+            full_phot_dict = {
+                k:np.full(len(photdict['G']), fill_value=np.nan) for k in phot_cheating.keys()
             }
 
-        data_dict['noise_catalog_photometry'] = noise_dict
+            ### go throught and replace all of the filled nans with the matched values:
+            for key in phot_cheating.keys():
+                full_phot_dict[key][cut] = phot_cheating[key]
 
-        ###################### DOING THAT ALL AGAIN FOR JUST THE CUT_PRIMARIES
-        #   because evidently it is helpful to trim 1-99th percentile ???? idk man let's call it outlier clipping
-         
-        
-        
+            data_dict['catalog_photometry'+suffix] = full_phot_dict
+            data_dict['cut_for_catalog_photometry'+suffix] = cut
+            data_dict['matched_to_catalog_photometry'+suffix] = matched_flag  #<-- length determined after catalog photometry (cut.sum()).
+
+            ### THEN get the noise based on fudged stellar population.
+            noise_dict_cat, _ = survey_noise(full_phot_dict['mG'], full_phot_dict['mz'], full_phot_dict['log_Teff'], rng)
+            data_dict['noise_catalog_photometry'+suffix] = noise_dict_cat
+
         ### dump everything in scratch until I figure out how large the files will be all together...
         datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
         rvir = rvirs[rvir_index]

@@ -26,7 +26,8 @@ noise.py             (imported as noise)     -- isochrone photometry + survey er
 # TODOs
 the live ones, collected here. details are in each script's section below.
 - ~~**`noise.py` / photometry:** star-by-star catalog photometry~~ **done** (30 Sep): `final_datasets.py` calls `noise.assign_photometry_from_catalog` against the BPW25 Gaia catalog for each stream and saves a second photometry + noise set (`catalog_photometry`, `noise_catalog_photometry`), and every noisy `gmm.py` case now uses those. open questions it left behind are in the "catalog photometry" subsection under `final_datasets.py`: which N-body stars are eligible to be matched, dereddening, `p_mem`, and the fact that the noisy sample size now *is* the catalog size (46 stars for C-19).
-- **`final_datasets.py`:** delete the `if orbit != 'gd1': continue` at the top of the orbit loop before the next full run. it's left over from re-running GD-1 alone.
+- ~~**`final_datasets.py`:** re-run all orbits with the `_primaries` catalog keys~~ **done** (5 Oct, pickles 17:29-17:33).
+- **binaries selection effect (for the paper):** the noisy `binaries` cocoons are much hotter in v_gsr than the noiseless one, mostly because the bright catalog-matched stars are ~2x as binary-rich, not because of noise. keeping it in the observed cases; still to do: a "noiseless, observed stars" `gmm.py` case, and checking that the sim's binary fraction vs mass is realistic. see "binaries in the observed samples" in the GMM section.
 - **`gmm.py` / model choice:** the BIC is **in** (30 Sep): `gmm.py` fits a single gaussian too and writes `BIC_one` / `BIC_two` columns (see the model choice section). `BIC_one < BIC_two` = one component preferred = a **non-detection of a cocoon**. still to do: re-run every case so the tables have the columns, use them in `results.py`, and maybe save the one-component params, `N = len(x_data)` and `result.fun` too. this matters more with catalog photometry, because the noisy fits have N = 46 (c19), 129 (pa5), 144 (jet), 334 (aau), 1578 / 679 (gd1 via / desi), and several of the small-N fits have already come out degenerate (see the GMM results bullet in the bugs list).
 - `gmm.py`: AAU at rvir0 = 6 pc gives a weird result; traced to the 2 rtid tidal boundary, and the decision is to live with it rather than relax the cut.
 - `gmm.py`: run all noise cases (see the case table below); rewrite the results notebook (`results.py`); add stuff to overleaf.
@@ -43,7 +44,7 @@ the live ones, collected here. details are in each script's section below.
 - `init_displacements.txt`: generated in `get_init_displacements.py`, Vedant's progenitor locations back-integrated by their stream ages, plus 100 Myr to account for initial expansion due to massive star evolution, rounded to a multiple of 10 so that I can safely output sim snapshots every 10 Myr and get the present day in the final snapshot. **positions in this file are in pc** (that's what `petar.init` wants), velocities in km/s -- see the units bullet in the `paf` notes, this caused a real bug.
 - `bpw25_catalogs/<orbit>.fits`: credit Bonaca & Price-Whelan (2025), one per stream, named by the short keys (`gd1`, `pa5`, `aau`, `m3`, `c19`, `jet`); loaded by `noise.load_gaia_catalog(orbit)`. Gaia columns (`phot_g_mean_mag`, `bp_rp`, astrometry) plus `dist`, `Vr`, `FeH`, `p_mem`. **`dist` is mostly masked** -- only 43 of 1578 `gd1` rows have one -- and there's no extinction column, so `bp_rp` is presumably not dereddened. (`stream_catalogs.py` still reads the old long filenames, e.g. `GD-1.fits`.)
 - `jarvis26_Table7.fits`: Jarvis+26 table 7, DESI GD-1 members (679 stars). also at `/n/home02/amphillips/data/`.
-- `gmm_tables/<case>.fits`: output of `gmm.py`, one table per case (see `gmm.py` below). as of 30 Sep, the `via`, `via10hr` and `desi` tables come from the catalog-photometry pickles. the `noiseless_*` tables are older (25-27 Sep) and predate today's pickles; `noiseless_binaries` in particular was fit with the since-removed `trim_new_primaries`. re-run them before comparing with the noisy tables.
+- `gmm_tables/<case>.fits`: output of `gmm.py`, one table per case (see `gmm.py` below). as of 30 Sep, the `via`, `via10hr` and `desi` tables come from the catalog-photometry pickles. the `noiseless_*` tables are older (25-27 Sep) and predate today's pickles. the noisy `*_binaries` tables were fit with the CoM `trim_new` and CoM-trim catalog photometry, which `gmm.py` no longer does (see the trim bullet under `final_datasets.py`). re-run everything before comparing noisy with noiseless.
 - `data_dicts/`: empty. the pickles actually live on scratch (see logistics).
 
 ## `/scripts`
@@ -127,14 +128,14 @@ the `# SCRATCH::::` cells between `trim_obstream_percentile` and `assign_photome
 
 ## `final_datasets.py`
 assembles one data dictionary per simulation and pickles it. imports `paf`, `simspect`, `noise`. no `__main__` guard (it's a script). what it does, per orbit x rvir:
-- **which sims:** `orbits = ['gd1','aau','pa5','jet','c19']` -- **M3 is dropped**, circ is not included. `stellar_pop='hm'` only (`mass_index = 1`). copies tried in order 0..4, except `aau`, which tries 4..0 to dodge a misbehaving copy. ⚠️ **right now the loop starts with `if orbit != 'gd1': continue`**, left over from re-running GD-1 alone (the gd1 pickles are from 13:40 on 30 Sep, the other four orbits from ~10:45 the same day, same code otherwise). delete it before the next full run.
+- **which sims:** `orbits = ['gd1','aau','pa5','jet','c19']` -- **M3 is dropped**, circ is not included. `stellar_pop='hm'` only (`mass_index = 1`). copies tried in order 0..4, except `aau`, which tries 4..0 to dodge a misbehaving copy. (the `if orbit != 'gd1': continue` used to re-run GD-1 alone is still there, commented out.)
 - **progenitor removal:** `N_rtid_boundary = 2.0` for every orbit -- "unbound" = outside 2x the petar tidal radius, to make sure the progenitor is fully removed and stars that get recaptured as rtid re-expands aren't counted. (an orbital-phase-dependent 1x/2x choice was tried and abandoned. the orbital phase is still computed, though no longer printed, and it's computed at the wrong time -- see the bugs list.)
 - **coordinates:** `coords_obs` (CoM `SkyCoord`), then two straightened versions: `sc` from CoM, and `sc_primaries` from the luminous component with `PM_treatment='CoM'` hardcoded -- i.e. binaries get the **primary's** instantaneous RV/phi2/distance but the **CoM** proper motions (decided 24 Sep). both are then `poly_straightening`-ed. (`streamframe_coords_observed` is called twice in a row with the same arguments, which is harmless but redundant.)
-- **trim:** `trim_new = trim_obstream_percentile(sc, p=[1,99], trim_keys=[phi1, d_phi2, v_phi1, v_phi2, v_gsr, distance])` -- a 1-99 percentile clip in *every* observed-frame dimension, AND-ed, computed on the **CoM** coords only. **`trim_new_primaries` is gone** (decided 30 Sep): the trim is there to make the N-body data easier to work with, not a cut you'd make on real data, so there's a single trim for both binary treatments, and `sc_primaries` is poly-straightened with `trim_new` too. this replaces both the intrinsic-frame `inMW`/`trim` and the hard `outlier_clip` cuts; `inMW_na` is an all-True placeholder so the two-mask functions still work. the trim only picks which stars `poly_straightening` fits to -- everything is kept in the saved arrays.
+- **trim:** `trim_new = trim_obstream_percentile(sc, p=[1,99], trim_keys=[phi1, d_phi2, v_phi1, v_phi2, v_gsr, distance])` -- a 1-99 percentile clip in *every* observed-frame dimension, AND-ed, computed on the **CoM** coords. `trim_new_primaries` is the same clip computed on `sc_primaries`, i.e. **including binary orbital motion** in phi2 / v_gsr / distance. decided 5 Oct: the trim operates in the space the GMM will see, so `CoM` cases use `trim_new` and `binaries` cases use `trim_new_primaries`, both noiseless and noisy -- which is why the catalog photometry is done once per trim (see that subsection). `sc_primaries` is still poly-straightened with `tc=trim_new`, not `trim_new_primaries`. this replaces both the intrinsic-frame `inMW`/`trim` and the hard `outlier_clip` cuts; `inMW_na` is an all-True placeholder so the two-mask functions still work. the trim only picks which stars `poly_straightening` fits to -- everything is kept in the saved arrays.
 - **isochrone photometry** (`phot`): [Fe/H] = -2 MIST v1.2 isochrone from `artpop.fetch_mist_iso_cmd(log_age=log10(12e9), ..., phot_system='UBVRIplus')` -- which actually returns the **12.6 Gyr (log age 10.10), v/vcrit = 0.4** grid isochrone, see the photometry section -- interpolated at `lumdict['m0_zams']` (the luminous component's birth mass for binaries -- the companion's light is not added). absolute G, BP-RP, z (via RTN-099), apparent `mG`/`mz` using the CoM distances, and `log_Teff`. still computed and saved, and it sets the **ranking** for the catalog matching below, but no `gmm.py` case fits it any more.
-- **isochrone noise** (`noise`): Gaia DR3 end-of-mission position and PM errors from `pygaia` (total / sqrt(2) per component, in **µas and µas/yr**); DESI RV errors from `mz`; Via RV errors for 1 hr/1 exposure and 10 hr/10 exposures. saved for comparison; unused by `gmm.py`.
-- **catalog photometry** (`catalog_photometry`) + **catalog noise** (`noise_catalog_photometry`): the live path for every noisy case. see the subsection below.
-- noise realizations are drawn here, once, from one `default_rng(seed=42)`, and saved, so every `gmm.py` case sees the same draw. the catalog-noise draw comes after the isochrone-noise draw on the same generator, so changing anything about the isochrone noise changes the catalog noise realization too.
+- **isochrone noise** (`noise`): Gaia DR3 end-of-mission position and PM errors from `pygaia` (total / sqrt(2) per component, in **µas and µas/yr**); DESI RV errors from `mz`; Via RV errors for 1 hr/1 exposure and 10 hr/10 exposures. saved for comparison; unused by `gmm.py`. all three noise sets come from `survey_noise(mG, mz, log_Teff, rng) -> (noise_dict, acceptable_G_viamock)`, defined at the top of the file.
+- **catalog photometry** (`catalog_photometry[_primaries]`) + **catalog noise** (`noise_catalog_photometry[_primaries]`): the live path for every noisy case, done once per trim. see the subsection below.
+- noise realizations are drawn here, once, from one `default_rng(seed=42)`, and saved, so every `gmm.py` case sees the same draw. order on the generator, per sim: isochrone noise, then CoM-trim catalog noise, then `_primaries` catalog noise (and `survey_noise` itself draws via, via10hr, desi, pm_phi1, pm_phi2, phi1, phi2 in that order). so changing anything upstream changes every realization after it. the `_primaries` pass was added last (5 Oct) so the existing CoM draws didn't change -- but the generator carries over between sims, so every sim after the first one does get a different draw.
 - **output:** `/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/<orbit>_<rvir:.2f>.pickle`. note the filename has no stellar_pop in it, so an `lm` run would overwrite the `hm` pickles. and it's netscratch, so the 90-day purge applies.
 
 what's in each pickle -- the `intrinsic_stream_data_v3` dict (so `CoM`/`luminous`/`companions` subdicts, `nsingles`, `nbinaries`, `IDs`, ...) plus:
@@ -148,22 +149,24 @@ what's in each pickle -- the `intrinsic_stream_data_v3` dict (so `CoM`/`luminous
 | `nonrem` | `lumdict['type'] < 10` | N |
 | `alive` | on the isochrone's initial-mass range | N |
 | `acceptable_G` | 5 < mG < 30 (viamock's range) | N |
-| `inMW_na`, `trim_new` | all-True placeholder; the percentile trim (CoM coords, used for both binary treatments) | N |
+| `inMW_na`, `trim_new` | all-True placeholder; the percentile trim on CoM coords (used by `CoM` cases) | N |
+| `trim_new_primaries` | the percentile trim on `sc_primaries`, i.e. with binary orbital motion (used by `binaries` cases) | N |
 | `phot` | isochrone photometry: `G`, `BP_RP`, `z`, `mG`, `mz`, `log_Teff` (absolute unless prefixed `m`) | N |
 | `noise` | isochrone-based noise: sampled `phi1`, `phi2` [deg], `pm_phi1`, `pm_phi2` [mas/yr], `v_gsr_via`, `v_gsr_via10hr`, `v_gsr_desi` [km/s]; errors `rverr_via`, `rverr_via10hr`, `rverr_desi` [km/s], `pm_err_gaia` [**µas/yr**] | N |
 | `cut_for_catalog_photometry` | `unbound & trim_new & nonrem`, the pool eligible for catalog photometry | N |
 | `catalog_photometry` | same keys as `phot` plus `iso_dist` and `catalog_index`; NaN outside the matched stars | N |
 | `matched_to_catalog_photometry` | True where a catalog row was assigned | ⚠️ **`cut.sum()`**, not N |
 | `noise_catalog_photometry` | same keys and units as `noise`, recomputed from `catalog_photometry`; NaN where unmatched | N |
+| `cut_for_catalog_photometry_primaries`, `catalog_photometry_primaries`, `matched_to_catalog_photometry_primaries`, `noise_catalog_photometry_primaries` | the same four, with `trim_new_primaries` in place of `trim_new` in the cut | as above (`matched_*` is `cut_primaries.sum()`) |
 
-all of these except `matched_to_catalog_photometry` are in the *same* (untrimmed, pre-`[inMW][trim]`) CoM/luminous ordering, so they combine with plain `&`. `matched_to_catalog_photometry` is indexed within `cut_for_catalog_photometry`. `gmm.py` expands it with `matched_full = zeros(N); matched_full[cut] = matched`, and `np.isfinite(catalog_photometry['mG'])` gives the same full-length mask. `catalog_photometry['catalog_index']` comes out **float64** (the placeholder dict is `np.full(..., nan)`): -1 for unmatched stars inside `cut`, NaN outside `cut`. cast it before using it as an index.
+all of these except the `matched_to_catalog_photometry*` keys are in the *same* (untrimmed, pre-`[inMW][trim]`) CoM/luminous ordering, so they combine with plain `&`. `matched_to_catalog_photometry` is indexed within `cut_for_catalog_photometry`. `gmm.py` expands it with `matched_full = zeros(N); matched_full[cut] = matched`, and `np.isfinite(catalog_photometry['mG'])` gives the same full-length mask. `catalog_photometry['catalog_index']` comes out **float64** (the placeholder dict is `np.full(..., nan)`): -1 for unmatched stars inside `cut`, NaN outside `cut`. cast it before using it as an index.
 
 ### catalog photometry (the live noisy path)
-per sim, after the isochrone photometry:
+per sim, after the isochrone photometry, and **twice**: once with `trim_new` (keys as named) and once with `trim_new_primaries` (keys suffixed `_primaries`). it's a loop over `[(trim_new, ''), (trim_new_primaries, '_primaries')]`. the two pools differ slightly, so the catalog rows go to slightly different N-body stars, but the sample size is `len(catalog)` either way.
 
-1. `cut = unbound & trim_new & nonrem` -- the pool, so the catalog isn't spent on progenitor stars, remnants or trimmed outliers.
+1. `cut = unbound & trim & nonrem` -- the pool, so the catalog isn't spent on progenitor stars, remnants or trimmed outliers.
 2. `noise.assign_photometry_from_catalog(iso_phot[cut], distances[cut], catalog=noise.load_gaia_catalog(orbit), track=noise.isochrone_cmd_track(isocmd), N=len(catalog))`. subsetting to `cut` beforehand does the job of the `eligible` kwarg. the brightest `N` pool stars in **isochrone** apparent G get the catalog's apparent G and BP-RP exactly, rank for rank; absolute mags come from the N-body CoM distances, `log_Teff` from the nearest isochrone point, and `z`/`mz` from RTN-099.
-3. the results are scattered back to full length (NaN elsewhere), and DESI / Via 1 hr / Via 10 hr RV errors and Gaia DR3 position/PM errors are recomputed from the new `mG`/`mz`/`log_Teff`, exactly as for the isochrone noise.
+3. the results are scattered back to full length (NaN elsewhere), and DESI / Via 1 hr / Via 10 hr RV errors and Gaia DR3 position/PM errors are recomputed from the new `mG`/`mz`/`log_Teff` with the same `survey_noise` call as the isochrone noise.
 
 **every catalog row gets used, so the noisy sample *is* the catalog.** the pool is always much bigger than the catalog (4500-11700 stars), and on 30 Sep every matched star passed every downstream noise cut in `gmm.py` (Gaia pm_err < 0.5 mas/yr, Via rverr < 5, DESI rverr < 10) -- the brightest catalog G is ~12 and the faintest ~20. so the fitted sample size is set by `len(catalog)` alone and doesn't change with rvir or with via vs via10hr (those two now fit the **same stars** with different RV noise):
 
@@ -192,17 +195,17 @@ a case is set by three flags at the top of `__main__`, and they build `case_name
 | flag | options | meaning |
 |---|---|---|
 | `noise` | `None`, `'via'`, `'via10hr'`, `'desi'` | `None` -> `noiseless`. otherwise adds the saved noise draw and applies that survey's selection (below). the inline comment only lists None/via/desi, but `via10hr` works too since it's just a key suffix |
-| `include_binaries` | `True` / `False` | `binaries` uses `sc_straighter_primaries` (binary orbital motion in the RVs); `CoM` uses `sc_straighter`. both use `trim_new` |
+| `include_binaries` | `True` / `False` | `binaries` uses `sc_straighter_primaries` (binary orbital motion in the RVs); `CoM` uses `sc_straighter`. picks the suffix `sfx = '_primaries' if include_binaries else ''`, which selects the coords, `trim_new{sfx}`, and all four catalog products, for noiseless and noisy cases alike |
 | `constrain_widths` | `True` / `False` | adds `_constrained`: stage-2 SLSQP with the sigma-ratio constraint. `False` = Powell only, unconstrained |
 
 - **fit dimensions:** `keys = ['phi2', 'v_phi1', 'v_phi2', 'v_gsr']` -- phi2 in **degrees** (not `d_phi2`), and the proper motions converted to **transverse velocities** (km/s, using the CoM distance) before straightening. with noise, the PM noise is converted to v_phi1/v_phi2 with the same (assumed-perfect) distances.
-- **noisy cases read the catalog-based products:** `phot = data_dict['catalog_photometry']`, `noise_dict = data_dict['noise_catalog_photometry']`. the isochrone-based `phot`/`noise` lines are commented out just above them. switching back needs the old `use` lines too (also commented out), since the isochrone path depends on `alive`/`acceptable_G` and has no `matched` mask.
+- **noisy cases read the catalog-based products:** `phot = data_dict['catalog_photometry'+sfx]`, `noise_dict = data_dict['noise_catalog_photometry'+sfx]` (likewise `cut_for_*` and `matched_to_*`). the isochrone-based `phot`/`noise` lines are commented out just above them. switching back needs the old `use` lines too (also commented out), since the isochrone path depends on `alive`/`acceptable_G` and has no `matched` mask.
 - **selection:**
-  - noiseless: `trim_new & unbound` (remnants included, as before).
+  - noiseless: `trim_new{sfx} & unbound` (remnants included, as before).
   - noisy: `use = cut & matched_full & good_pm & good_RV & nonrem`, with `good_pm = pm_err_gaia < 0.5 mas/yr` and
     - `via` **and** `via10hr`: `good_RV = rverr < 5 km/s` (via10hr used to be < 10).
     - `desi`: `good_RV = (brightest 679 stars in catalog mG) & (rverr < 10 km/s)`. 679 = the length of the Jarvis+26 table. note the top 679 are picked *before* the pm/RV cuts, so this can come out under 679 (it doesn't for gd1: all 679 pass).
-    - `matched_full` already implies `cut`, which already contains `nonrem`, so it reduces to `matched_full & good_pm & good_RV` (hence the `# do I ...need nonrem????` -- no). the comment on the `cut = ...` line says `unbound & trim_new` but `cut` also has `nonrem`.
+    - `matched_full` already implies `cut`, which already contains `nonrem`, so it reduces to `matched_full & good_pm & good_RV` (hence the `# do I ...need nonrem????` -- no).
     - `alive` and `acceptable_G` are loaded but no longer used.
     - in practice none of the cuts bite: N fit = catalog size (see the table in the catalog photometry subsection).
   - `desi` fits **GD-1 only**.
@@ -214,6 +217,11 @@ a case is set by three flags at the top of `__main__`, and they build `case_name
 
 ## `results.py`
 notebook-style cells making the (nice) plots from the tables and pickles: `f_cocoon` / cocoon + thin sigma_phi2, sigma_vgsr vs rvir0 per orbit (ordered by pericenter), CoM vs binaries overlay, binary fractions in the cocoon vs thin stream (`plots/binary_fractions.pdf`), and the demo cocoon-separation panels. imports `gmm` for the membership functions. rows are filtered with `okay_mean = |M_c| < 0.5 S_c` in every dimension, i.e. a fit whose "cocoon" is displaced off-track is dropped from the plot rather than shown. TODO: rewrite.
+
+⚠️ `results.py` still reads the **unsuffixed** catalog keys (`catalog_photometry`, `cut_for_catalog_photometry`, ... around lines 163 and 501, and in `demo_data`), so its noisy `binaries` panels use the CoM-trim photometry, unlike `gmm.py`. give it the same `sfx` switch.
+
+## `claude_binary_selection_experiment.py`
+a one-off diagnostic, not part of the pipeline; only reads a pickle. for one sim it prints (1) the binary fraction and binary orbital-motion spread in v_gsr for the full unbound sample, the via-matched and desi-top-679 samples, and in bins down the brightness ranking of the eligible pool; and (2) noiseless GMM fits on each of those selections, for both binary treatments. written to explain the binaries selection effect -- see "binaries in the observed samples" in the GMM section. run across orbits/rvir to check the effect holds beyond GD-1 rvir0 = 0.75.
 
 
 # notes on `paf` (PETAR_ANALYSIS_FUNCTIONS.py)
@@ -648,15 +656,62 @@ benchmarked on synthetic data (n=2, K=4, N=30000, unconstrained):
 
 note `old/develop_GMM.py`'s `AIC` is actually AICc (includes `2k(k+1)/(N-k-1)`; numerically irrelevant at N ~ 1e4). for the noisy cases N gets small enough (hundreds, for DESI) that the choice of criterion can matter.
 
+## binaries in the observed samples: a selection effect (5 Oct) -- for the paper
+**the noisy `binaries` cocoons have a much larger sigma_v_gsr than the noiseless `binaries` cocoon, and it's mostly not noise -- it's which stars get observed.** the bright, catalog-matched stars are about twice as likely to be binaries as the stream as a whole. this is a real effect (a bright, magnitude-limited stream sample *would* be binary-rich), so the decision is to **keep it in the observed cases**. but understand it, quote it, and don't present noisy-vs-raw differences in the `binaries` cases as the effect of measurement noise.
+
+GD-1, hm, rvir0 = 0.75 pc, cocoon sigma_v_gsr [km/s] from the tables:
+
+| | noiseless | via | desi |
+|---|---|---|---|
+| `CoM` | 2.32 | 1.97 | 4.62 |
+| `binaries` | 6.40 | 10.28 | 12.19 |
+
+i.e. binaries add ~4 km/s raw but ~8 km/s observed.
+
+**why.** `dv` = binary orbital motion in v_gsr (`sc_straighter_primaries['v_gsr'] - sc_straighter['v_gsr']`), same pickle, `binaries`-case trim:
+
+| sample | N | binary fraction | std of dv over binaries [km/s] |
+|---|---|---|---|
+| `trim_new_primaries & unbound` (noiseless) | 6469 | 0.118 | 6.8 |
+| catalog-matched (`via`) | 1578 | 0.216 | 7.7 |
+| catalog-matched, top 679 in mG (`desi`) | 679 | 0.236 | 9.6 |
+| eligible pool, isochrone-brightness ranks 679-1578 | 899 | 0.201 | 5.4 |
+| eligible pool, ranks 1578-3313 | 1735 | 0.111 | 5.9 |
+| eligible pool, ranks 3313-5049 (faintest rankable) | 1736 | 0.064 | 6.5 |
+
+the binary fraction falls steadily with brightness. the dv spread is noisier, since a std is dominated by a few very tight binaries: ranks 4000-5049 alone give 1.7 km/s.
+
+- the catalog matching gives photometry to the brightest pool stars, ranked by the isochrone mG of the **luminous component's** `m0_zams`. a binary's luminous component is the heavier of two stars, so binaries move up the ranking: median luminous m0_zams 0.47 Msun in the matched sample vs 0.37 in the full unbound sample. the full unbound sample is dominated by faint, mostly single M dwarfs.
+- heavier systems also have larger orbital velocities at fixed separation, so the dv spread grows with brightness too.
+- dispersions add in **quadrature**, not linearly, and the GMM puts nearly all the binary variance into the cocoon. so binaries don't add a fixed amount; roughly `sigma_c,bin^2 ~ sigma_c,CoM^2 + f_bin <dv^2> / f_cocoon`. that predicts a binary term of 6.0 / 10.3 / 11.8 km/s (noiseless / via / desi), against 6.0 / 10.1 / 11.3 km/s measured as `sqrt(sigma_c,bin^2 - sigma_c,CoM^2)`.
+- `trim_new_primaries` (vs the CoM trim) helped only a little: it drops the std of dv in the matched sample from 10.9 to 7.7 km/s by clipping the extreme tails, but it doesn't touch the binary fraction.
+
+**the check that isolates it:** a **noiseless** GMM fit (Powell, same initial guess as `gmm.py`) on exactly the stars each survey case keeps:
+
+| noiseless fit on | f_cocoon `CoM` | sigma_v_gsr `CoM` | f_cocoon `binaries` | sigma_v_gsr `binaries` |
+|---|---|---|---|---|
+| all unbound | 0.127 | 2.32 | 0.152 | 6.40 |
+| via-matched 1578 | 0.107 | 2.09 | 0.154 | **9.17** |
+| desi top 679 | 0.134 | 1.86 | 0.175 | **11.08** |
+
+so with zero noise, selection alone takes the `binaries` cocoon to 9.2 / 11.1 km/s, against 10.3 / 12.2 with noise. noise adds only the last ~1 km/s. the `CoM` cocoon hardly moves with the selection. all of this comes from `claude_binary_selection_experiment.py` (`--orbit`, `--rvir`; defaults gd1 / 0.75; ~1 min). it builds the matched mask the same way `gmm.py` does, but leaves out the pm/RV error cuts, which don't remove anything. then it fits `sc_straighter{sfx}` without noise.
+
+**to come back to:**
+- add a case to `gmm.py`: `noise=None`, but with the catalog-photometry `use` mask, i.e. "noiseless, observed stars". then noisy vs this separates noise from selection, and this vs all unbound is the selection effect alone.
+- is the sim's binary fraction vs primary mass realistic? it's set by how the petar binary ICs were generated / paired; check before leaning on the size of the effect in the paper.
+- the companion's light isn't added to the luminous component (see the photometry caveats), so binaries are ranked slightly too faint. adding it would push the matched binary fraction up a little more.
+- not the same "cocoon" in every case: in `via_noise_CoM` the cocoon is partly the faint stars with large Gaia PM errors (cocoon sigma_v_phi1 13.5 vs thin 7.8 km/s), while in `via_noise_binaries` the split moves to v_gsr (cocoon sigma_v_phi1 7.1 is *smaller* than the thin 8.4). so differencing the two cocoons' sigma_v_gsr is a bit apples-to-oranges.
+- only measured for GD-1 rvir0 = 0.75. check it holds across orbits/rvir; the small catalogs (c19 46, pa5 129, jet 144) will be noisier.
+
 ## next
 maximum likelihood first, then emcee for posteriors. `nll_flat` negated is the right sign for `log_prob`, the softmax/log-sigma parameterization is already unconstrained, and the `inf` guards are what emcee expects for a rejected step -- add a prior and it's ready. a sampler needs `sort_components` applied **per sample** or the marginals come out as mush.
 
 
 # bugs / stale things that remain
 in rough order of how much they'd hurt:
-- **`final_datasets.py` only runs GD-1** right now (`if orbit != 'gd1': continue`). delete before a full run.
+- `results.py` reads the unsuffixed catalog keys, so its noisy `binaries` panels don't match `gmm.py`'s selection (see the `results.py` section).
 - **GMM label switching / degenerate fits in the catalog-noise tables** (30 Sep). `sort_components` orders by v_gsr width only, so when the two components have nearly equal v_gsr sigma the label is a coin flip: `pa5` rvir 6 in `via_noise_CoM` / `via10hr_noise_CoM` has the "thin" component at sigma_v_phi1 ~ 34 km/s and the "cocoon" at ~5.7, with v_gsr sigmas 1.08 vs 1.14, so the reported `f_cocoon` = 0.61 is really the thin-stream fraction. and some small-N fits have the thin component collapse onto a handful of stars: `via10hr_noise_CoM` `jet` rvir 1.5 (`f_cocoon` = 1.000) and `c19` rvir 0.75 (`f_cocoon` = 0.935, thin sigma_phi2 = 0.01 deg). **all three pass `results.py`'s `okay_mean` filter**, so they'll show up in the summary plots. the BIC TODO is the principled fix; sorting on a combined width (e.g. the product of sigma/sd over dims), or requiring agreement across dims, would catch the pa5 case.
-- **in the `binaries` cases the "cocoon" is mostly the binary-orbital-motion population**: `via_noise_binaries` / `desi_noise_binaries` cocoons have sigma_v_gsr ~ 6-20 km/s against ~1 km/s for `CoM`, with thin-stream-like sigma_phi2. expected physics, but it means `f_cocoon` in those tables isn't a spatial/kinematic cocoon fraction, so don't compare it directly to the CoM tables.
+- **in the `binaries` cases the "cocoon" is mostly the binary-orbital-motion population**: `via_noise_binaries` / `desi_noise_binaries` cocoons have sigma_v_gsr ~ 6-20 km/s against ~1 km/s for `CoM`, with thin-stream-like sigma_phi2. expected physics, but it means `f_cocoon` in those tables isn't a spatial/kinematic cocoon fraction, so don't compare it directly to the CoM tables. and the noisy `binaries` cocoons are hotter than the noiseless one mostly through selection (bright stars are more often binaries), not noise -- see "binaries in the observed samples" in the GMM section.
 - in `gmm.py`'s plotting block, `cut = 3*sigmas_fit[-1][jj]` reuses the name of the catalog-photometry `cut` mask. harmless now because `cut` is reloaded from the pickle at the top of each rvir iteration, but it'll bite if that load ever moves.
 - **pickle filenames don't include stellar_pop** -- an `lm` run of `final_datasets.py` would silently overwrite the `hm` pickles. (`gmm.py`'s `mass_index = 1` line says "LOW mass" but 1 is `hm`, and it isn't used there anyway.)
 - **pickles live on netscratch**, which is purged on a 90-day clock (the current set was written 30 Sep 2026, so it ages out around the end of December). copy them somewhere permanent before they age out.

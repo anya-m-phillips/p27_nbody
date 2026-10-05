@@ -51,45 +51,11 @@ import PETAR_ANALYSIS_FUNCTIONS as paf
 import inspect_new_sims as simspect 
 import pickle
 import gmm
-
-# %%
-
-##### finish later. 
-# def get_p_cocoon(data_dict, use, row, noise ):
-#     keys = ['phi2','v_phi1','v_phi2','v_gsr']
-#     sc_straighter = data_dict['sc_straighter']
-#     row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
-
-#     means_fit = np.array([
-#         row['M_ts'][0], row['M_c'][0]
-#     ])
-#     sigmas_fit = np.array([
-#         row['S_ts'][0], row['S_c'][0]
-#     ])
-#     fracs_fit = np.array([
-#         1-row['f_cocoon'][0], row['f_cocoon'][0]
-#     ])
-#     keys = ['phi2','v_phi1','v_phi2','v_gsr']
-#     x_data = np.column_stack([
-#         sc_straighter[k][use] for k in keys
-#     ])
-
-#     ncomponents = 2
-#     p1, p2 = [gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
-#     p_thin = p1
-#     ts = p1>0.5
-#     p_cocoon = 1-p_thin
-#     return p_cocoon
-
-# def get_cocoon_flag(data_dict, use, means, sigmas):
-
-#     return p_cocoon>0.5
-
 # %%
 datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
-
+# %%
 #-----------------------------------------------#
 #   opening all of the data and checking out    #
 #   the observability given distances to all    #
@@ -261,9 +227,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     # cmd.set_lim(bottom=)
     if orbit=='gd1':
         cmd.legend(loc='lower left')
-    fig_cmd.savefig(repo_path+"/plots/photometry_explainer/%s.pdf"%orbit, dpi=300, bbox_inches='tight')
+    # fig_cmd.savefig(repo_path+"/plots/photometry_explainer/%s.pdf"%orbit, dpi=300, bbox_inches='tight')
 
-figg.savefig(repo_path+"/plots/photometry_explainer/distance_phi1.pdf", dpi=300, bbox_inches='tight')
+# figg.savefig(repo_path+"/plots/photometry_explainer/distance_phi1.pdf", dpi=300, bbox_inches='tight')
 
 
 med_distances = np.array(med_distances)
@@ -343,9 +309,7 @@ eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericent
 # plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
 # %%
 #----------------------------#
-# a version of this table    #
-# that includes the no noise #
-# + binary motions gmm fits. #
+# !!!!!! THE MAIN RESULT PLOT W MANY PANELS 
 #----------------------------#
 
 ### getting jarvis values to paste on:
@@ -382,16 +346,16 @@ ccc = cc[1:]
 fig, axs = plt.subplots(2,3,figsize=[21,14])
 
 
-# axs[0,0].axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, 
-#                  color='k', alpha=0.1, label = "Values from Jarvis+26")
-# axs[0,1].axhspan(jarvis_sphi2_c-jarvis_sphi2_c_err, jarvis_sphi2_c+jarvis_sphi2_c_err, 
-#                  color='k', alpha=0.1)
-# axs[1,1].axhspan(jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_sphi2_ts+jarvis_sphi2_ts_err, 
-#                  color='k', alpha=0.1)
-# axs[0,2].axhspan(jarvis_svgsr_c-jarvis_svgsr_c_err, jarvis_svgsr_c+jarvis_svgsr_c_err, 
-#                  color='k', alpha=0.1)
-# axs[1,2].axhspan(jarvis_svgsr_ts-jarvis_svgsr_ts_err, jarvis_svgsr_ts+jarvis_svgsr_ts_err, 
-#                  color='k', alpha=0.1)
+axs[0,0].axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, 
+                 color='k', alpha=0.1, label = "Values from Jarvis+26")
+axs[0,1].axhspan(jarvis_sphi2_c-jarvis_sphi2_c_err, jarvis_sphi2_c+jarvis_sphi2_c_err, 
+                 color='k', alpha=0.1)
+axs[1,1].axhspan(jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_sphi2_ts+jarvis_sphi2_ts_err, 
+                 color='k', alpha=0.1)
+axs[0,2].axhspan(jarvis_svgsr_c-jarvis_svgsr_c_err, jarvis_svgsr_c+jarvis_svgsr_c_err, 
+                 color='k', alpha=0.1)
+axs[1,2].axhspan(jarvis_svgsr_ts-jarvis_svgsr_ts_err, jarvis_svgsr_ts+jarvis_svgsr_ts_err, 
+                 color='k', alpha=0.1)
 
 plt.subplots_adjust(wspace=0.2, hspace=0.2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
@@ -411,14 +375,14 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
                 label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
-                marker='o', color=ccc[ii], markersize=10)
+                marker='o', color=ccc[ii], markersize=10, zorder=0)
 
     axs[0,0].plot(x2, f_cocoons_this_orbit2, 
                 # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
                 marker='o', color=ccc[ii], markersize=10,
-                ls=':')
+                ls=':', zorder=0)
 
 
     ### cocoon ! ! !
@@ -428,11 +392,11 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     vgsr_dispersions_this_orbit = tt['S_c'][:,-1][selection]
     vgsr_dispersions_this_orbit2 = tt2['S_c'][:,-1][selection]
 
-    axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
-    axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
+    axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
+    axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
 
-    axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
-    axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
+    axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+    axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
     # axs[0,2].set_yscale('log')
 
     ### thin ! ! !
@@ -442,20 +406,16 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     phi2_dispersions_this_orbit2 = tt2['S_ts'][:,0][selection2] #<-- TODO: translate back to angle from distance. 
     vgsr_dispersions_this_orbit2 = tt2['S_ts'][:,-1][selection2]
 
-    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
-    axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
+    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--', zorder=0)
+    axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--', zorder=0)
 
 
     # axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
     # axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
-    axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
-    axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':')
+    axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+    axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
 
-for ax in np.concatenate([axs[0], axs[1]]):
-    ax.set_ylim(bottom=0)
-    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
-    ax.minorticks_off()
-    ax.set_xticks([.75, 1.5, 3., 6.])
+
 
 axs[0,0].plot([None],[None], c='k', marker='o', markersize=10, label='system CMs')
 axs[0,0].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary orbits')
@@ -470,14 +430,109 @@ axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
 axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
 axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
 
-axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
+for ax in np.concatenate([axs[0], axs[1]]):
+    ax.minorticks_off()
+    ax.set_xticks([.75, 1.5, 3., 6.])
+
 
 axs[1,0].remove()
 
-plot_filename = "summary_"+case_name
+
+#   ADD A DATA POINT FOR THE FIT WITH DESI-LIKE NOISE AND DOWN-SAMPLING
+files = [
+    'desi_noise_binaries.fits',
+    'desi_noise_CoM.fits',
+    'via_noise_binaries.fits',
+    'via_noise_CoM.fits'
+]
+markers = ['v', 'v', 'o', 'o']
+labels=[
+    'DESI noise with binaries',
+    'Desi noise CM',
+    'Via Y1 with binaries',
+    'Via CM'
+]
+
+for ii, f in enumerate(files):
+    t_obs = Table.read(table_path+f, format='fits')
+    row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')] # only making one comparison. 
+
+    axs[0,0].scatter(row['Rvir0'], row['f_cocoon'], 
+                label=labels[ii],
+                marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
+                edgecolor='k', lw=1.5, s=500)
+    axs[0,1].scatter(row['Rvir0'], row['S_c'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
+                            edgecolor='k', lw=1., s=500)
+    axs[0,2].scatter(row['Rvir0'], row['S_c'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
+                            edgecolor='k', lw=1., s=500)
+    axs[1,1].scatter(row['Rvir0'], row['S_ts'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
+                             edgecolor='k', lw=1., s=500)
+    axs[1,2].scatter(row['Rvir0'], row['S_ts'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
+                            edgecolor='k', lw=1., s=500)
+
+
+axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=20)
+for ax in np.concatenate([axs[0], axs[1]]):
+    ax.set_ylim(bottom=0)
+    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
 
 # plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
+plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
+# %%
+#### not clearly resolving the thin stream. are there 
+#   significant differences in the rv err distribution between
+#   my data and the jarvis catalog? 
+orbit='gd1'
+noise='desi'
+rvir_index=0
 
+##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
+
+coords_obs = data_dict['coords_obs']
+sc = data_dict['sc_straighter']
+
+distances = coords_obs.distance.to(u.kpc).value
+trim_new = data_dict['trim_new']
+unbound = data_dict['unbound']
+
+nonrem = data_dict['nonrem']
+phot = data_dict['catalog_photometry']
+
+phot_iso = data_dict['phot']
+
+cut = data_dict['cut_for_catalog_photometry']
+matched_flag = data_dict['matched_to_catalog_photometry']
+matched_full = np.full(len(cut), fill_value = False)
+matched_full[cut] = matched_flag
+
+
+noise_dict = data_dict['noise_catalog_photometry']
+noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
+alive = data_dict['alive']
+acceptable_G = data_dict['acceptable_G']
+cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
+
+N_jarvis = 679 #<-- length of jarvis catalog. 
+particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
+bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
+ordered_IDs = particle_IDs[bright_ordering]
+used_IDs = ordered_IDs[:N_jarvis]
+top_N_jarvis = np.isin(particle_IDs, used_IDs)
+good_RV = (top_N_jarvis) & (rverr<10.) #km/s       
+
+use = cut & matched_full & good_pm & good_RV #& nonrem
+
+
+### jarvis catalog...
+jt = Table.read(repo_path+'/data/jarvis26_Table7.fits',format='fits')
+plt.hist(jt['V_ERR'], bins=np.arange(0, 10, 0.25), histtype='step', lw=3)
+plt.hist(rverr[use], bins=np.arange(0, 10, 0.25), histtype='step', lw=3)
+### a little bit not good idk. 
 # %%
 #-----------------------------------------------------#
 #   binary fractions in thin stream vs cocoon         # 
