@@ -37,6 +37,8 @@ import matplotlib.colors as mcolors
 import matplotlib.cm as cm
 from matplotlib.gridspec import GridSpec
 from matplotlib.lines import Line2D
+from matplotlib.patches import Ellipse
+
 plt.style.use(script_path+'/vedant.mplstyle')
 # %config InlineBackend.figure_format='retina'
 from matplotlib.cm import ScalarMappable
@@ -85,6 +87,7 @@ if constrain_widths==False:
     cd2 = ''
 
 case_name = cd0+"_"+cd1+cd2
+sfx = '_primaries' if include_binaries else '' #<-- picks the coords, trim, and catalog products, as in gmm.py
 
 print("running case:", case_name)
 
@@ -99,7 +102,7 @@ prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 # ordering decided here. 
 orbits = ['gd1','aau','pa5','jet','c19']
 phi1_lims = [
-    (-80, 10),
+    (-100, 10),
     (-15,15),
     (-15,15),
     (-20,20),
@@ -153,31 +156,31 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         data_dict = pickle.load(handle)
 
     coords_obs = data_dict['coords_obs']
-    sc = data_dict['sc_straighter']
+    sc = data_dict['sc_straighter'+sfx]
 
     distances = coords_obs.distance.to(u.kpc).value
     med_distances.append(np.median(distances))
-    trim_new = data_dict['trim_new']
+    trim_new = data_dict['trim_new'+sfx]
     unbound = data_dict['unbound']
 
     nonrem = data_dict['nonrem']
-    phot = data_dict['catalog_photometry']
+    phot = data_dict['catalog_photometry'+sfx]
 
     phot_iso = data_dict['phot']
 
-    cut = data_dict['cut_for_catalog_photometry']
-    matched_flag = data_dict['matched_to_catalog_photometry']
+    cut = data_dict['cut_for_catalog_photometry'+sfx]
+    matched_flag = data_dict['matched_to_catalog_photometry'+sfx]
     matched_full = np.full(len(cut), fill_value = False)
     matched_full[cut] = matched_flag
 
 
-    noise_dict = data_dict['noise_catalog_photometry']
+    noise_dict = data_dict['noise_catalog_photometry'+sfx]
     noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
     rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
     alive = data_dict['alive']
     acceptable_G = data_dict['acceptable_G']
     cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
+    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms.
 
 
     if noise=='desi':
@@ -585,7 +588,7 @@ for rvir in rvir0s:
     tn = 'trim_new'
     if 'binaries' in case:
         kk+='_primaries'
-        # tt+='_primaries'
+        tn+='_primaries' #<-- binaries cases are trimmed with binary orbital motion included, as in gmm.py
     sc_straighter = data_dict[kk]
 
     distances = coords_obs.distance.to(u.kpc).value
@@ -748,24 +751,82 @@ plt.savefig("plots/matching_catalog_mags.pdf", dpi=300, bbox_inches='tight')
 
 # %%
 #
-#
-#--------------------------------------------------------#
-#       plots to demonstrate the GMM results             #
-#       for individuaal simulations (success and fails)  #
-#--------------------------------------------------------#
-# %%
-# c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
-include_binaries=False
-case_name = 'desi_noise_CoM'
-# case_name = 'noiseless_CoM'
-noise = 'desi' #<-- None, 'via', 'via10hr', 'desi'. has to match case_name!
-tt = Table.read(table_path+case_name+".fits", format="fits")
-c_labels = ["#CCC9E7", "#2F2F2F"]
-# c_labels = ['orange','white','midnightblue']
-cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
-orbit = 'gd1'
-rvir_indices = [0] #<-- any subset of range(len(rvirs)), one column each
+
+#### helpers: rebuild exactly what gmm.py fit, for any case, and evaluate a
+#   saved mixture model on it. used by the demo panels and figure 1 below.
+fit_keys = ['phi2','v_phi1','v_phi2','v_gsr'] #<-- gmm.py's keys; also the order of the M_*/S_* columns
+
+def case_label(noise=None, include_binaries=False, constrain_widths=False):
+    '''the gmm.py case_name for a set of flags, e.g. desi_noise_CoM'''
+    cd0 = 'noiseless' if noise is None else noise+"_noise"
+    cd1 = 'binaries' if include_binaries else 'CoM'
+    cd2 = '_constrained' if constrain_widths else ''
+    return cd0+"_"+cd1+cd2
+
+
+def gmm_selection(data_dict, noise=None, include_binaries=False):
+    '''
+    the stars that went into the gmm.py fit for one case.
+
+    returns use, sc_straighter, noise_dict:
+      use           -- full-length bool mask (CoM/luminous ordering)
+      sc_straighter -- the straightened coord dict that case fits
+      noise_dict    -- the saved catalog-photometry noise draw, with v_gsr,
+                       v_phi1, v_phi2 filled in for this survey (None if noiseless)
+    '''
+    sfx = '_primaries' if include_binaries else '' #<-- coords, trim, and catalog products all follow it
+    sc_straighter = data_dict['sc_straighter'+sfx]
+    unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
+
+    if noise is None:
+        use = unbound & data_dict['trim_new'+sfx]
+        return use, sc_straighter, None
+
+    #### catalog-based photometry + noise, same selection as gmm.py
+    phot = data_dict['catalog_photometry'+sfx]
+    cut = data_dict['cut_for_catalog_photometry'+sfx]
+    matched_full = np.full(len(cut), fill_value=False)
+    matched_full[cut] = data_dict['matched_to_catalog_photometry'+sfx]
+
+    noise_dict = dict(data_dict['noise_catalog_photometry'+sfx]) #<-- copy, so the survey keys don't leak back into data_dict
+    noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+    rverr = noise_dict['rverr_'+noise]
+
+    distances = data_dict['coords_obs'].distance
+    noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+    noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+
+    cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr
+
+    if noise in ['via', 'via10hr']:
+        good_RV = rverr<5.0 #km/s
+    if noise=='desi':
+        N_jarvis = 679 #<-- length of jarvis catalog.
+        top_N_jarvis = np.zeros(len(phot['mG']), dtype=bool)
+        top_N_jarvis[np.argsort(phot['mG'])[:N_jarvis]] = True #<-- nans sort to the end
+        good_RV = top_N_jarvis & (rverr<10.) #km/s
+
+    use = cut & matched_full & good_pm & good_RV & nonrem
+    return use, sc_straighter, noise_dict
+
+
+def observed(key, sc_straighter, noise_dict, use):
+    '''one coordinate for the `use` stars, with the saved noise draw added if there is one'''
+    y = sc_straighter[key][use]
+    if noise_dict is not None:
+        y = y + noise_dict[key][use]
+    return y
+
+
+def p_cocoon_from_table(x_data, row):
+    '''p_cocoon per star under the mixture model saved in one row of a gmm table'''
+    means_fit = np.array([row['M_ts'][0], row['M_c'][0]])
+    sigmas_fit = np.array([row['S_ts'][0], row['S_c'][0]])
+    fracs_fit = np.array([1-row['f_cocoon'][0], row['f_cocoon'][0]])
+    p_thin = gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0)
+    return 1-p_thin
 
 
 def demo_data(orbit, rvir, tt, noise=None, include_binaries=False):
@@ -777,77 +838,39 @@ def demo_data(orbit, rvir, tt, noise=None, include_binaries=False):
     already cut down to the stars that went into the fit (`use`), and
     ydict holds the plotted keys with the saved noise draw added.
     '''
-    #### extract info about the mixture model from the saved table:
     row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
-    means_fit = np.array([row['M_ts'][0], row['M_c'][0]])
-    sigmas_fit = np.array([row['S_ts'][0], row['S_c'][0]])
-    fracs_fit = np.array([1-row['f_cocoon'][0], row['f_cocoon'][0]])
 
-    #### open the N-body data
     filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
     with open(filename, 'rb') as handle:
         data_dict = pickle.load(handle)
 
-    if include_binaries==False:
-        sc_straighter = data_dict['sc_straighter'] #<-- dictionary
-    if include_binaries==True:
-        sc_straighter = data_dict['sc_straighter_primaries'] #<-- dictionary
-
-    unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
-
-    if noise is None:
-        # same trim as gmm.py for the noiseless cases
-        if include_binaries==True:
-            trim_new = data_dict['trim_new_primaries']
-        else:
-            trim_new = data_dict['trim_new']
-        use = unbound & trim_new
-        noise_dict = None
-
-    else:
-        #### catalog-based photometry + noise, same selection as gmm.py
-        phot = data_dict['catalog_photometry']
-        cut = data_dict['cut_for_catalog_photometry']
-        matched_full = np.full(len(cut), fill_value=False)
-        matched_full[cut] = data_dict['matched_to_catalog_photometry']
-
-        noise_dict = data_dict['noise_catalog_photometry']
-        noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
-        rverr = noise_dict['rverr_'+noise]
-
-        distances = data_dict['coords_obs'].distance
-        noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-        noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-
-        cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-        good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr
-
-        if noise in ['via', 'via10hr']:
-            good_RV = rverr<5.0 #km/s
-        if noise=='desi':
-            N_jarvis = 679 #<-- length of jarvis catalog.
-            top_N_jarvis = np.zeros(len(phot['mG']), dtype=bool)
-            top_N_jarvis[np.argsort(phot['mG'])[:N_jarvis]] = True #<-- nans sort to the end
-            good_RV = top_N_jarvis & (rverr<10.) #km/s
-
-        use = cut & matched_full & good_pm & good_RV & nonrem
-
-    def observed(k):
-        y = sc_straighter[k][use]
-        if noise_dict is not None:
-            y = y + noise_dict[k][use]
-        return y
+    use, sc_straighter, noise_dict = gmm_selection(data_dict, noise=noise, include_binaries=include_binaries)
 
     #### the fit is in transverse velocities; the plot shows proper motions
-    fit_keys = ['phi2','v_phi1','v_phi2','v_gsr']
-    x_data = np.column_stack([observed(k) for k in fit_keys])
+    x_data = np.column_stack([observed(k, sc_straighter, noise_dict, use) for k in fit_keys])
+    p_cocoon = p_cocoon_from_table(x_data, row)
 
-    p_thin = gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0)
-    p_cocoon = 1-p_thin
-
-    ydict = {k: observed(k) for k in ['phi2','pm_phi1','pm_phi2','v_gsr']}
+    ydict = {k: observed(k, sc_straighter, noise_dict, use) for k in ['phi2','pm_phi1','pm_phi2','v_gsr']}
     return sc_straighter['phi1'][use], ydict, p_cocoon, row
 
+# %%
+#
+#--------------------------------------------------------#
+#       plots to demonstrate the GMM results             #
+#       for individuaal simulations (success and fails)  #
+#--------------------------------------------------------#
+
+# c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
+noise = 'desi' #<-- None, 'via', 'via10hr', 'desi'
+include_binaries = False
+case_name = case_label(noise, include_binaries) #<-- e.g. desi_noise_CoM; can't disagree with the flags any more
+tt = Table.read(table_path+case_name+".fits", format="fits")
+c_labels = ["#CCC9E7", "#2F2F2F"]
+# c_labels = ['orange','white','midnightblue']
+cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+
+orbit = 'gd1'
+rvir_indices = [0] #<-- any subset of range(len(rvirs)), one column each
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 key_labels = [
@@ -856,6 +879,9 @@ key_labels = [
     r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
     r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
 ]
+
+# the noisy samples are ~1e2-1e3 stars, the noiseless ones ~1e4: bigger, outlined points for "observed" data
+point_kw = dict(s=5) if noise is None else dict(s=50, edgecolor='k', lw=.5)
 
 ncols = len(rvir_indices)
 fig = plt.figure(figsize=[5*ncols+1, 8])
@@ -879,9 +905,7 @@ for ii, rvir_index in enumerate(rvir_indices):
         ax = axs[jj, ii]
         ax.scatter(phi1[order], y[order],
                    c=p_cocoon[order], cmap=cocoon_cmap, norm=norm_pc,
-                   #s=50, edgecolor='k', lw=.5, #<-- this is for "observed" data
-                   s=5,
-                   rasterized=True)
+                   rasterized=True, **point_kw)
 
         # 3 sigma of the cocoon stars (or of everything, if there's no cocoon)
         ysel = y[cocoon_selection] if cocoon_selection.sum()>1 else y
@@ -893,25 +917,115 @@ for ii, rvir_index in enumerate(rvir_indices):
     if noise is not None:
         axs[0, ii].set_title(
             r'$f_{\rm c}=%.2f, \sigma_{\phi_2, c} = %.2f~\degree, \sigma_{v_{\rm GSR}, c} = %.2f~\mathrm{km~s^{-1}} $'%(row['f_cocoon'][0], row['S_c'][:,0][0], row['S_c'][:,-1][0]))
-    
-    
+
+
     axs[-1, ii].set_xlabel(r'$\phi_1~[\degree]$')
 
 for jj in range(len(keys)):
     axs[jj, 0].set_ylim(-ylims[jj], ylims[jj]) #<-- shared across the row
     axs[jj, 0].set_ylabel(key_labels[jj], fontsize=15)
-# axs[0, 0].set_xlim(orbit_lim_map[orbit])
-
-for row in axs:
-    for ax in row:
-        ax.set_xlim(-100, 10)
+axs[0, 0].set_xlim(orbit_lim_map[orbit]) #<-- sharex, so this sets every panel
 
 cb = fig.colorbar(ScalarMappable(norm=norm_pc, cmap=cocoon_cmap), cax=cax)
 cb.set_label(r'$p_{\rm cocoon}$', fontsize=15)
 
-if noise is None:
-    plt.savefig("plots/demo_cocoon_separation_rvir0.pdf", dpi=300, bbox_inches='tight')
+# keep the old filename for the noiseless CoM panels; every other case gets its own file
+plot_name = "demo_cocoon_separation_rvir0" if case_name=='noiseless_CoM' else "demo_cocoon_separation_"+case_name
+if orbit!='gd1':
+    plot_name += "_"+orbit
+plt.savefig("plots/"+plot_name+".pdf", dpi=300, bbox_inches='tight')
+# %%
+#--------------------------------------------------------#
+#       FIGURE 1: every rvir0 = 0.75 pc stream at        #
+#       present day, galactocentric z vs x.              #
+#       left: thin streams only (cocoons removed);       #
+#       right: everything unbound from the progenitor.   #
+#--------------------------------------------------------#
+fig1_rvir = 0.75
+fig1_noise, fig1_include_binaries = None, False #<-- the gmm.py fit that decides who's in the cocoon
+# right panel: True = every unbound star, including the ones trim_new dropped before the fit
+#   (phi1 tails, distance outliers, early escapers), so left vs right is cocoon + trim.
+#   False = only the stars the gmm saw, so left vs right is exactly the cocoon.
+fig1_include_trimmed = False
+tt_fig1 = Table.read(table_path+case_label(fig1_noise, fig1_include_binaries)+".fits", format="fits")
 
-else:
-    plt.savefig("plots/demo_cocoon_separation_%s.pdf"%case_name, dpi=300, bbox_inches='tight')
+orbit_title_map = {o:t for o, t in zip(orbits, orbit_titles)}
+reordered = np.argsort(pericenters_kpc) #<-- same as the main result plot
+
+#### load everything first, then plot.
+#   loop in pericenter order so ccc[ii] is the same color per orbit as in the summary plots.
+fig1_x, fig1_y, fig1_z = [], [], [] # galactocentric, kpc
+fig1_n_sim = [] # which stream each star belongs to (index into orbits[reordered])
+fig1_thin = [] # in the gmm fit AND p_cocoon < 0.5
+fig1_fit = [] # in the gmm fit at all
+
+for ii, orbit in enumerate(tqdm(orbits[reordered])):
+    filename = datapath+"%s_%.2f.pickle"%(orbit, fig1_rvir)
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
+
+    use, sc_fig1, noise_fig1 = gmm_selection(data_dict, noise=fig1_noise, include_binaries=fig1_include_binaries)
+    row = tt_fig1[(tt_fig1['orbit']==orbit) & (tt_fig1['Rvir0']==fig1_rvir)]
+    x_data = np.column_stack([observed(k, sc_fig1, noise_fig1, use) for k in fit_keys])
+
+    p_cocoon = np.full(len(use), fill_value=np.nan) #<-- nan for stars that weren't in the fit (bound, or outside the trim)
+    p_cocoon[use] = p_cocoon_from_table(x_data, row)
+    thin = use & (p_cocoon<0.5) #<-- nan < 0.5 is False
+
+    #### the progenitor (2 rtid) is dropped from both panels; everything else unbound goes in the right one
+    unbound = data_dict['unbound']
+    x, y, z = data_dict['CoM']['pos'].to(u.kpc).value[unbound].T
+
+    fig1_x.append(x)
+    fig1_y.append(y)
+    fig1_z.append(z)
+    fig1_n_sim.append(np.full(len(x), fill_value=ii))
+    fig1_thin.append(thin[unbound])
+    fig1_fit.append(use[unbound])
+
+    print("%s: %i unbound, %i in the fit, %i thin stream"%(orbit, unbound.sum(), use.sum(), thin.sum()))
+
+fig1_x, fig1_y, fig1_z = np.concatenate(fig1_x), np.concatenate(fig1_y), np.concatenate(fig1_z)
+fig1_n_sim = np.concatenate(fig1_n_sim)
+fig1_thin = np.concatenate(fig1_thin)
+fig1_fit = np.concatenate(fig1_fit)
+
+
+n_orbits = len(orbits)
+cmap_fig1 = mcolors.ListedColormap(ccc[:n_orbits])
+# discrete norm: one color band per orbit, boundaries on the half-integers
+norm_fig1 = mcolors.BoundaryNorm(np.arange(n_orbits+1)-0.5, cmap_fig1.N)
+
+fig, axs = plt.subplots(1, 2, figsize=[16, 8], sharex=True, sharey=True)
+plt.subplots_adjust(wspace=0.05)
+
+
+for ax in axs:
+    for width, height in [(2, 2), (3, 2), (0.5, 0.5), (30, 0.5)]:
+        ax.add_patch(Ellipse(xy=[0, 0], width=width, height=height, angle=0,
+                            facecolor='none', edgecolor='black', linewidth=1))
+
+panel_selections = [fig1_thin, np.ones(len(fig1_thin), dtype=bool) if fig1_include_trimmed else fig1_fit]
+panel_titles = ['Thin stream only', 'All stars']
+for ax, sel, title in zip(axs, panel_selections, panel_titles):
+    # order = np.argsort(fig1_y[sel]) #<-- most negative y drawn first (bottom), most positive y last (top)
+    order = np.argsort(fig1_x[sel])
+    ax.scatter(fig1_y[sel][order], fig1_z[sel][order],
+               c=fig1_n_sim[sel][order], cmap=cmap_fig1, norm=norm_fig1,
+               s=1, rasterized=True)
+    # ax.set_title(title)
+    ax.set_xlabel(r'$y~[\rm kpc]$')
+    ax.set_aspect('equal')
+
+axs[0].set_xlim(-35, 35)
+axs[0].set_ylim(-35, 35)
+axs[0].set_ylabel(r'$z~[\rm kpc]$')
+
+
+
+handles = [Line2D([], [], ls='', marker='o', markersize=8, color=ccc[ii], label=orbit_title_map[orbit])
+           for ii, orbit in enumerate(orbits[reordered])]
+axs[1].legend(handles=handles, loc='lower right', fontsize=15)
+
+plt.savefig("plots/fig1_motiv_trim.pdf", dpi=300, bbox_inches='tight')
 # %%
