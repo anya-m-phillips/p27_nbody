@@ -51,6 +51,7 @@ import PETAR_ANALYSIS_FUNCTIONS as paf
 import inspect_new_sims as simspect 
 import pickle
 import gmm
+import noise as n
 # %%
 datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
@@ -63,7 +64,7 @@ table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 #-----------------------------------------------#
 
 
-make_plots=True
+make_plots=False
 constrain_widths=False
 noise = 'via' #<-- None or 'via' or 'desi'
 include_binaries=False
@@ -215,18 +216,18 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     # axx.set_title(noise)
     # axx.set_ylim(0, 20)
 
-    fig_cmd, cmd = plt.subplots()
-    cmd.scatter(phot_iso['BP_RP'][unbound & trim_new], phot_iso['mG'][unbound & trim_new], c='0.9', zorder=0,
-                label='all isochrone photometry', rasterized=True)
-    cmd.scatter(phot_iso['BP_RP'][use], phot_iso['mG'][use], c='0.7', label='matched stars', rasterized=True)
-    cmd.scatter(phot['BP_RP'][use], phot['mG'][use], c=ccc[ii], label='catalog photometry', rasterized=True)
-    cmd.set_xlabel(r'$G_{B_P}-G_{R_P}$')
-    cmd.set_ylabel(r'$G$')
-    cmd.invert_yaxis()
-    cmd.set_title(orbit_titles[ii])
-    # cmd.set_lim(bottom=)
-    if orbit=='gd1':
-        cmd.legend(loc='lower left')
+    # fig_cmd, cmd = plt.subplots()
+    # cmd.scatter(phot_iso['BP_RP'][unbound & trim_new], phot_iso['mG'][unbound & trim_new], c='0.9', zorder=0,
+    #             label='all isochrone photometry', rasterized=True)
+    # cmd.scatter(phot_iso['BP_RP'][use], phot_iso['mG'][use], c='0.7', label='matched stars', rasterized=True)
+    # cmd.scatter(phot['BP_RP'][use], phot['mG'][use], c=ccc[ii], label='catalog photometry', rasterized=True)
+    # cmd.set_xlabel(r'$G_{B_P}-G_{R_P}$')
+    # cmd.set_ylabel(r'$G$')
+    # cmd.invert_yaxis()
+    # cmd.set_title(orbit_titles[ii])
+    # # cmd.set_lim(bottom=)
+    # if orbit=='gd1':
+    #     cmd.legend(loc='lower left')
     # fig_cmd.savefig(repo_path+"/plots/photometry_explainer/%s.pdf"%orbit, dpi=300, bbox_inches='tight')
 
 # figg.savefig(repo_path+"/plots/photometry_explainer/distance_phi1.pdf", dpi=300, bbox_inches='tight')
@@ -476,7 +477,6 @@ for ax in np.concatenate([axs[0], axs[1]]):
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
 
-# plt.savefig("plots/summary_CMs_binaries_combined_noiseless.pdf")
 plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
 # %%
 #### not clearly resolving the thin stream. are there 
@@ -679,6 +679,72 @@ l = [0,0.4]
 
 # plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
 # %%
+#--------------------------------------------------------#
+#       plots to demonstrate the need for matching       #
+#   to catalog photometry and the associated binary      #
+#   selection effects.                                   #
+#--------------------------------------------------------#
+orbit = 'gd1'
+rvir_index=0
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
+
+phot = data_dict['phot']
+catphot = data_dict['catalog_photometry']
+alive = data_dict['alive']
+
+
+ttgd1 = n.load_gaia_catalog(orbit)
+
+bins = np.arange(12, 23, 1)
+
+fig, ax = plt.subplots()#1,2,figsize=[14,7])
+N_jarvis = 679
+
+mGphot_cat_argsort = np.argsort(ttgd1['phot_g_mean_mag'])
+mGphot_cat = np.sort(ttgd1['phot_g_mean_mag'])
+
+mgPhot_argsort = np.argsort(phot['mG'][alive])
+mGphot_brightsort = np.sort(phot['mG'][alive])
+
+# ax = axs[0]
+ax.scatter(ttgd1['bp_rp'][mGphot_cat_argsort][:N_jarvis], 
+           ttgd1['phot_g_mean_mag'][mGphot_cat_argsort][:N_jarvis], c=ccc[-2],
+           label='brightest stars\nin catalog', zorder=1, rasterized=True)
+ax.scatter(phot['BP_RP'][alive][mgPhot_argsort][:N_jarvis],
+           phot['mG'][alive][mgPhot_argsort][:N_jarvis], c='0.2', 
+           label='brightest stars\nfrom isochrone\nmapping', zorder=2, rasterized=True)
+ax.scatter(phot['BP_RP'], phot['mG'], c='0.8', 
+           label='all stars\nfrom isochrone\nmapping', zorder=0, rasterized=True)
+
+
+ax.invert_yaxis()
+ax.set_xlabel(r'$G_{B_P} - G_{R_P}$')
+ax.set_ylabel(r'$G$')
+ax.legend(loc='lower left', fontsize=15)
+plt.savefig("plots/matching_catalog_mags.pdf", dpi=300, bbox_inches='tight')
+
+# ax = axs[1]
+
+
+# ax.hist(mGphot_cat[:N_jarvis], bins=bins,
+#         # histtype='step',
+#         color='k', alpha=0.2, 
+#         lw=3, label='brightest stars \nin catalog');
+
+
+
+# ax.hist(mGphot_brightsort[:N_jarvis], bins=bins,
+#         histtype='step', lw=3, 
+#         color='k', 
+#         label="brightest stars\nfrom isochrone \nmapping");
+
+# ax.legend(loc='upper left')
+
+# ax.set_xlabel(r'$G$')
+# ax.set_ylabel(r'Count')
+
 
 # %%
 #
