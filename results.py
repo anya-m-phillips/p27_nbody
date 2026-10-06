@@ -946,7 +946,7 @@ fig1_noise, fig1_include_binaries = None, False #<-- the gmm.py fit that decides
 # right panel: True = every unbound star, including the ones trim_new dropped before the fit
 #   (phi1 tails, distance outliers, early escapers), so left vs right is cocoon + trim.
 #   False = only the stars the gmm saw, so left vs right is exactly the cocoon.
-fig1_include_trimmed = False
+fig1_include_trimmed = True
 tt_fig1 = Table.read(table_path+case_label(fig1_noise, fig1_include_binaries)+".fits", format="fits")
 
 orbit_title_map = {o:t for o, t in zip(orbits, orbit_titles)}
@@ -1013,7 +1013,7 @@ for ax, sel, title in zip(axs, panel_selections, panel_titles):
     ax.scatter(fig1_y[sel][order], fig1_z[sel][order],
                c=fig1_n_sim[sel][order], cmap=cmap_fig1, norm=norm_fig1,
                s=1, rasterized=True)
-    # ax.set_title(title)
+    ax.text(0.05, 0.95, title, ha='left', va='top', transform=ax.transAxes)
     ax.set_xlabel(r'$y~[\rm kpc]$')
     ax.set_aspect('equal')
 
@@ -1027,5 +1027,5 @@ handles = [Line2D([], [], ls='', marker='o', markersize=8, color=ccc[ii], label=
            for ii, orbit in enumerate(orbits[reordered])]
 axs[1].legend(handles=handles, loc='lower right', fontsize=15)
 
-plt.savefig("plots/fig1_motiv_trim.pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/fig1_motiv_notrim.pdf", dpi=300, bbox_inches='tight')
 # %%
