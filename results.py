@@ -381,13 +381,13 @@ fig, axs = plt.subplots(2,3,figsize=[21,14])
 
 
 axs[0,0].axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, 
-                 color='k', alpha=0.1, label = "Values from Jarvis+26")
+                 color='k', alpha=0.1)
 axs[0,1].axhspan(jarvis_sphi2_c-jarvis_sphi2_c_err, jarvis_sphi2_c+jarvis_sphi2_c_err, 
                  color='k', alpha=0.1)
 axs[1,1].axhspan(jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_sphi2_ts+jarvis_sphi2_ts_err, 
                  color='k', alpha=0.1)
 axs[0,2].axhspan(jarvis_svgsr_c-jarvis_svgsr_c_err, jarvis_svgsr_c+jarvis_svgsr_c_err, 
-                 color='k', alpha=0.1)
+                 color='k', alpha=0.1, label = "Values from Jarvis+26")
 axs[1,2].axhspan(jarvis_svgsr_ts-jarvis_svgsr_ts_err, jarvis_svgsr_ts+jarvis_svgsr_ts_err, 
                  color='k', alpha=0.1)
 
@@ -406,7 +406,6 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     x = tt['Rvir0'][selection]
     x2 = tt2['Rvir0'][selection2]
     axs[0,0].plot(x, f_cocoons_this_orbit, 
-                label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
                 marker='o', color=ccc[ii], markersize=10, zorder=0)
@@ -440,7 +439,8 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     phi2_dispersions_this_orbit2 = tt2['S_ts'][:,0][selection2] #<-- TODO: translate back to angle from distance. 
     vgsr_dispersions_this_orbit2 = tt2['S_ts'][:,-1][selection2]
 
-    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
+    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0,
+                                  label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
     axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
 
 
@@ -449,10 +449,12 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
     axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
 
+axs[1,1].legend(loc='upper left', bbox_to_anchor=[-1.2, 1], 
+                title='Main simulation grid')
 
-
-axs[0,0].plot([None],[None], c='k', marker='o', markersize=10, label='system CMs')
-axs[0,0].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary orbits')
+axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, label='system CMs')
+axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary orbits')
+axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.4,1], ncol=3)
 
 axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
 axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
@@ -479,7 +481,7 @@ files = [
     'via_noise_binaries.fits',
     'via_noise_CoM.fits'
 ]
-markers = ['v', 'v', 'o', 'o']
+markers = ['o', 'o', 'v', 'v']
 labels=[
     'DESI/binaries',
     'DESI/CM',
@@ -487,6 +489,7 @@ labels=[
     'Via/CM'
 ]
 
+### different noise protocols
 for ii, f in enumerate(files):
     t_obs = Table.read(table_path+f, format='fits')
     row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')] # only making one comparison. 
@@ -506,11 +509,37 @@ for ii, f in enumerate(files):
                              edgecolor='k' if 'binaries' in labels[ii] else 'w', 
                              lw=1., s=200)
     axs[1,2].scatter(row['Rvir0'], row['S_ts'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                            edgecolor='k' if 'binaries' in labels[ii] else 'w', 
+                            edgecolor='k' if 'binaries' in labels[ii] else 'w',
                             lw=1., s=200)
+axs[0,0].legend(loc='lower left', bbox_to_anchor=[0.0,-1.25], fontsize=20,
+                title='Varied noise protocols')
 
 
-axs[0,0].legend(loc='upper left', bbox_to_anchor=[0.0,-0.15], fontsize=20)
+#   ADD THE SUPPLEMENTAL GD-1 SIMS (noiseless; gmm.py --supplemental True). gd1 colour,
+#   filled = CMs, open = with binary orbits, same as the observed points above.
+gd1_color = ccc[list(orbits[reordered]).index('gd1')]
+supp_markers = {'gd1_2xbinaries':'*', 'gd1_2xN':'D'}
+supp_labels = {'gd1_2xbinaries':r'$2\times f_{\rm bin}$', 'gd1_2xN':r'$2\times N$'}
+supp_sizes = {'gd1_2xbinaries':450, 'gd1_2xN':200}
+for case in [caseI, caseII]:
+    t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
+    is_bin = 'binaries' in case
+    label_addon = '/binaries' if is_bin else '/CM'
+    for row in t_supp:
+        sim = row['sim']
+        if sim=='gd1_2xN':
+            continue #<--- skipping until i make the denser version of this. 
+        style = dict(marker=supp_markers[sim], s=supp_sizes[sim], lw=2 if is_bin else 1, zorder=5,
+                     color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k')
+        axs[0,0].scatter(row['Rvir0'], row['f_cocoon'],  **style)
+        axs[0,1].scatter(row['Rvir0'], row['S_c'][0], label=supp_labels[sim]+label_addon, **style)
+        axs[0,2].scatter(row['Rvir0'], row['S_c'][-1], **style)
+        axs[1,1].scatter(row['Rvir0'], row['S_ts'][0], **style)
+        axs[1,2].scatter(row['Rvir0'], row['S_ts'][-1], **style)
+
+
+axs[0,1].legend(loc='lower right', bbox_to_anchor=[2, 1.],
+                title='Supplemental simulations', ncol=2)
 for ax in np.concatenate([axs[0], axs[1]]):
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')

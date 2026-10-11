@@ -23,6 +23,54 @@ noise.py             (imported as noise)     -- isochrone photometry + survey er
 
 `inspect_new_sims.py` and `noise.py` are function libraries (their `__main__` blocks are exploratory leftovers); `final_datasets.py` and `gmm.py` are the programs that produce the data products. `gmm.py` and `results.py` only read the pickles, so nothing downstream of `final_datasets.py` needs the raw simulation data.
 
+the two **supplemental simulations** (`gd1_2xbinaries`, `gd1_2xN`; see their own section) go through the same pipeline: `python final_datasets.py --which supplemental`, then `python gmm.py --noise None --include-binaries {False,True} --supplemental True`.
+
+
+# supplemental simulations (11 Oct)
+one-off GD-1 runs outside the main grid, to separate the effect of binaries and of N from the effect of density. 5 copies each; **only copy 0 is used so far** (all five `gd1_2xN` copies were checked once, see below).
+
+| sim | rvir0 | N stars | binaries | what changed vs the grid |
+|---|---|---|---|---|
+| `gd1_2xbinaries` | 1.5 pc | 14999 | 4491 (fbin 0.43) | binary fraction ~doubled (2665 binaries in the grid ICs) |
+| `gd1_2xN` | 6.0 pc | 30000 | 5295 (fbin 0.21) | twice the stars, same binary demographics |
+| `gd1_2xN_dense` | 3.0 pc | 30000 | 5295 (fbin 0.21) | **running as of 11 Oct.** the same population as `gd1_2xN` (identical `ICs/clust_30k.npz`), just denser |
+
+**`gd1_2xN_dense` (started 11 Oct, not analysed yet):** a 2xN run at rvir0 = 3 pc, at `/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/gd1_2xN_dense/<copy>/`, 5 copies. the question: a denser progenitor should make a more substantial cocoon. does the GMM then find a real cocoon, rather than the degenerate split it gives for `gd1_2xN` (see below)? it uses the same stellar population as `gd1_2xN`, so the comparison is density only. **it is deliberately not in `simspect.supplemental_sims` yet**, because `final_datasets.py --which supplemental` and `gmm.py --supplemental True` would raise on it until a copy reaches the present day (`data.270`). once one does, add `'gd1_2xN_dense': {'orbit':'gd1', 'rvir':3.0}` to the dict. watch whether its progenitor is also still bound at the present day: that's what seems to break the `gd1_2xN` fit.
+
+- **the stellar populations are neither `lm` nor `hm`**: each was re-drawn from the IMF. initial cluster masses 11184 / 17494 Msun (from `ICs/*.txt`). don't compare them to the grid as if only one thing changed without keeping that in mind.
+- same orbit, age (2700 Myr -> present day = `data.270`), `init_displacement`, potential and petar options as the grid's `gd1` (see `run_gd1.slurm`; the `-t 1000` there was extended by the resume scripts).
+- where: `/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/gd1_2xbinaries/<copy>/` and `.../gd1_2xN/<copy>/`, with the ICs and slurm scripts alongside. **netscratch, so the 90-day purge applies** -- copy them to holystore. completeness: `gd1_2xbinaries` copies 0, 1, 4 reach the present day (2, 3 stopped at 2320 / 2210 Myr); all five `gd1_2xN` copies do (run to 5000 Myr).
+- loading: `retrieve_sim_info` can't find them, so `inspect_new_sims.py` has `supplemental_sims` (name -> orbit, rvir), `supplemental_base_path`, `retrieve_supplemental_sim_info(sim, copy)` and `prepare_nbody_data_supplemental(sim, copies=(0,), ...)`, the analogue of `prepare_nbody_data_anycopy`. to add another one-off run, add a row to `supplemental_sims`.
+- pickles: `p27_data_dicts/gd1_2xbinaries_1.50.pickle`, `gd1_2xN_6.00.pickle` (filename is `<sim>_<rvir>`). each supplemental sim gets its own `default_rng(seed=42)`, so its noise draws don't depend on what ran before it (no noisy case has been fit on them, though).
+- GMM tables: `data/gmm_tables/noiseless_CoM_supplemental.fits` and `noiseless_binaries_supplemental.fits`, with the extra `sim` column. sanity plots go in the usual `p27_sanity_plots/<case>/` directory as `<sim>_<rvir>.pdf`.
+- plotted in `plots/summary_cocoon_ts_properties.pdf` in GD-1's colour, star = 2x binaries, diamond = 2xN, filled = CMs, open = with binary orbits.
+
+what the noiseless fits give, against the grid's `gd1` at the same rvir0 (the grid tables were checked against a refit with the current `gmm.py`; they match exactly, so the comparison is like for like):
+
+| | f_cocoon CoM | sigma_phi2,c CoM [deg] | sigma_vgsr,c CoM | f_cocoon binaries | sigma_vgsr,c binaries | sigma_vgsr,thin binaries |
+|---|---|---|---|---|---|---|
+| grid gd1, 1.5 pc | 0.083 | 0.82 | 1.48 | 0.114 | 6.03 | 0.51 |
+| `gd1_2xbinaries` | 0.119 | 1.19 | 2.68 | 0.173 | 11.68 | 0.69 |
+| grid gd1, 6 pc | 0.042 | 0.49 | 1.01 | 0.092 | 7.05 | 0.42 |
+| `gd1_2xN` | (0.293, see below) | (0.23) | (0.70) | 0.077 | 5.06 | 0.64 |
+
+(velocities in km/s.)
+- `gd1_2xbinaries`: the **CoM** cocoon is bigger and hotter too, not just the binaries one -- i.e. doubling the binaries changes the dynamics (binary heating / ejections), not only the RVs. binary fraction among the fitted (unbound, trimmed) systems is 0.258 vs 0.128 in the grid run.
+- `gd1_2xN`: **the progenitor survives to the present day** (6087 of 25409 systems unbound), whereas the grid's gd1 6 pc run has fully dissolved (every system unbound). so it's a younger stream with a bound progenitor and strong epicyclic feathers near it -- a different dynamical state, not "the same stream with more stars."
+  - ⚠️ its **noiseless CoM fit is degenerate**: the "cocoon" is only 1.2x wider than the thin stream in phi2 and is offset by 0.77 sigma (fails `results.py`'s `okay_mean` < 0.5), because the GMM splits the thin stream into its +phi2 and -phi2 halves (see the sanity plot). so its f_cocoon = 0.29 is not a cocoon fraction. it's still drawn on the summary figure, as the grid points are (no `okay_mean` filter there). the binaries fit (cocoon = binary orbital motion, as usual) is fine.
+  - **checked on all five copies (11 Oct), and it's not a fluke of copy 0.** the same gmm.py recipe (noiseless, Powell, same init and selection) gives a degenerate CoM split every time. the binaries fits are stable:
+
+    | copy | unbound | CoM f_c | CoM sigma_c / sigma_thin (phi2, v_phi1, v_phi2, v_gsr) | CoM max \|M_c\|/S_c | binaries f_c | binaries sigma_vgsr,c |
+    |---|---|---|---|---|---|---|
+    | 0 | 6087 | 0.293 | 1.24, 1.30, 1.15, 1.32 | 0.77 | 0.077 | 5.06 |
+    | 1 | 6271 | 0.544 | 1.17, 1.11, 1.05, 1.19 | 0.69 | 0.073 | 6.05 |
+    | 2 | 6397 | 0.245 | 1.20, 1.27, 1.20, 1.22 | 0.86 | 0.073 | 6.14 |
+    | 3 | 5512 | 0.500 | 1.05, 1.11, 1.06, 1.01 | 0.82 | 0.073 | 5.19 |
+    | 4 | 6789 | 0.374 | 1.07, 1.16, 1.01, 1.15 | 0.86 | 0.073 | 5.51 |
+
+    the CoM f_c jumps around between 0.25 and 0.54, while the two components stay within ~1.3x of each other in width. that's two near-equal gaussians splitting one population, not a thin stream plus a cocoon. ΔBIC still favours two components (690-910), which is just the stream not being a single gaussian. by eye, the "cocoon" component is the +phi2 side, concentrated in the tail just leading the bound progenitor (phi1 ≈ -35 to -20), where phi2 steps by ~0.5 deg across the progenitor and v_gsr has strong epicyclic feathers. a degree-5 `poly_straightening` over the whole stream can't follow that step. **so most likely a straightening problem for streams with a surviving progenitor**, not a dynamical cocoon. not tested: masking a window around the progenitor, or straightening each tail separately.
+  - the copy 1-4 pickles are `p27_data_dicts/gd1_2xN_copy<k>_6.00.pickle` (`python final_datasets.py --which supplemental --sims gd1_2xN --copies 1 2 3 4`). they aren't in any `gmm.py` table: `--supplemental True` only fits copy 0.
+
 # TODOs
 the live ones, collected here. details are in each script's section below.
 - ~~**`noise.py` / photometry:** star-by-star catalog photometry~~ **done** (30 Sep): `final_datasets.py` calls `noise.assign_photometry_from_catalog` against the BPW25 Gaia catalog for each stream and saves a second photometry + noise set (`catalog_photometry`, `noise_catalog_photometry`), and every noisy `gmm.py` case now uses those. open questions it left behind are in the "catalog photometry" subsection under `final_datasets.py`: which N-body stars are eligible to be matched, dereddening, `p_mem`, and the fact that the noisy sample size now *is* the catalog size (46 stars for C-19).
@@ -31,6 +79,7 @@ the live ones, collected here. details are in each script's section below.
 - **`gmm.py` / model choice:** the BIC is **in** (30 Sep): `gmm.py` fits a single gaussian too and writes `BIC_one` / `BIC_two` columns (see the model choice section). `BIC_one < BIC_two` = one component preferred = a **non-detection of a cocoon**. still to do: re-run every case so the tables have the columns, use them in `results.py`, and maybe save the one-component params, `N = len(x_data)` and `result.fun` too. this matters more with catalog photometry, because the noisy fits have N = 46 (c19), 129 (pa5), 144 (jet), 334 (aau), 1578 / 679 (gd1 via / desi), and several of the small-N fits have already come out degenerate (see the GMM results bullet in the bugs list).
 - `gmm.py`: AAU at rvir0 = 6 pc gives a weird result; traced to the 2 rtid tidal boundary, and the decision is to live with it rather than relax the cut.
 - `gmm.py`: run all noise cases (see the case table below); rewrite the results notebook (`results.py`); add stuff to overleaf.
+- supplemental sims (`gd1_2xbinaries`, `gd1_2xN`): copy them off netscratch; use the other copies; noisy cases; decide what to do with the degenerate `gd1_2xN` CoM fit (it happens in all 5 copies; probably straightening around the surviving progenitor). when `gd1_2xN_dense` (rvir0 = 3 pc, running) finishes, add it to `simspect.supplemental_sims` and run it through. see their section.
 - `get_init_displacements.py`: rewrite so orbit rows are looked up by the short keys (see its section -- right now it silently writes an empty file).
 - observed-frame straightening: not 100% convinced it's successful for M3 or Pal 5, which have notable diverging tails that end up in the cocoon. (M3 is currently dropped from the pipeline anyway.)
 - `m3` frame: may settle for "stream on an M3-like orbit" (see the gala gotchas section).
@@ -98,6 +147,7 @@ integrates every orbit in `FINAL_ics_nolmc.csv` for peri/apo/e (`plots/orbit_sum
 ## `inspect_new_sims.py` (imported as `simspect`)
 functions for loading N-body data, putting it in observed stream frames, and straightening the tracks. contents:
 - `prepare_nbody_data(path, include_photometry, i, apo, init_displacement, **kwargs)`: wraps `paf.load_core` + `paf.intrinsic_stream_data_v3`; assumes snapshots every 10 Myr. returns `core, data_dict, CMdict, lumdict, inMW, trim` (plus `G, BP, RP, z` if `include_photometry=True`, which is the slow per-star blackbody path, not the isochrone). extra kwargs go to `intrinsic_stream_data_v3` -- this is how `N_rtid_boundary` gets in.
+- `supplemental_sims`, `retrieve_supplemental_sim_info(sim, copy)`, `prepare_nbody_data_supplemental(sim, copies=(0,), verbose, **kwargs)`: the loaders for the one-off runs outside the grid (see the supplemental simulations section). same return signature as `prepare_nbody_data_anycopy`.
 - `prepare_nbody_data_anycopy(orbit, stellar_pop, rvir_index, copies, verbose, **kwargs)`: same thing but loops `copy` and returns the first realization that actually finished. an unfinished copy still has a (short) `data.core`, so it gets all the way into `intrinsic_stream_data_v3` before raising `FileNotFoundError` on the missing `data.<file_index>` -- that exception is the signal. dedupes on path because `retrieve_sim_info` ignores `copy` for `circ`. returns `(prepare_nbody_data output), path, apo, age, init_displacement, copy`. use this instead of hand-rolling fallbacks.
 - `rotation_matrix(a,b,c)`: rotate by a,b,c about x,y,z. composed `Rz @ Ry @ Rx`, i.e. x rotation applied first -- chosen for movie purposes.
 - `streamframe_coords_observed(orbit, data_dict, prog_tab)`: the observed-frame transform. returns `(SkyCoord, frame)`. see the stream frame section.
@@ -127,7 +177,7 @@ the `# SCRATCH::::` cells between `trim_obstream_percentile` and `assign_photome
 `assign_photometry_from_catalog` is on the live path now: `final_datasets.py` calls it once per sim, and its output is what the noisy `gmm.py` cases fit. see the catalog photometry subsection under `final_datasets.py`.
 
 ## `final_datasets.py`
-assembles one data dictionary per simulation and pickles it. imports `paf`, `simspect`, `noise`. no `__main__` guard (it's a script). what it does, per orbit x rvir:
+assembles one data dictionary per simulation and pickles it. imports `paf`, `simspect`, `noise`. no `__main__` guard (it's a script). the per-sim work is `build_data_dict(orbit, prepared, catalog, rng)` and the pickling `dump_data_dict(data_dict, name, rvir)`; `--which {all,grid,supplemental}` picks which loop runs (default `all`; read with `parse_known_args`, so it still runs as a notebook). the supplemental loop does `--sims` (default: every `simspect.supplemental_sims` entry) x `--copies` (default `0`), each with its own seed-42 generator. copy 0 is pickled as `<sim>_<rvir>`, and copy k as `<sim>_copy<k>_<rvir>`. what it does, per orbit x rvir:
 - **which sims:** `orbits = ['gd1','aau','pa5','jet','c19']` -- **M3 is dropped**, circ is not included. `stellar_pop='hm'` only (`mass_index = 1`). copies tried in order 0..4, except `aau`, which tries 4..0 to dodge a misbehaving copy. (the `if orbit != 'gd1': continue` used to re-run GD-1 alone is still there, commented out.)
 - **progenitor removal:** `N_rtid_boundary = 2.0` for every orbit -- "unbound" = outside 2x the petar tidal radius, to make sure the progenitor is fully removed and stars that get recaptured as rtid re-expands aren't counted. (an orbital-phase-dependent 1x/2x choice was tried and abandoned. the orbital phase is still computed, though no longer printed, and it's computed at the wrong time -- see the bugs list.)
 - **coordinates:** `coords_obs` (CoM `SkyCoord`), then two straightened versions: `sc` from CoM, and `sc_primaries` from the luminous component with `PM_treatment='CoM'` hardcoded -- i.e. binaries get the **primary's** instantaneous RV/phi2/distance but the **CoM** proper motions (decided 24 Sep). both are then `poly_straightening`-ed. (`streamframe_coords_observed` is called twice in a row with the same arguments, which is harmless but redundant.)
@@ -197,6 +247,9 @@ a case is set by three flags at the top of `__main__`, and they build `case_name
 | `noise` | `None`, `'via'`, `'via10hr'`, `'desi'` | `None` -> `noiseless`. otherwise adds the saved noise draw and applies that survey's selection (below). the inline comment only lists None/via/desi, but `via10hr` works too since it's just a key suffix |
 | `include_binaries` | `True` / `False` | `binaries` uses `sc_straighter_primaries` (binary orbital motion in the RVs); `CoM` uses `sc_straighter`. picks the suffix `sfx = '_primaries' if include_binaries else ''`, which selects the coords, `trim_new{sfx}`, and all four catalog products, for noiseless and noisy cases alike |
 | `constrain_widths` | `True` / `False` | adds `_constrained`: stage-2 SLSQP with the sigma-ratio constraint. `False` = Powell only, unconstrained |
+| `supplemental` | `True` / `False` | fit the supplemental sims instead of the grid; the table is `<case_name>_supplemental.fits` |
+
+the flags can also be set from the command line (`--noise None`, `--include-binaries True`, `--constrain-widths`, `--supplemental`, `--make-plots`, each taking `True`/`False`); the values in the file are the defaults. the loop is over a flat list of `(sim, orbit, rvir)` runs, where `sim` names the pickle (== `orbit` for the grid).
 
 - **fit dimensions:** `keys = ['phi2', 'v_phi1', 'v_phi2', 'v_gsr']` -- phi2 in **degrees** (not `d_phi2`), and the proper motions converted to **transverse velocities** (km/s, using the CoM distance) before straightening. with noise, the PM noise is converted to v_phi1/v_phi2 with the same (assumed-perfect) distances.
 - **noisy cases read the catalog-based products:** `phot = data_dict['catalog_photometry'+sfx]`, `noise_dict = data_dict['noise_catalog_photometry'+sfx]` (likewise `cut_for_*` and `matched_to_*`). the isochrone-based `phot`/`noise` lines are commented out just above them. switching back needs the old `use` lines too (also commented out), since the isochrone path depends on `alive`/`acceptable_G` and has no `matched` mask.
@@ -210,13 +263,13 @@ a case is set by three flags at the top of `__main__`, and they build `case_name
     - in practice none of the cuts bite: N fit = catalog size (see the table in the catalog photometry subsection).
   - `desi` fits **GD-1 only**.
 - **orbits:** same five as `final_datasets.py`; no M3.
-- **output:** `data/gmm_tables/<case_name>.fits` with columns `orbit`, `Rvir0`, `M_ts`, `S_ts` (thin-stream means/sigmas, 4-vectors in `keys` order), `M_c`, `S_c` (cocoon), `f_cocoon`, `BIC_one`, `BIC_two` (tables written before 30 Sep don't have the BIC columns). sanity plots (points coloured by p_cocoon + histograms) to `/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/<case_name>/<orbit>_<rvir>.pdf` when `make_plots=True` -- those directories have to exist already. the `# %%` cells after the table write are quick-look plots.
+- **output:** `data/gmm_tables/<case_name>.fits` with columns `sim` (added 11 Oct; older tables don't have it), `orbit`, `Rvir0`, `M_ts`, `S_ts` (thin-stream means/sigmas, 4-vectors in `keys` order), `M_c`, `S_c` (cocoon), `f_cocoon`, `BIC_one`, `BIC_two` (tables written before 30 Sep don't have the BIC columns). sanity plots (points coloured by p_cocoon + histograms) to `/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/<case_name>/<orbit>_<rvir>.pdf` when `make_plots=True` -- those directories have to exist already. the `# %%` cells after the table write are quick-look plots.
 - the table doesn't record `keys`, so nothing tells you from the file itself whether column 0 is phi2 or d_phi2 -- the "translate back to angle from distance" TODOs in `results.py` suggest some earlier tables were fit in `d_phi2`. regenerate rather than trust an old table if it matters.
 
 **model choice:** each sim also gets a single-component gaussian fit, and both BICs go in the table. the expectation is that for noisy/down-sampled data some sims will prefer one component, which gets called a **non-detection of a cocoon**. see the model choice section below.
 
 ## `results.py`
-notebook-style cells making the (nice) plots from the tables and pickles: `f_cocoon` / cocoon + thin sigma_phi2, sigma_vgsr vs rvir0 per orbit (ordered by pericenter), CoM vs binaries overlay, binary fractions in the cocoon vs thin stream (`plots/binary_fractions.pdf`), and the demo cocoon-separation panels. imports `gmm` for the membership functions. rows are filtered with `okay_mean = |M_c| < 0.5 S_c` in every dimension, i.e. a fit whose "cocoon" is displaced off-track is dropped from the plot rather than shown. TODO: rewrite.
+notebook-style cells making the (nice) plots from the tables and pickles: `f_cocoon` / cocoon + thin sigma_phi2, sigma_vgsr vs rvir0 per orbit (ordered by pericenter), CoM vs binaries overlay, with the GD-1 rvir0 = 0.75 DESI/Via points and the supplemental sims on top (`plots/summary_cocoon_ts_properties.pdf`; reads the `noiseless_*_supplemental.fits` tables), binary fractions in the cocoon vs thin stream (`plots/binary_fractions.pdf`), and the demo cocoon-separation panels. imports `gmm` for the membership functions. rows are filtered with `okay_mean = |M_c| < 0.5 S_c` in every dimension, i.e. a fit whose "cocoon" is displaced off-track is dropped from the plot rather than shown. TODO: rewrite.
 
 ⚠️ `results.py` still reads the **unsuffixed** catalog keys (`catalog_photometry`, `cut_for_catalog_photometry`, ... around lines 163 and 501, and in `demo_data`), so its noisy `binaries` panels use the CoM-trim photometry, unlike `gmm.py`. give it the same `sfx` switch.
 
@@ -738,7 +791,7 @@ in rough order of how much they'd hurt:
 # logistics:
 ## simulation data:
 - storage (default, `extended_grid_info(scratch=False)`): `/n/holystore01/LABS/itc_lab/Users/amphillips/extended_grid/` -- complete, not purged.
-- scratch: `/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/` -- 90-day purge, actively losing snapshots. don't use.
+- scratch: `/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/` -- 90-day purge, actively losing snapshots. don't use. **exception:** the supplemental sims (`gd1_2xbinaries/`, `gd1_2xN/`) only live here so far -- copy them to holystore.
 - the circular orbit simulation is from the [Phillips+26](https://iopscience.iop.org/article/10.3847/1538-4357/ae680b) grid, stored at `/n/holystore01/LABS/conroy_lab/Lab/amphillips/finished_grid/` in the directories that begin with 0-7 (see `extended_grid_info`).
 
 ## derived data products:

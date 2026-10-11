@@ -166,237 +166,275 @@ masses = ['lm','hm']
 rvirs = [0.75, 1.5, 3, 6]
 
 
-print("beginning loop...")
-for ii, orbit in enumerate(orbits): #<--- this i can do later i think. 
-    # if orbit !='gd1': #<-- hello me coming back and redoing this later..
-    #     continue
-
-    if orbit !='aau':
-        copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice there are <=5x copies per sim.
-    else:
-        copy_options = [4,3,2,1,0] #<-- a misbehaving copy of AAU.... 
-
-    mass_index = 1 # <-- HIGH mass stellar population... should maximize cocoon contributions from stellar evolution-related kicks i think, and also in general give us clusters that dissolve more quickly (ie more stars to work with in the stream)
-
-    pr = prog_tab[prog_tab['name']==orbit] #<-- prog row
-    disp = [pr['x'][0], pr['y'][0], pr['z'][0], pr['vx'][0], pr['vy'][0], pr['vz'][0]]
-    orbit_obj = paf.integrate_prog_orbit(disp, steps=10000, dt=1*u.Myr)
-
-    peri = orbit_obj.pericenter().to(u.kpc).value
-    apo = orbit_obj.apocenter().to(u.kpc).value
+def build_data_dict(orbit, prepared, catalog, rng):
+    """
+    everything after loading one sim: observed-frame coords, straightening, the percentile
+    trims, isochrone photometry + noise, and catalog photometry + noise (once per trim).
+    `prepared` is the (core, data_dict, CMdict, lumdict, inMW, trim) tuple from 
+    simspect.prepare_nbody_data[_anycopy/_supplemental]; `catalog` is noise.load_gaia_catalog(orbit).
+    draws on `rng` in the order described in the readme. returns data_dict, updated in place.
+    """
+    core, data_dict, CMdict, lumdict, inMW, trim = prepared
+    t = catalog
 
 
-    x,y,z = disp[:3]
-    r = np.sqrt(x**2 + y**2 + z**2)
+    # print("getting stream coordinates")
+    coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
+    distances = coords_obs.distance
+    data_dict['coords_obs'] = coords_obs
 
-    orbital_phase = (r - peri) / (apo - peri)
-
-    # if orbital_phase<0.5:
-    #     tidal_boundary = 2.0 #<-- if we're closer to pericenter, make the tidal boundary 2 rtid since things will be recaptured. this would be gd1 and jet.
-    #     print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
-
-    # if orbital_phase>0.5:
-    #     tidal_boundary = 1.0
-    # if orbital_phase>1:
-    #     print("something's wrong dawg")
-
-    ### actually, determining that I always want to 
-    # cut at 2x the tidal radius to completely remove the progenitor. 
-    # will just have to deal with the fact that AAU is messed up :/ 
-    tidal_boundary = 2.0
-
-    print(orbit)#, ": orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary) #<--- init orbital phase, not actually what i want to use!!
-    t = noise.load_gaia_catalog(orbit)
+    # ** this is always going to be centers of mass. gets returned as an immutible coordinate object, idk. 
+    coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
 
 
-    for rvir_index in tqdm(range(4)):
-        # if rvir_index!=0:
-        #     continue
-        # print(rvir_index)
+    # print("getting m0s and types")
+    stellar_types = lumdict['type']
+    nonrem = stellar_types<10
+    unbound = ~CMdict['in_rtid'] #<-- flag what's unbound from the cluster. 
+    data_dict['unbound'] = unbound
+    data_dict['nonrem'] = nonrem
+    m0s = np.asarray(lumdict['m0_zams'], dtype=np.float64) #<-- use masses from beginning of simulations
+    # L, R = lumdict['L'].to(u.Lsun), lumdict['R'].to(u.Rsun)
+    # Teff = noise.get_Teff(R, L).to(u.K)
+
+    # straightened coords. first with an orbit, 
+    # print("straightening coords")
+    sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
 
 
-        # print("loading data")
-        (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
-            simspect.prepare_nbody_data_anycopy(
-                orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
-                include_photometry=False, N_rtid_boundary = tidal_boundary, #<--- not sure what i'm going to use for tthis: 
-                verbose=False #<-- just prints which copy
-            )
+    # print("loading info about binaries")
+    # straightened coords with primaries 
+    PM_treatment = 'CoM'#<-- DECISION ABOUT PROPER MOTIONS BEING MADE HERE!!! 'CoM' or 'primary
+    sc_primaries = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab,
+                                                                lumdict=lumdict, 
+                                                                PM_treatment=PM_treatment 
+                                                                )
 
 
-        # print("getting stream coordinates")
-        coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab) #<-- i think i straight up never actually need these. 
-        distances = coords_obs.distance
-        data_dict['coords_obs'] = coords_obs
-
-        # ** this is always going to be centers of mass. gets returned as an immutible coordinate object, idk. 
-        coords_obs, sf = simspect.streamframe_coords_observed(orbit, CMdict, prog_tab)
-
-
-        # print("getting m0s and types")
-        stellar_types = lumdict['type']
-        nonrem = stellar_types<10
-        unbound = ~CMdict['in_rtid'] #<-- flag what's unbound from the cluster. 
-        data_dict['unbound'] = unbound
-        data_dict['nonrem'] = nonrem
-        m0s = np.asarray(lumdict['m0_zams'], dtype=np.float64) #<-- use masses from beginning of simulations
-        # L, R = lumdict['L'].to(u.Lsun), lumdict['R'].to(u.Rsun)
-        # Teff = noise.get_Teff(R, L).to(u.K)
-
-        # straightened coords. first with an orbit, 
-        # print("straightening coords")
-        sc = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab) #<-- sc is returned as a DICTIONARY! 
+    # print("trimming and saving criteria:")
+    ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
+    inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. keep everything true but make the mask so functions downstream still work. 
+    trim_new = trim_obstream_percentile(sc) 
+    trim_new_primaries = trim_obstream_percentile(sc_primaries) # oops i actually do still care about this......
+    data_dict['inMW_na'] = inMW_na
+    data_dict['trim_new'] = trim_new
+    data_dict['trim_new_primaries'] = trim_new_primaries
 
 
-        # print("loading info about binaries")
-        # straightened coords with primaries 
-        PM_treatment = 'CoM'#<-- DECISION ABOUT PROPER MOTIONS BEING MADE HERE!!! 'CoM' or 'primary
-        sc_primaries = simspect.straightened_obscoords_orbit_interp(orbit, CMdict, prog_tab,
-                                                                    lumdict=lumdict, 
-                                                                    PM_treatment=PM_treatment 
-                                                                    )
-
-
-        # print("trimming and saving criteria:")
-        ### NEW scheme for trimming the stream just dropped, no 'inMW' necessary now. 
-        inMW_na = np.ones(len(sc['phi1']), dtype=bool) #<-- i don't actually want to do a "inMW" trim here. keep everything true but make the mask so functions downstream still work. 
-        trim_new = trim_obstream_percentile(sc) 
-        trim_new_primaries = trim_obstream_percentile(sc_primaries) # oops i actually do still care about this......
-        data_dict['inMW_na'] = inMW_na
-        data_dict['trim_new'] = trim_new
-        data_dict['trim_new_primaries'] = trim_new_primaries
-
-
-        # print("straightening with polynomial")
-        sc_straighter = simspect.poly_straightening(sc, tc=[inMW_na, trim_new]) #<-- provide tc (trim criteria) so that the fitter doesn't lock to outliers but they're still included in the dataset. can exclude them later. 
-        sc_straighter_primaries = simspect.poly_straightening(sc_primaries, tc=[inMW_na, trim_new]) #<-- *not trim_new_primaries. 
+    # print("straightening with polynomial")
+    sc_straighter = simspect.poly_straightening(sc, tc=[inMW_na, trim_new]) #<-- provide tc (trim criteria) so that the fitter doesn't lock to outliers but they're still included in the dataset. can exclude them later. 
+    sc_straighter_primaries = simspect.poly_straightening(sc_primaries, tc=[inMW_na, trim_new]) #<-- *not trim_new_primaries. 
 
 
 
 
 
-        ##### GETTING A HANDLE ON THE CM VS PRIMARY TREATMENT FOR WHAT PROPER MOTIONS 
+    ##### GETTING A HANDLE ON THE CM VS PRIMARY TREATMENT FOR WHAT PROPER MOTIONS 
 
-        # use = unbound & trim_new
-        # fig, ax = plt.subplots(figsize=[9,3])
-        # ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
-        #             c='k', s=.01)
-        # ax.set_xlim(-20,20)
+    # use = unbound & trim_new
+    # fig, ax = plt.subplots(figsize=[9,3])
+    # ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
+    #             c='k', s=.01)
+    # ax.set_xlim(-20,20)
 
-        #   THE BINARIES GET: 
-        # fig, ax = plt.subplots()
-        # nsin = data_dict['nsingles']
+    #   THE BINARIES GET: 
+    # fig, ax = plt.subplots()
+    # nsin = data_dict['nsingles']
 
-        # ## plot binaries
-        # ts = trim_new[:nsin] #<-- note that the "trim" criteria with primary treatment will be different from the CM treatment and therefore also change depending on the PM treatment. 
-        # tb = trim_new[nsin:] #<-- note that the "trim" criteria with primary treatment will be different from the CM treatment and therefore also change depending on the PM treatment. 
+    # ## plot binaries
+    # ts = trim_new[:nsin] #<-- note that the "trim" criteria with primary treatment will be different from the CM treatment and therefore also change depending on the PM treatment. 
+    # tb = trim_new[nsin:] #<-- note that the "trim" criteria with primary treatment will be different from the CM treatment and therefore also change depending on the PM treatment. 
 
-        # if PM_treatment=='primary':
-        #     ax.set_title("binaries have instantaneous proper motion")
-        # if PM_treatment=='CoM':
-        #     ax.set_title("binaries have cm proper motion")
-        # ax.scatter(sc_straighter_primaries['v_gsr'][nsin:][tb], sc_straighter_primaries['pm_phi2'][nsin:][tb],
-        #            c='k', label='binaries')
+    # if PM_treatment=='primary':
+    #     ax.set_title("binaries have instantaneous proper motion")
+    # if PM_treatment=='CoM':
+    #     ax.set_title("binaries have cm proper motion")
+    # ax.scatter(sc_straighter_primaries['v_gsr'][nsin:][tb], sc_straighter_primaries['pm_phi2'][nsin:][tb],
+    #            c='k', label='binaries')
 
-        # ## plot singles
-        # ax.scatter(sc_straighter_primaries['v_gsr'][:nsin][ts], sc_straighter_primaries['pm_phi2'][:nsin][ts],
-        #            c='tomato', label='single stars')
-        # ax.set_xlabel(r'$\Delta v_{\rm GSR}~[\rm km~s^{-1}]$')
-        # ax.set_ylabel(r'$\Delta \mu_{\phi_2}~[\rm mas~yr^{-1}]$')
-        # ax.set_ylim(-0.45, 0.45)
-        # ax.set_xlim(-20,20)
-        # ax.legend(loc='upper left', bbox_to_anchor=(1,1))
+    # ## plot singles
+    # ax.scatter(sc_straighter_primaries['v_gsr'][:nsin][ts], sc_straighter_primaries['pm_phi2'][:nsin][ts],
+    #            c='tomato', label='single stars')
+    # ax.set_xlabel(r'$\Delta v_{\rm GSR}~[\rm km~s^{-1}]$')
+    # ax.set_ylabel(r'$\Delta \mu_{\phi_2}~[\rm mas~yr^{-1}]$')
+    # ax.set_ylim(-0.45, 0.45)
+    # ax.set_xlim(-20,20)
+    # ax.legend(loc='upper left', bbox_to_anchor=(1,1))
 
-        # print("saving straightened coords")
-        data_dict['sc_straighter'] = sc_straighter # <--- same length as coords_obs. 
-        data_dict['sc_straighter_primaries'] = sc_straighter_primaries
-        ###### get noise: 
-        
+    # print("saving straightened coords")
+    data_dict['sc_straighter'] = sc_straighter # <--- same length as coords_obs. 
+    data_dict['sc_straighter_primaries'] = sc_straighter_primaries
+    ###### get noise: 
+    
 
-        #   "rigorous" and solid way to get photometry by mapping zams masses to 
-        #   a MIST isochrone:
-        # print("isochrone-based photometry sampling")
-        iso_phot, on_iso = noise.isochrone_photometry(m0s, m0_grid, iso_table)
-        G  = iso_phot['Gaia_G_EDR3']
-        BP = iso_phot['Gaia_BP_EDR3']
-        RP = iso_phot['Gaia_RP_EDR3']
-        log_Teff = iso_phot['log_Teff']
-        BP_RP = BP-RP
-        z = noise.gaia_g_to_lsst_z(G, BP_RP)
-
-
-        mz = paf.m_from_M(z, dist=distances)
-        mG = paf.m_from_M(G, dist=distances)
+    #   "rigorous" and solid way to get photometry by mapping zams masses to 
+    #   a MIST isochrone:
+    # print("isochrone-based photometry sampling")
+    iso_phot, on_iso = noise.isochrone_photometry(m0s, m0_grid, iso_table)
+    G  = iso_phot['Gaia_G_EDR3']
+    BP = iso_phot['Gaia_BP_EDR3']
+    RP = iso_phot['Gaia_RP_EDR3']
+    log_Teff = iso_phot['log_Teff']
+    BP_RP = BP-RP
+    z = noise.gaia_g_to_lsst_z(G, BP_RP)
 
 
-        ### UNCOMMENT THE FOLLOWING EVENTUALLY
-        alive = on_iso #<-- removes high mass things that are remnants; should already be removed by remnants cut tho? 
-        acceptable_G_viamock = (mG>5) & (mG<30)
-        data_dict['alive'] = alive
-        data_dict['acceptable_G'] = acceptable_G_viamock
+    mz = paf.m_from_M(z, dist=distances)
+    mG = paf.m_from_M(G, dist=distances)
 
-        photdict = {
-            "G":G,
-            "BP_RP":BP_RP,
-            "z":z,
-            'mG':mG,
-            'mz':mz,
-            'log_Teff':log_Teff
+
+    ### UNCOMMENT THE FOLLOWING EVENTUALLY
+    alive = on_iso #<-- removes high mass things that are remnants; should already be removed by remnants cut tho? 
+    acceptable_G_viamock = (mG>5) & (mG<30)
+    data_dict['alive'] = alive
+    data_dict['acceptable_G'] = acceptable_G_viamock
+
+    photdict = {
+        "G":G,
+        "BP_RP":BP_RP,
+        "z":z,
+        'mG':mG,
+        'mz':mz,
+        'log_Teff':log_Teff
+    }
+    data_dict['phot'] = photdict #<-- add a bunch more numbers
+
+    #### RV, POSITION, and PM errors
+    # print("getting noise")
+    noise_dict, _ = survey_noise(mG, mz, log_Teff, rng)
+    data_dict['noise'] = noise_dict
+
+
+    #------------------------------------------------------------#
+    #   also want to save info using the updated                 #
+    #   photometry protocol, i.e., matching to a                 #
+    #   catalog.                                                 # 
+    #------------------------------------------------------------#
+    isotrack = noise.isochrone_cmd_track(isocmd) #<-- make a teff query-able track from the cmd. 
+    # N_jarvis = 679 #<-- length of jarvis catalog. 
+    N = len(t) # if orbit != 'gd1' else N_jarvis #<-- **going to impose this later!!! 
+
+    # done twice: once with the CoM trim (keys as before) and once with the
+    #   trim that includes binary orbital motion (keys get '_primaries'), so
+    #   gmm.py can pick both the trim and the noise products with one suffix.
+    #   CoM goes first so its noise draw on `rng` is the same as before.
+    for trim, suffix in [(trim_new, ''), (trim_new_primaries, '_primaries')]:
+        # filtering out bound/trimmed stars so we don't waste good photometry on them idk
+        cut = unbound & trim & nonrem
+        iso_phot_use = {key:iso_phot[key][cut] for key in iso_phot.keys()} #<---- trim it down here maybe. same w distances eventually.
+        distances_use = distances[cut]
+        phot_cheating, matched_flag = noise.assign_photometry_from_catalog(iso_phot_use,
+                                                                           distances_use,
+                                                                           catalog=t,
+                                                                           track=isotrack,
+                                                                           N=N)
+
+        # placeholder dictionary with all the keys but empty arrays
+        full_phot_dict = {
+            k:np.full(len(photdict['G']), fill_value=np.nan) for k in phot_cheating.keys()
         }
-        data_dict['phot'] = photdict #<-- add a bunch more numbers
 
-        #### RV, POSITION, and PM errors
-        # print("getting noise")
-        noise_dict, _ = survey_noise(mG, mz, log_Teff, rng)
-        data_dict['noise'] = noise_dict
+        ### go throught and replace all of the filled nans with the matched values:
+        for key in phot_cheating.keys():
+            full_phot_dict[key][cut] = phot_cheating[key]
+
+        data_dict['catalog_photometry'+suffix] = full_phot_dict
+        data_dict['cut_for_catalog_photometry'+suffix] = cut
+        data_dict['matched_to_catalog_photometry'+suffix] = matched_flag  #<-- length determined after catalog photometry (cut.sum()).
+
+        ### THEN get the noise based on fudged stellar population.
+        noise_dict_cat, _ = survey_noise(full_phot_dict['mG'], full_phot_dict['mz'], full_phot_dict['log_Teff'], rng)
+        data_dict['noise_catalog_photometry'+suffix] = noise_dict_cat
+    return data_dict
+
+datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/' #<-- dump everything in scratch until I figure out how large the files will be all together...
+def dump_data_dict(data_dict, name, rvir):
+    """pickle to <datapath>/<name>_<rvir:.2f>.pickle. name is the orbit for the grid, the sim name for supplemental sims."""
+    with open(datapath+'%s_%.2f.pickle'%(name, rvir), 'wb') as handle:
+        pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-        #------------------------------------------------------------#
-        #   also want to save info using the updated                 #
-        #   photometry protocol, i.e., matching to a                 #
-        #   catalog.                                                 # 
-        #------------------------------------------------------------#
-        isotrack = noise.isochrone_cmd_track(isocmd) #<-- make a teff query-able track from the cmd. 
-        # N_jarvis = 679 #<-- length of jarvis catalog. 
-        N = len(t) # if orbit != 'gd1' else N_jarvis #<-- **going to impose this later!!! 
+### which sims to (re)make: the main grid, the supplemental sims (simspect.supplemental_sims), or both.
+#   parse_known_args so this still runs as a notebook (default 'all').
+parser = argparse.ArgumentParser()
+parser.add_argument('--which', choices=['all', 'grid', 'supplemental'], default='all')
+# supplemental sims only: which sims and which copies. copy 0 -> <sim>_<rvir>.pickle, copy k -> <sim>_copy<k>_<rvir>.pickle
+parser.add_argument('--sims', nargs='+', default=list(simspect.supplemental_sims))
+parser.add_argument('--copies', nargs='+', type=int, default=[0])
+args, _ = parser.parse_known_args()
 
-        # done twice: once with the CoM trim (keys as before) and once with the
-        #   trim that includes binary orbital motion (keys get '_primaries'), so
-        #   gmm.py can pick both the trim and the noise products with one suffix.
-        #   CoM goes first so its noise draw on `rng` is the same as before.
-        for trim, suffix in [(trim_new, ''), (trim_new_primaries, '_primaries')]:
-            # filtering out bound/trimmed stars so we don't waste good photometry on them idk
-            cut = unbound & trim & nonrem
-            iso_phot_use = {key:iso_phot[key][cut] for key in iso_phot.keys()} #<---- trim it down here maybe. same w distances eventually.
-            distances_use = distances[cut]
-            phot_cheating, matched_flag = noise.assign_photometry_from_catalog(iso_phot_use,
-                                                                               distances_use,
-                                                                               catalog=t,
-                                                                               track=isotrack,
-                                                                               N=N)
+if args.which in ['all', 'grid']:
+    print("beginning loop...")
+    for ii, orbit in enumerate(orbits): #<--- this i can do later i think. 
+        # if orbit !='gd1': #<-- hello me coming back and redoing this later..
+        #     continue
 
-            # placeholder dictionary with all the keys but empty arrays
-            full_phot_dict = {
-                k:np.full(len(photdict['G']), fill_value=np.nan) for k in phot_cheating.keys()
-            }
+        if orbit !='aau':
+            copy_options = [0,1,2,3,4] #<-- order in which to try out copies. in practice there are <=5x copies per sim.
+        else:
+            copy_options = [4,3,2,1,0] #<-- a misbehaving copy of AAU.... 
 
-            ### go throught and replace all of the filled nans with the matched values:
-            for key in phot_cheating.keys():
-                full_phot_dict[key][cut] = phot_cheating[key]
+        mass_index = 1 # <-- HIGH mass stellar population... should maximize cocoon contributions from stellar evolution-related kicks i think, and also in general give us clusters that dissolve more quickly (ie more stars to work with in the stream)
 
-            data_dict['catalog_photometry'+suffix] = full_phot_dict
-            data_dict['cut_for_catalog_photometry'+suffix] = cut
-            data_dict['matched_to_catalog_photometry'+suffix] = matched_flag  #<-- length determined after catalog photometry (cut.sum()).
+        pr = prog_tab[prog_tab['name']==orbit] #<-- prog row
+        disp = [pr['x'][0], pr['y'][0], pr['z'][0], pr['vx'][0], pr['vy'][0], pr['vz'][0]]
+        orbit_obj = paf.integrate_prog_orbit(disp, steps=10000, dt=1*u.Myr)
 
-            ### THEN get the noise based on fudged stellar population.
-            noise_dict_cat, _ = survey_noise(full_phot_dict['mG'], full_phot_dict['mz'], full_phot_dict['log_Teff'], rng)
-            data_dict['noise_catalog_photometry'+suffix] = noise_dict_cat
+        peri = orbit_obj.pericenter().to(u.kpc).value
+        apo = orbit_obj.apocenter().to(u.kpc).value
 
-        ### dump everything in scratch until I figure out how large the files will be all together...
-        datapath='/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
-        rvir = rvirs[rvir_index]
-        # print("dumping to pkl file...")
-        with open(datapath+'%s_%.2f.pickle'%(orbit, rvir), 'wb') as handle:
-            pickle.dump(data_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        x,y,z = disp[:3]
+        r = np.sqrt(x**2 + y**2 + z**2)
+
+        orbital_phase = (r - peri) / (apo - peri)
+
+        # if orbital_phase<0.5:
+        #     tidal_boundary = 2.0 #<-- if we're closer to pericenter, make the tidal boundary 2 rtid since things will be recaptured. this would be gd1 and jet.
+        #     print("orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary)
+
+        # if orbital_phase>0.5:
+        #     tidal_boundary = 1.0
+        # if orbital_phase>1:
+        #     print("something's wrong dawg")
+
+        ### actually, determining that I always want to 
+        # cut at 2x the tidal radius to completely remove the progenitor. 
+        # will just have to deal with the fact that AAU is messed up :/ 
+        tidal_boundary = 2.0
+
+        print(orbit)#, ": orbital phase = ", orbital_phase, "; using boundary of %.1f rtid"%tidal_boundary) #<--- init orbital phase, not actually what i want to use!!
+        t = noise.load_gaia_catalog(orbit)
+
+
+        for rvir_index in tqdm(range(4)):
+            # if rvir_index!=0:
+            #     continue
+            # print(rvir_index)
+
+
+            # print("loading data")
+            (core, data_dict, CMdict, lumdict, inMW, trim), path, apo, age, init_displacement, copy = \
+                simspect.prepare_nbody_data_anycopy(
+                    orbit, stellar_pop=masses[mass_index], rvir_index=rvir_index, copies=copy_options,
+                    include_photometry=False, N_rtid_boundary = tidal_boundary, #<--- not sure what i'm going to use for tthis: 
+                    verbose=False #<-- just prints which copy
+                )
+            data_dict = build_data_dict(orbit, (core, data_dict, CMdict, lumdict, inMW, trim), t, rng)
+            dump_data_dict(data_dict, orbit, rvirs[rvir_index])
+
+#### SUPPLEMENTAL SIMS: copy 0 by default (--sims, --copies). same pipeline (and 2 rtid boundary) as the grid.
+if args.which in ['all', 'supplemental']:
+    print("supplemental sims...")
+    for sim in args.sims:
+        sim_info = simspect.supplemental_sims[sim]
+        orbit = sim_info['orbit']
+        for copy in args.copies:
+            rng_supplemental = np.random.default_rng(seed=42) #<-- own generator per sim/copy, so its noise draw doesn't depend on what ran before it.
+            prepared, path, apo, age, init_displacement, copy = simspect.prepare_nbody_data_supplemental(
+                sim, copies=[copy], include_photometry=False, N_rtid_boundary=2.0, verbose=True
+            )
+            data_dict = build_data_dict(orbit, prepared, noise.load_gaia_catalog(orbit), rng_supplemental)
+            dump_data_dict(data_dict, sim if copy==0 else sim+"_copy%i"%copy, sim_info['rvir'])
 
 # %%

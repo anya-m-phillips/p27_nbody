@@ -155,6 +155,57 @@ def prepare_nbody_data_anycopy(orbit, stellar_pop='lm', rvir_index=0, copies=ran
     raise FileNotFoundError("no finished copy of %s/%s/rvir_index=%i; tried %s"%(
         orbit, stellar_pop, rvir_index, list(copies)))
 
+### SUPPLEMENTAL SIMULATIONS: one-off runs outside the main grid, so retrieve_sim_info
+#   can't find them. each has its own stellar population re-drawn from the IMF (neither
+#   'lm' nor 'hm'), but the same orbit, age and init_displacement as the grid's `orbit`.
+#   5 copies each, in <supplemental_base_path><sim>/<copy>/.
+supplemental_base_path = '/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/' #<-- netscratch! 90-day purge.
+supplemental_sims = {
+    'gd1_2xbinaries': {'orbit':'gd1', 'rvir':1.5}, #<-- binary fraction ~doubled: 4491 binaries in 14999 stars
+    'gd1_2xN':        {'orbit':'gd1', 'rvir':6.0}, #<-- 30000 stars (5295 binaries), same binary demographics
+}
+
+def retrieve_supplemental_sim_info(sim, copy=0):
+    """
+    the retrieve_sim_info() equivalent for the supplemental sims.
+    returns path, apo, age, init_displacement (age/apo/init_displacement are the orbit's, from grid_info)
+    """
+    if sim not in supplemental_sims:
+        raise KeyError("unknown supplemental sim %s; options are %s"%(sim, list(supplemental_sims)))
+    orbit = supplemental_sims[sim]['orbit']
+    path = supplemental_base_path+sim+"/%i/"%copy
+    apo = getattr(grid_info, orbit+'_apo')
+    age = getattr(grid_info, orbit+'_age')
+    init_displacement = getattr(grid_info, orbit+'_init_displacement')
+    return path, apo, age, init_displacement
+
+def prepare_nbody_data_supplemental(sim, copies=(0,), verbose=True, **kwargs):
+    """
+    prepare_nbody_data_anycopy() for the supplemental sims: try `copies` in order and
+    take the first that reaches the present day.
+    returns (whatever prepare_nbody_data returns), path, apo, age, init_displacement, copy
+    """
+    for copy in copies:
+        path, apo, age, init_displacement = retrieve_supplemental_sim_info(sim, copy)
+        try:
+            out = prepare_nbody_data(
+                path = path,
+                i = age,
+                init_displacement = init_displacement,
+                apo = apo,
+                **kwargs
+            )
+        except FileNotFoundError as err:
+            if verbose:
+                print("  %s copy %i unfinished, missing %s"%(sim, copy, err.filename))
+            continue
+
+        if verbose:
+            print("  %s: using copy %i"%(sim, copy))
+        return out, path, apo, age, init_displacement, copy
+
+    raise FileNotFoundError("no finished copy of %s; tried %s"%(sim, list(copies)))
+
 def rotation_matrix(a,b,c):
     """
     rotate angles a,b,c about x,y,z axes

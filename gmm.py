@@ -52,6 +52,7 @@ from streamframe import StreamFrame
 import PETAR_ANALYSIS_FUNCTIONS as paf
 import inspect_new_sims as simspect 
 import pickle
+import argparse
 # %%
 ### helper functions here:
 def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
@@ -560,6 +561,19 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     constrain_widths=False
     noise = 'via' # <-- None or 'via' or 'desi' or 'via10hr'
     include_binaries=True
+    supplemental=False #<-- True: fit the supplemental sims (simspect.supplemental_sims) instead of the grid; table gets '_supplemental'
+
+    ### command-line overrides of the flags above, e.g. `python gmm.py --noise None --include-binaries False --supplemental True`.
+    #   parse_known_args so this still runs as a notebook.
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--noise', default=noise, type=lambda s: None if s=='None' else s)
+    parser.add_argument('--include-binaries', default=include_binaries, type=lambda s: s=='True')
+    parser.add_argument('--constrain-widths', default=constrain_widths, type=lambda s: s=='True')
+    parser.add_argument('--supplemental', default=supplemental, type=lambda s: s=='True')
+    parser.add_argument('--make-plots', default=make_plots, type=lambda s: s=='True')
+    args, _ = parser.parse_known_args()
+    noise, include_binaries, constrain_widths = args.noise, args.include_binaries, args.constrain_widths
+    supplemental, make_plots = args.supplemental, args.make_plots
 
     if noise is None:
         cd0 = 'noiseless'
@@ -577,8 +591,9 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
         cd2 = ''
 
     case_name = cd0+"_"+cd1+cd2
+    table_name = case_name+"_supplemental" if supplemental else case_name #<-- sanity plots still go in the case_name directory
 
-    print("running case:", case_name)
+    print("running case:", case_name, "(supplemental sims)" if supplemental else "")
 
 
     print("loading grid")
@@ -614,350 +629,347 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     keys = ['phi2','v_phi1','v_phi2','v_gsr'] #<-- for GMM fitting. 
 
 
-    tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], []
+    tab_sims, tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], [], []
     BIC_one, BIC_two = [], []
 
+    ### one (sim, orbit, rvir) per fit. `sim` names the pickle: the orbit for the grid,
+    #   the supplemental sim's name otherwise.
+    if supplemental:
+        runs = [(sim, info['orbit'], info['rvir']) for sim, info in simspect.supplemental_sims.items()]
+    else:
+        runs = [(orbit, orbit, rvir) for orbit in orbits for rvir in rvirs]
+    if noise=='desi': #<-- for DESI, only look at GD-1, just for the jarvis comparison. other streams don't seem to have enough surviving members for this to work.
+        runs = [run for run in runs if run[1]=='gd1']
+
     print("starting loop...")
-    for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
-        # if orbit!='aau':
-        #     continue
-        if noise=='desi': #<-- for DESI, only look at GD-1, just for the jarvis comparison. other streams don't seem to have enough surviving members for this to work. 
-            if orbit!='gd1':
-                continue
+    for sim, orbit, rvir in tqdm(runs):
+        ii = orbits.index(orbit) #<-- for phi1_lims
 
-        mass_index = 1 # <-- LOW mass stellar population... should minimize cocoon contributions from stellar evolution-related kicks i think. 
+        filename = datapath+"%s_%.2f.pickle"%(sim, rvir)
+        with open(filename, 'rb') as handle:
+            data_dict = pickle.load(handle)
 
-        for rvir_index in range(4):
-            # if rvir_index!=3:
-            #     continue
-
-            # copy_options = [4,3,2,1]
-
-            rvir = rvirs[rvir_index]
-
-            filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
-            with open(filename, 'rb') as handle:
-                data_dict = pickle.load(handle)
-
-            CMdict, lumdict = data_dict['CoM'], data_dict['luminous']
-            coords_obs = data_dict['coords_obs'] #<-- coordinate object
-            distances = coords_obs.distance
+        CMdict, lumdict = data_dict['CoM'], data_dict['luminous']
+        coords_obs = data_dict['coords_obs'] #<-- coordinate object
+        distances = coords_obs.distance
 
 
-            ### when deciding whether to include binaries, the decision is between 
-            #   
-            #   the suffix picks the coords, the percentile trim, and the catalog
-            #   photometry/noise products that were made with that trim.
-            sfx = '_primaries' if include_binaries else ''
-            sc_straighter = data_dict['sc_straighter'+sfx] #<-- dictionary
+        ### when deciding whether to include binaries, the decision is between 
+        #   
+        #   the suffix picks the coords, the percentile trim, and the catalog
+        #   photometry/noise products that were made with that trim.
+        sfx = '_primaries' if include_binaries else ''
+        sc_straighter = data_dict['sc_straighter'+sfx] #<-- dictionary
 
 
 
 
 
-            if noise is not None:
-                ### these dictionaries are from the "just isochrone matching"
-                #   photometry generation
-                # phot = data_dict['phot']
-                # noise_dict = data_dict['noise']
+        if noise is not None:
+            ### these dictionaries are from the "just isochrone matching"
+            #   photometry generation
+            # phot = data_dict['phot']
+            # noise_dict = data_dict['noise']
 
-                phot = data_dict['catalog_photometry'+sfx]
-                cut =  data_dict['cut_for_catalog_photometry'+sfx] #<-- this is unbound & trim_new[_primaries] & nonrem.
-                matched_flag = data_dict['matched_to_catalog_photometry'+sfx]
-
-
-                ### building out the full matched array so I can 
-                #   combine it in the 'use' business.
-                matched_full = np.full(len(cut), fill_value = False)
-                matched_full[cut] = matched_flag
+            phot = data_dict['catalog_photometry'+sfx]
+            cut =  data_dict['cut_for_catalog_photometry'+sfx] #<-- this is unbound & trim_new[_primaries] & nonrem.
+            matched_flag = data_dict['matched_to_catalog_photometry'+sfx]
 
 
-
-                noise_dict = data_dict['noise_catalog_photometry'+sfx]
-
-
-                noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
-
-                rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
-
-                # in a perfect world, we'd fold in a mag-dependent parallax uncertainty -> distance uncertainty 
-                #   -> quadrature summed pm + distance uncertainty would give the velocity fractional uncertainty.
-                #   however actual distances to stream stars should be a little better than gaia parallax-based distances
-                #   and their determination is less straightforward. assuming I know the distances perfectly for now. 
-                noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-                noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-                noise_dict['d_phi2'] = distances.to(u.kpc).value * (noise_dict['phi2']*u.degree).to(u.radian).value
-
-            ### boolean masks :p
-            unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
-            inMW_na = data_dict['inMW_na']
+            ### building out the full matched array so I can 
+            #   combine it in the 'use' business.
+            matched_full = np.full(len(cut), fill_value = False)
+            matched_full[cut] = matched_flag
 
 
-            # trim in the space the GMM sees: CoM coords for CoM cases, binary
-            #   orbital motion included for binaries cases. same for noisy cases,
-            #   since the catalog photometry was matched within the same trim.
-            trim_new = data_dict['trim_new'+sfx]
 
-            alive = data_dict['alive']
-            acceptable_G = data_dict['acceptable_G'] #<-- this is only for isochrone-based. not for catalog-based, where everything is OK (i think; would be good to verify.)
+            noise_dict = data_dict['noise_catalog_photometry'+sfx]
 
 
-            if noise is None: #<-- raw N-body case; only care that stuff is within the percentile trim and unbound from the cluster
-                use = trim_new & unbound
+            noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+
+            rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
+
+            # in a perfect world, we'd fold in a mag-dependent parallax uncertainty -> distance uncertainty 
+            #   -> quadrature summed pm + distance uncertainty would give the velocity fractional uncertainty.
+            #   however actual distances to stream stars should be a little better than gaia parallax-based distances
+            #   and their determination is less straightforward. assuming I know the distances perfectly for now. 
+            noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+            noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+            noise_dict['d_phi2'] = distances.to(u.kpc).value * (noise_dict['phi2']*u.degree).to(u.radian).value
+
+        ### boolean masks :p
+        unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
+        inMW_na = data_dict['inMW_na']
+
+
+        # trim in the space the GMM sees: CoM coords for CoM cases, binary
+        #   orbital motion included for binaries cases. same for noisy cases,
+        #   since the catalog photometry was matched within the same trim.
+        trim_new = data_dict['trim_new'+sfx]
+
+        alive = data_dict['alive']
+        acceptable_G = data_dict['acceptable_G'] #<-- this is only for isochrone-based. not for catalog-based, where everything is OK (i think; would be good to verify.)
+
+
+        if noise is None: #<-- raw N-body case; only care that stuff is within the percentile trim and unbound from the cluster
+            use = trim_new & unbound
             
             
-            if noise is not None: #<-- semi-realistic observations case; throw out remnants, things outside a painted on stellar population, with unacceptable viamock errors ...
+        if noise is not None: #<-- semi-realistic observations case; throw out remnants, things outside a painted on stellar population, with unacceptable viamock errors ...
                 
-                cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-                good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
+            cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+            good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
                 
-                if noise in ['via', 'via10hr']:
-                    good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
-                    # use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
+            if noise in ['via', 'via10hr']:
+                good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
+                # use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
 
 
                 
-                if noise=='desi':
-                    ### IN THIS CASE I WANT TO ONLY USE THE BRIGHTEST N_jarvis STARS!!! 
-                    N_jarvis = 679 #<-- length of jarvis catalog. 
-                    particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
+            if noise=='desi':
+                ### IN THIS CASE I WANT TO ONLY USE THE BRIGHTEST N_jarvis STARS!!! 
+                N_jarvis = 679 #<-- length of jarvis catalog. 
+                particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
 
                     
-                    bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
-                    ordered_IDs = particle_IDs[bright_ordering]
-                    used_IDs = ordered_IDs[:N_jarvis]
+                bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
+                ordered_IDs = particle_IDs[bright_ordering]
+                used_IDs = ordered_IDs[:N_jarvis]
 
-                    top_N_jarvis = np.isin(particle_IDs, used_IDs)
+                top_N_jarvis = np.isin(particle_IDs, used_IDs)
 
-                    good_RV = (top_N_jarvis) & (rverr<10.) #km/s
-                    # use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
-
-
-
-                use = cut & matched_full & good_pm & good_RV & nonrem #<--- do I ...need nonrem????
-
-
-            #### a second for troubleshooting what the best cuts to make are to ~match the DESI mag distribution...
-            # ### get a sense of what the DESI RV uncertainties are: 
-            # tt = Table.read('/n/home02/amphillips/data/jarvis26_Table7.fits', format='fits')
-            # # plt.scatter(tt['GMAG0']-tt['RMAG0'], tt['GMAG0'], c=tt['V_ERR'], cmap='cool')
-            # # plt.gca().invert_yaxis()
-            # fig, ax = plt.subplots()
-            # ax.hist(phot['mG'][use], histtype='step', lw=3)
-            # ax.hist(tt['GMAG0'], zorder=0)
-            # plt.hist(noise_dict['v_phi2'][use], bins=30)
-
-
-            # # ax.hist(noise_dict['pm_err_gaia'][use]*cf, bins=20, density=True)
-            # # ax.hist(noise_dict['pm_phi2'][use], bins=20, density=True)
-            # # ax.hist(noise_dict['pm_phi2'][use], bins=100)
-            # # ax.hist(rverr[use], histtype='step', lw=3)
-            # # ax.hist(tt['V_ERR'], zorder=0)
-
-            # # ax.hist(rverr[use])
-            # # ax.hist(noise_dict['pm_phi2'][use])
-            #####################################################
-            # fig, ax = plt.subplots(figsize=[9,3])
-            # ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
-            #            c='k', s=.1)
-            # ax.set_xlim(-20,20)
-
-            #### assemble the data and perform the fit: 
-            if noise is None:
-                x_data = np.column_stack([sc_straighter[k][use] for k in keys])
-
-            if noise is not None:
-                x_data = np.column_stack(
-                    [sc_straighter[k][use]+noise_dict[k][use] for k in keys]
-                )
-
-            ## set initial guesses for the mixture models: 
-            sd = x_data.std(axis=0)
-            mu_1, sigma_1 = np.zeros(len(keys)), 0.1 * sd  # thin: narrower than the data
-            mu_2, sigma_2 = np.zeros(len(keys)), 10.0 * sd  
-            f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
-
-            fracs_0 = np.array([f_1])#, f_2])
-            means_0 = np.array([mu_1, mu_2])#, mu_3])
-            sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
-            theta0 = pack_params(fracs_0, means_0, sigmas_0)
-
-            ncomponents = len(fracs_0)+1
-
-
-            bounds=None
-
-            ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
-            # than the thin component, PER DIMENSION (aligned elementwise with
-            # constraint_dims). keys order is ['phi2','pm_phi1','pm_phi2','v_gsr'].
-            constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
-            min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
-            constraints = [sigma_ratio_constraint(min_ratio,
-                                                n_components=ncomponents,
-                                                K=x_data.shape[1],
-                                                dims=constraint_dims)]
-
-
-            # stage 1: Powell, to land in the right basin. it IGNORES constraints
-            # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
-            # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
-            # throwing away the basin Powell was run to find.
-            result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # https://en.wikipedia.org/wiki/Powell%27s_method
-                                bounds=bounds,
-                                options={'maxiter': 100000, 'maxfev': 100000})
-
-            if constrain_widths==True:
-                # stage 2: re-fit from there, WITH the constraint. SLSQP from a cold
-                # start collapses this likelihood onto a single component, hence two stages.
-                result = minimize(nll_flat, x0=result_free.x,
-                                args=(x_data,),
-                                method='SLSQP',
-                                bounds=bounds,          # bounds and constraints coexist
-                                constraints=constraints,
-                                options={'maxiter': 5000})
-            else:
-                result=result_free
-
-
-            ### single-component gaussian, the null model for the BIC comparison.
-            # empty fractions array -> length-2K theta; min_components=1 goes in via args.
-            theta0_one = pack_params(np.array([]), np.array([np.zeros(len(keys))]), np.array([sd]))
-            result_one = minimize(nll_flat, x0=theta0_one, args=(x_data, 1), method='Powell',
-                                options={'maxiter': 100000, 'maxfev': 100000})
-
-            # BIC takes the log likelihood (-nll); k = len(theta) = 2K = 8 for one component, (n-1) + 2nK = 17 for two.
-            BIC_one.append(bic(-result_one.fun, k=len(result_one.x), N=len(x_data)))
-            BIC_two.append(bic(-result.fun, k=len(result.x), N=len(x_data)))
-
-
-            # get/save fit parameters: 
-            fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
-            # NB: not `for ii in ...` -- that shadows the orbit-loop index.
+                good_RV = (top_N_jarvis) & (rverr<10.) #km/s
+                # use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
 
 
 
-
-            if len(fracs_fit)<ncomponents:
-                fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
+            use = cut & matched_full & good_pm & good_RV & nonrem #<--- do I ...need nonrem????
 
 
-            f_cocoon = fracs_fit[-1]
+        #### a second for troubleshooting what the best cuts to make are to ~match the DESI mag distribution...
+        # ### get a sense of what the DESI RV uncertainties are: 
+        # tt = Table.read('/n/home02/amphillips/data/jarvis26_Table7.fits', format='fits')
+        # # plt.scatter(tt['GMAG0']-tt['RMAG0'], tt['GMAG0'], c=tt['V_ERR'], cmap='cool')
+        # # plt.gca().invert_yaxis()
+        # fig, ax = plt.subplots()
+        # ax.hist(phot['mG'][use], histtype='step', lw=3)
+        # ax.hist(tt['GMAG0'], zorder=0)
+        # plt.hist(noise_dict['v_phi2'][use], bins=30)
 
 
-            ### append param fits to lists for table:
-            Mts.append(means_fit[0]) # thin stream means
-            Sts.append(sigmas_fit[0])# thin stream dispersions
+        # # ax.hist(noise_dict['pm_err_gaia'][use]*cf, bins=20, density=True)
+        # # ax.hist(noise_dict['pm_phi2'][use], bins=20, density=True)
+        # # ax.hist(noise_dict['pm_phi2'][use], bins=100)
+        # # ax.hist(rverr[use], histtype='step', lw=3)
+        # # ax.hist(tt['V_ERR'], zorder=0)
 
-            Mc.append(means_fit[1]) # cocoon means
-            Sc.append(sigmas_fit[1])# cocoon dispersions
+        # # ax.hist(rverr[use])
+        # # ax.hist(noise_dict['pm_phi2'][use])
+        #####################################################
+        # fig, ax = plt.subplots(figsize=[9,3])
+        # ax.scatter(sc_straighter['phi1'][use], sc_straighter['v_gsr'][use], 
+        #            c='k', s=.1)
+        # ax.set_xlim(-20,20)
 
-            fc.append(f_cocoon)
+        #### assemble the data and perform the fit: 
+        if noise is None:
+            x_data = np.column_stack([sc_straighter[k][use] for k in keys])
 
-            tab_rvirs.append(rvir)
-            tab_orbits.append(orbit)
+        if noise is not None:
+            x_data = np.column_stack(
+                [sc_straighter[k][use]+noise_dict[k][use] for k in keys]
+            )
+
+        ## set initial guesses for the mixture models: 
+        sd = x_data.std(axis=0)
+        mu_1, sigma_1 = np.zeros(len(keys)), 0.1 * sd  # thin: narrower than the data
+        mu_2, sigma_2 = np.zeros(len(keys)), 10.0 * sd  
+        f_1 = 0.9                          # starting at even groups would "let the data decide." but for two components only, guessing 90% thin stream is sort of like a prior. 
+
+        fracs_0 = np.array([f_1])#, f_2])
+        means_0 = np.array([mu_1, mu_2])#, mu_3])
+        sigmas_0 = np.array([sigma_1, sigma_2])#, sigma_3])
+        theta0 = pack_params(fracs_0, means_0, sigmas_0)
+
+        ncomponents = len(fracs_0)+1
 
 
-            if make_plots==True:
-                plot_path = '/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/'
+        bounds=None
+
+        ### CONSTRAINTS: require the cocoon be at least min_ratio times WIDER
+        # than the thin component, PER DIMENSION (aligned elementwise with
+        # constraint_dims). keys order is ['phi2','pm_phi1','pm_phi2','v_gsr'].
+        constraint_dims = [0, 2, 3]      # phi2, pm_phi2, v_gsr
+        min_ratio = [10.0, 5.0, 5.0]     # same order as constraint_dims
+        constraints = [sigma_ratio_constraint(min_ratio,
+                                            n_components=ncomponents,
+                                            K=x_data.shape[1],
+                                            dims=constraint_dims)]
+
+
+        # stage 1: Powell, to land in the right basin. it IGNORES constraints
+        # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
+        # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
+        # throwing away the basin Powell was run to find.
+        result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # https://en.wikipedia.org/wiki/Powell%27s_method
+                            bounds=bounds,
+                            options={'maxiter': 100000, 'maxfev': 100000})
+
+        if constrain_widths==True:
+            # stage 2: re-fit from there, WITH the constraint. SLSQP from a cold
+            # start collapses this likelihood onto a single component, hence two stages.
+            result = minimize(nll_flat, x0=result_free.x,
+                            args=(x_data,),
+                            method='SLSQP',
+                            bounds=bounds,          # bounds and constraints coexist
+                            constraints=constraints,
+                            options={'maxiter': 5000})
+        else:
+            result=result_free
+
+
+        ### single-component gaussian, the null model for the BIC comparison.
+        # empty fractions array -> length-2K theta; min_components=1 goes in via args.
+        theta0_one = pack_params(np.array([]), np.array([np.zeros(len(keys))]), np.array([sd]))
+        result_one = minimize(nll_flat, x0=theta0_one, args=(x_data, 1), method='Powell',
+                            options={'maxiter': 100000, 'maxfev': 100000})
+
+        # BIC takes the log likelihood (-nll); k = len(theta) = 2K = 8 for one component, (n-1) + 2nK = 17 for two.
+        BIC_one.append(bic(-result_one.fun, k=len(result_one.x), N=len(x_data)))
+        BIC_two.append(bic(-result.fun, k=len(result.x), N=len(x_data)))
+
+
+        # get/save fit parameters: 
+        fracs_fit, means_fit, sigmas_fit = sort_components(*unpack_params(result.x, K=x_data.shape[1]))
+        # NB: not `for ii in ...` -- that shadows the orbit-loop index.
+
+
+
+
+        if len(fracs_fit)<ncomponents:
+            fracs_fit = np.append(fracs_fit, 1-np.sum(fracs_fit))
+
+
+        f_cocoon = fracs_fit[-1]
+
+
+        ### append param fits to lists for table:
+        Mts.append(means_fit[0]) # thin stream means
+        Sts.append(sigmas_fit[0])# thin stream dispersions
+
+        Mc.append(means_fit[1]) # cocoon means
+        Sc.append(sigmas_fit[1])# cocoon dispersions
+
+        fc.append(f_cocoon)
+
+        tab_rvirs.append(rvir)
+        tab_orbits.append(orbit)
+        tab_sims.append(sim)
+
+
+        if make_plots==True:
+            plot_path = '/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/'
                 
                 
-                ##### This will be re-calculated later, in results.py using the parameters that i save to a table now. 
-                # for now only calculating because it goes into the sanity check making plots step. 
-                p1, p2 = [component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
-                p_thin = p1
-                ts = p1>0.5
-                p_cocoon = 1-p_thin
+            ##### This will be re-calculated later, in results.py using the parameters that i save to a table now. 
+            # for now only calculating because it goes into the sanity check making plots step. 
+            p1, p2 = [component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+            p_thin = p1
+            ts = p1>0.5
+            p_cocoon = 1-p_thin
 
-                c_labels = ["#CCC9E7", "#2F2F2F"]
-                cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+            c_labels = ["#CCC9E7", "#2F2F2F"]
+            cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 
 
-                order = np.argsort(p_cocoon)
-                fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
+            order = np.argsort(p_cocoon)
+            fig, axs = plt.subplots(len(keys), 2, figsize=[10, 10], width_ratios = [4,1])
 
-                plt.subplots_adjust(hspace=0.03, wspace=0.03)
+            plt.subplots_adjust(hspace=0.03, wspace=0.03)
 
                 
-                key_labels = [
-                    r'$\phi_2~[\degree]$',
-                    # r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
-                    # r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-                    # r'$d_{\phi_2}~[\rm kpc]$',
-                    r'$v_{\phi_1}~[\rm km~s^{-1}]$',
-                    r'$v_{\phi_2}~[\rm km~s^{-1}]$',                
-                    r'$v_{\rm GSR}~[\rm km~s^{-1}]$',
-                    r'$d~[\rm kpc]$'
-                ]
-                for jj, key in enumerate(keys):
-                    cut = 3*sigmas_fit[-1][jj]
+            key_labels = [
+                r'$\phi_2~[\degree]$',
+                # r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+                # r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+                # r'$d_{\phi_2}~[\rm kpc]$',
+                r'$v_{\phi_1}~[\rm km~s^{-1}]$',
+                r'$v_{\phi_2}~[\rm km~s^{-1}]$',                
+                r'$v_{\rm GSR}~[\rm km~s^{-1}]$',
+                r'$d~[\rm kpc]$'
+            ]
+            for jj, key in enumerate(keys):
+                cut = 3*sigmas_fit[-1][jj]
 
-                    ax = axs[jj,0]
+                ax = axs[jj,0]
 
-                    y = sc_straighter[key][use][order]
-                    if noise is not None:
-                        y += noise_dict[key][use][order]
+                y = sc_straighter[key][use][order]
+                if noise is not None:
+                    y += noise_dict[key][use][order]
 
-                    ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
-                            y, # plot cocoon on top. 
-                            # x_data[:,ii],
-                                c=p_cocoon[order], s=5, cmap=cocoon_cmap,
-                                # s=0.1, c='k',
-                                rasterized=True) 
-                    ax.set_ylim(-cut,cut)
-                    ax.set_xlim(phi1_lims[ii])
+                ax.scatter(sc_straighter['phi1'][use][order],  # plot cocoon on top. 
+                        y, # plot cocoon on top. 
+                        # x_data[:,ii],
+                            c=p_cocoon[order], s=5, cmap=cocoon_cmap,
+                            # s=0.1, c='k',
+                            rasterized=True) 
+                ax.set_ylim(-cut,cut)
+                ax.set_xlim(phi1_lims[ii])
 
-                    # ax.set_ylim(-3*cut, 3*cut)
-                    ax.set_ylabel(key_labels[jj], fontsize=15)
+                # ax.set_ylim(-3*cut, 3*cut)
+                ax.set_ylabel(key_labels[jj], fontsize=15)
 
 
-                    ax = axs[jj,1]
-                    bins = np.linspace(-cut, cut, 50)
+                ax = axs[jj,1]
+                bins = np.linspace(-cut, cut, 50)
 
-                    # tsd, _ = np.histogram(sc_straighter[key][ol_clip & unbound & ~cocoon_selection],
-                    #                       bins=bins, density=True)
+                # tsd, _ = np.histogram(sc_straighter[key][ol_clip & unbound & ~cocoon_selection],
+                #                       bins=bins, density=True)
 
-                    cocoon_selection = p_thin<0.5
-                    ax.hist(y[~cocoon_selection], 
-                            alpha=1., density=True, #, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
-                            color=c_labels[0],orientation='horizontal',
-                            bins=bins)
-                    ax.hist(y[cocoon_selection],
-                            histtype='step', density=True, #, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
-                            lw=2, 
-                            color=c_labels[-1],orientation='horizontal',
-                            bins=bins)
-                    ax.set_ylim(-cut,cut)
+                cocoon_selection = p_thin<0.5
+                ax.hist(y[~cocoon_selection], 
+                        alpha=1., density=True, #, weights = np.zeros_like(sc_straighter[key][use][~cocoon_selection])+1/sc_straighter[key][use][~cocoon_selection].size, 
+                        color=c_labels[0],orientation='horizontal',
+                        bins=bins)
+                ax.hist(y[cocoon_selection],
+                        histtype='step', density=True, #, weights = np.zeros_like(sc_straighter[key][use][cocoon_selection])+1/sc_straighter[key][use][cocoon_selection].size, 
+                        lw=2, 
+                        color=c_labels[-1],orientation='horizontal',
+                        bins=bins)
+                ax.set_ylim(-cut,cut)
 
         
 
-                    # too annoying to get the limits to work out. being unrigorous for now...
-                    ax.set_xticks([])
-                    ax.set_xticklabels([])
-                    ax.set_yticks([])
-                    ax.set_yticklabels([])
+                # too annoying to get the limits to work out. being unrigorous for now...
+                ax.set_xticks([])
+                ax.set_xticklabels([])
+                ax.set_yticks([])
+                ax.set_yticklabels([])
 
-                    if jj<3:
-                        # print("REMOVING TICK LABLES>>>>>")
-                        axs[jj,0].set_xticklabels([])
-                        axs[jj,1].set_xticklabels([])
-
-
-                axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
-                axs[-1,1].set_xlabel(r'density')
+                if jj<3:
+                    # print("REMOVING TICK LABLES>>>>>")
+                    axs[jj,0].set_xticklabels([])
+                    axs[jj,1].set_xticklabels([])
 
 
+            axs[-1,0].set_xlabel(r'$\phi_1~[\degree]$')
+            axs[-1,1].set_xlabel(r'density')
 
-                case_dir = case_name+"/" #<-- have made all of these directories in scratch. 
-                plt.savefig(plot_path+case_dir+"%s_%.2f.pdf"%(orbit, rvir),
-                            dpi=300, bbox_inches='tight')
+
+
+            case_dir = case_name+"/" #<-- have made all of these directories in scratch. 
+            plt.savefig(plot_path+case_dir+"%s_%.2f.pdf"%(sim, rvir),
+                        dpi=300, bbox_inches='tight')
 
             
 
-                plt.close()
+            plt.close()
 
 
     print("writing table...")
     t_out = Table()
+    t_out['sim'] = np.array(tab_sims) #<-- == orbit for the grid
     t_out['orbit'] = np.array(tab_orbits)
     t_out['Rvir0'] = np.array(tab_rvirs)
     t_out['M_ts'] = np.array(Mts)
@@ -967,10 +979,10 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     t_out['f_cocoon'] = np.array(fc)
     t_out['BIC_one'] = np.array(BIC_one)
     t_out['BIC_two'] = np.array(BIC_two)
-    t_out.write(table_path+case_name+".fits", overwrite=True)
+    t_out.write(table_path+table_name+".fits", overwrite=True)
 
     # %%
-    tt = Table.read(table_path+case_name+".fits", format="fits")
+    tt = Table.read(table_path+table_name+".fits", format="fits")
 
     fig, ax = plt.subplots()
 
