@@ -440,8 +440,8 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     phi2_dispersions_this_orbit2 = tt2['S_ts'][:,0][selection2] #<-- TODO: translate back to angle from distance. 
     vgsr_dispersions_this_orbit2 = tt2['S_ts'][:,-1][selection2]
 
-    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--', zorder=0)
-    axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--', zorder=0)
+    axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
+    axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
 
 
     # axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
@@ -481,10 +481,10 @@ files = [
 ]
 markers = ['v', 'v', 'o', 'o']
 labels=[
-    'DESI noise with binaries',
-    'Desi noise CM',
-    'Via Y1 with binaries',
-    'Via CM'
+    'DESI/binaries',
+    'DESI/CM',
+    'Via/binaries',
+    'Via/CM'
 ]
 
 for ii, f in enumerate(files):
@@ -494,18 +494,23 @@ for ii, f in enumerate(files):
     axs[0,0].scatter(row['Rvir0'], row['f_cocoon'], 
                 label=labels[ii],
                 marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                edgecolor='k', lw=1.5, s=500)
+                edgecolor='k' if 'binaries' in labels[ii] else 'w', 
+                lw=1.5, s=200)
     axs[0,1].scatter(row['Rvir0'], row['S_c'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                            edgecolor='k', lw=1., s=500)
+                            edgecolor='k' if 'binaries' in labels[ii] else 'w', 
+                            lw=1., s=200)
     axs[0,2].scatter(row['Rvir0'], row['S_c'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                            edgecolor='k', lw=1., s=500)
+                            edgecolor='k' if 'binaries' in labels[ii] else 'w', 
+                            lw=1., s=200)
     axs[1,1].scatter(row['Rvir0'], row['S_ts'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
-                             edgecolor='k', lw=1., s=500)
+                             edgecolor='k' if 'binaries' in labels[ii] else 'w', 
+                             lw=1., s=200)
     axs[1,2].scatter(row['Rvir0'], row['S_ts'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                            edgecolor='k', lw=1., s=500)
+                            edgecolor='k' if 'binaries' in labels[ii] else 'w', 
+                            lw=1., s=200)
 
 
-axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=20)
+axs[0,0].legend(loc='upper left', bbox_to_anchor=[0.0,-0.15], fontsize=20)
 for ax in np.concatenate([axs[0], axs[1]]):
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
