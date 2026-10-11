@@ -68,7 +68,7 @@ table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
 make_plots=False
 constrain_widths=False
-noise = 'via' #<-- None or 'via' or 'desi'
+noise = None #<-- None or 'via' or 'desi'
 include_binaries=False
 
 if noise is None:
@@ -101,6 +101,15 @@ prog_tab = Table.read(repo_path+'/data/FINAL_ics_nolmc.csv')
 
 # ordering decided here. 
 orbits = ['gd1','aau','pa5','jet','c19']
+
+frame_citations = [
+    r'\citet{koposovConstrainingMilkyWay2010}',
+    r'\citet{shippStellarStreamsDiscovered2018}',
+    r'\citet{price-whelanKinematicsPalomar52019}',
+    r'\citet{doDECamMAGICSurvey2026}',
+    r'\citet{ibataChartingGalacticAcceleration2024}'
+]
+
 phi1_lims = [
     (-100, 10),
     (-15,15),
@@ -125,11 +134,13 @@ pericenters_kpc = []
 apocenters_kpc = []
 present_rs = []
 med_distances = []
+stream_ages = []
+
 
 # f_cocoons, cocoon_sigvgsrs, cocoon_sigphi2s, thin_sigvgsrs, thin_sigphi2s = [], [], [], [], []
 
 # fig, ax = plt.subplots()
-figg, axx = plt.subplots()
+# figg, axx = plt.subplots()
 
 bins = np.linspace(0, 40, 100)
 
@@ -138,6 +149,11 @@ orbit_titles = ['GD-1', 'AAU','Pal 5','Jet','C-19']
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
 
     pr = prog_tab[prog_tab['name']==orbit] #<-- prog row
+    stream_age = pr['age_gyr'][0]
+
+    stream_age = np.round(stream_age+0.1, 2)
+    stream_ages.append(stream_age)
+
     disp = [pr['x'][0], pr['y'][0], pr['z'][0], pr['vx'][0], pr['vy'][0], pr['vz'][0]]
     orbit_obj = paf.integrate_prog_orbit(disp, steps=10000, dt=1*u.Myr)
 
@@ -159,7 +175,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     sc = data_dict['sc_straighter'+sfx]
 
     distances = coords_obs.distance.to(u.kpc).value
-    med_distances.append(np.median(distances))
+
     trim_new = data_dict['trim_new'+sfx]
     unbound = data_dict['unbound']
 
@@ -174,48 +190,50 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
     matched_full[cut] = matched_flag
 
 
-    noise_dict = data_dict['noise_catalog_photometry'+sfx]
-    noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
-    rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
-    alive = data_dict['alive']
-    acceptable_G = data_dict['acceptable_G']
-    cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms.
+    if noise is not None:
+        noise_dict = data_dict['noise_catalog_photometry'+sfx]
+        noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+        rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
+        alive = data_dict['alive']
+        acceptable_G = data_dict['acceptable_G']
+        cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+        good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms.
+
+        if noise=='desi':
+            N_jarvis = 679 #<-- length of jarvis catalog. 
+            particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
+
+            
+            bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
+            ordered_IDs = particle_IDs[bright_ordering]
+            used_IDs = ordered_IDs[:N_jarvis]
+
+            top_N_jarvis = np.isin(particle_IDs, used_IDs)
+
+            good_RV = (top_N_jarvis) & (rverr<10.) #km/s       
+
+        else:
+            good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
 
 
-    if noise=='desi':
-        N_jarvis = 679 #<-- length of jarvis catalog. 
-        particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
-
-        
-        bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
-        ordered_IDs = particle_IDs[bright_ordering]
-        used_IDs = ordered_IDs[:N_jarvis]
-
-        top_N_jarvis = np.isin(particle_IDs, used_IDs)
-
-        good_RV = (top_N_jarvis) & (rverr<10.) #km/s       
-
+        use = cut & matched_full & good_pm & good_RV #& nonrem
     else:
-        good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
-
-
-    use = cut & matched_full & good_pm & good_RV #& nonrem
-
+        use = trim_new & unbound
+    med_distances.append(np.median(distances[use]))
     # lw=3
     # ax.hist(distances[use], bins=40,# bins=bins, 
     #         color=ccc[ii], histtype='step', lw=lw,
     #         label=orbit)
     # if orbit=='gd1'
-    x = coords_obs.phi1
-    if orbit=='gd1':
-        x+=40*u.degree
+    # x = coords_obs.phi1
+    # if orbit=='gd1':
+    #     x+=40*u.degree
 
-    axx.scatter(x[unbound & trim_new], distances[unbound & trim_new], c='0.9', s=5, rasterized=True)
-    axx.scatter(x[use], distances[use], c=ccc[ii], s=20, rasterized=True,
-                edgecolor='k', lw=0.2)
-    axx.set_xlabel(r'$\phi_1~[\degree]$')
-    axx.set_ylabel(r'Distance [kpc]')
+    # axx.scatter(x[unbound & trim_new], distances[unbound & trim_new], c='0.9', s=5, rasterized=True)
+    # axx.scatter(x[use], distances[use], c=ccc[ii], s=20, rasterized=True,
+    #             edgecolor='k', lw=0.2)
+    # axx.set_xlabel(r'$\phi_1~[\degree]$')
+    # axx.set_ylabel(r'Distance [kpc]')
     # axx.set_title(noise)
     # axx.set_ylim(0, 20)
 
@@ -235,8 +253,9 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
 # figg.savefig(repo_path+"/plots/photometry_explainer/distance_phi1.pdf", dpi=300, bbox_inches='tight')
 
-
+orbit_titles = np.array(orbit_titles)
 med_distances = np.array(med_distances)
+stream_ages = np.array(stream_ages)
 present_rs = np.array(present_rs)
 pericenters_kpc = np.array(pericenters_kpc)
 apocenters_kpc = np.array(apocenters_kpc)
@@ -245,6 +264,17 @@ orbital_phases = (present_rs - pericenters_kpc) / (apocenters_kpc - pericenters_
 orbits = np.array(orbits)
 
 eccentricities = (apocenters_kpc - pericenters_kpc) / (apocenters_kpc + pericenters_kpc)
+
+# %%
+
+t = Table()
+t[r'Orbit'] = orbit_titles
+t[r'$t_{\rm age}$'] = np.round(stream_ages,2)
+t[r'$D_{\rm med}$'] = np.round(med_distances,2)
+t[r'$r_{\rm peri}$'] = np.round(pericenters_kpc,2)
+t[r'Reference for stream frame'] = frame_citations
+
+t.write("table1", format='ascii.latex')
 
 
 # tt = Table.read(table_path+case_name+".fits", format="fits")
@@ -829,7 +859,7 @@ def p_cocoon_from_table(x_data, row):
     return 1-p_thin
 
 
-def demo_data(orbit, rvir, tt, noise=None, include_binaries=False):
+def demo_data(orbit, rvir, tt, noise=None, include_binaries=False, return_mask=False):
     '''
     rebuild the data vector for one simulation exactly as gmm.py does, and
     evaluate the saved mixture model on it.
@@ -851,8 +881,10 @@ def demo_data(orbit, rvir, tt, noise=None, include_binaries=False):
     p_cocoon = p_cocoon_from_table(x_data, row)
 
     ydict = {k: observed(k, sc_straighter, noise_dict, use) for k in ['phi2','pm_phi1','pm_phi2','v_gsr']}
-    return sc_straighter['phi1'][use], ydict, p_cocoon, row
-
+    if return_mask==False:
+        return sc_straighter['phi1'][use], ydict, p_cocoon, row
+    else:
+        return sc_straighter['phi1'][use], ydict, p_cocoon, row, use
 # %%
 #
 #--------------------------------------------------------#
@@ -1028,4 +1060,104 @@ handles = [Line2D([], [], ls='', marker='o', markersize=8, color=ccc[ii], label=
 axs[1].legend(handles=handles, loc='lower right', fontsize=15)
 
 plt.savefig("plots/fig1_motiv_notrim.pdf", dpi=300, bbox_inches='tight')
+# %%
+#--------------------------------------------------------#
+#   getting stuff together for a table summarizing a     #
+#   comparison between the raw N-body models and         #
+#   mock-observed data.                                  #
+#--------------------------------------------------------#
+### will be looping through all of these gmm_tables
+cases = [
+    'noiseless_CoM',
+    'noiseless_binaries',
+    'desi_noise_CoM',
+    'desi_noise_binaries',
+    'via_noise_CoM',
+    'via_noise_binaries'
+]
+labels = [
+    r'Raw $N$-body (CM)',
+    r'Raw $N$-body (binaries)',
+    r'DESI-like noise (CM)',
+    r'DESI-like noise (binaries)',
+    r'Via-like noise (CM)',
+    r'Via-like noise (binaries)',
+]
+noises = [None, None, 'desi','desi','via','via']
+orbit = 'gd1'
+rvir=0.75
+
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
+nsys = len(data_dict['CoM']['pos'])
+nsingles = data_dict['nsingles']
+nbinaries = nsys - nsingles
+# print(nsingles, nbinaries, nsingles+nbinarie)
+isbinary = np.concatenate([np.zeros(nsingles, dtype=int), np.ones(nbinaries, dtype=int)])#.astype(bool)
+# ^ 1 if binary, 0 if single
+
+
+fbins = []
+Nsys = []
+f_cocoons = []
+sigphi2_ts = []
+sigphi2_cs = []
+sigvr_ts = []
+sigvr_cs = []
+
+for ii, case in enumerate(cases):
+    noise = noises[ii]
+    tt = Table.read(repo_path+"/data/gmm_tables/%s.fits"%case)
+
+
+    include_binaries=True if "binaries" in case else False
+
+    phi1, ydict, p_cocoon, row, use = demo_data(orbit, rvir, tt, noise=noise, 
+                                                include_binaries=include_binaries,
+                                                return_mask=True)
+    print(case)
+    order = np.argsort(p_cocoon) # plot cocoon on top.
+    cocoon_selection = p_cocoon>0.5
+
+    isbinary_use = isbinary[use]
+    nsys = len(isbinary[use])
+    fbin = np.sum(isbinary_use) / nsys
+    fbins.append(fbin)
+
+    f_c = row['f_cocoon'][0]
+    sphi2ts, _, _, svrts = row['S_ts'][0]
+    sphi2c, _, _, svrc = row['S_c'][0]
+
+    # print(svrts, svrc)
+
+    f_cocoons.append(f_c)
+    sigphi2_ts.append(sphi2ts)
+    sigphi2_cs.append(sphi2c)
+    sigvr_ts.append(svrts)
+    sigvr_cs.append(svrc)
+
+
+    Nsys.append(nsys)
+
+f_cocoons = np.array(f_cocoons)
+sigvr_ts = np.array(sigvr_ts)
+sigvr_cs = np.array(sigvr_cs)
+fbins = np.array(fbins)
+
+tdict = {
+    "Noise case":labels,
+    r"$f_{\rm cocoon}$":np.round(f_cocoons, 2),
+    r"$\sigma_{v_{\rm GSR}, t}$":np.round(sigvr_ts,2),
+    r"$\sigma_{v_{\rm GSR}, c}$":np.round(sigvr_cs,2),
+    r"$f_{\rm bin}$":np.round(fbins, 2),
+    r"$N_{\rm sys}$":Nsys
+}
+
+t = Table(tdict)
+
+
+t.write("table2", format='ascii.latex')
+
+
 # %%

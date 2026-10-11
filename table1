@@ -1,0 +1,10 @@
+\begin{table}
+\begin{tabular}{ccccc}
+Orbit & $t_{\rm age}$ & $D_{\rm med}$ & $r_{\rm peri}$ & Reference for stream frame \\
+GD-1 & 2.7 & 7.63 & 13.92 & \citet{koposovConstrainingMilkyWay2010} \\
+AAU & 2.62 & 18.74 & 12.16 & \citet{shippStellarStreamsDiscovered2018} \\
+Pal 5 & 3.57 & 20.75 & 7.84 & \citet{price-whelanKinematicsPalomar52019} \\
+Jet & 3.95 & 31.01 & 15.37 & \citet{doDECamMAGICSurvey2026} \\
+C-19 & 3.67 & 18.88 & 12.38 & \citet{ibataChartingGalacticAcceleration2024} \\
+\end{tabular}
+\end{table}

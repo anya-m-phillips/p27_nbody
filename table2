@@ -1,0 +1,11 @@
+\begin{table}
+\begin{tabular}{cccccc}
+Noise case & $f_{\rm cocoon}$ & $\sigma_{v_{\rm GSR}, t}$ & $\sigma_{v_{\rm GSR}, c}$ & $f_{\rm bin}$ & $N_{\rm sys}$ \\
+Raw $N$-body (CM) & 0.13 & 0.46 & 2.32 & 0.12 & 6487 \\
+Raw $N$-body (binaries) & 0.15 & 0.52 & 6.4 & 0.12 & 6469 \\
+DESI-like noise (CM) & 0.17 & 3.46 & 4.62 & 0.25 & 679 \\
+DESI-like noise (binaries) & 0.16 & 3.44 & 12.19 & 0.24 & 679 \\
+Via-like noise (CM) & 0.14 & 0.81 & 1.97 & 0.22 & 1578 \\
+Via-like noise (binaries) & 0.12 & 0.98 & 10.28 & 0.22 & 1578 \\
+\end{tabular}
+\end{table}

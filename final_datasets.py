@@ -356,8 +356,6 @@ for ii, orbit in enumerate(orbits): #<--- this i can do later i think.
         #   photometry protocol, i.e., matching to a                 #
         #   catalog.                                                 # 
         #------------------------------------------------------------#
-        
-
         isotrack = noise.isochrone_cmd_track(isocmd) #<-- make a teff query-able track from the cmd. 
         # N_jarvis = 679 #<-- length of jarvis catalog. 
         N = len(t) # if orbit != 'gd1' else N_jarvis #<-- **going to impose this later!!! 
