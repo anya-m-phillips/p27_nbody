@@ -44,6 +44,7 @@ plt.style.use(script_path+'/vedant.mplstyle')
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from matplotlib.colors import LinearSegmentedColormap
+import cmasher as cm
 
 from tqdm import tqdm
 
@@ -111,7 +112,7 @@ frame_citations = [
 ]
 
 phi1_lims = [
-    (-100, 10),
+    (-80, 5),
     (-15,15),
     (-15,15),
     (-20,20),
@@ -481,61 +482,6 @@ for ax in np.concatenate([axs[0], axs[1]]):
 
 plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
 # %%
-#### not clearly resolving the thin stream. are there 
-#   significant differences in the rv err distribution between
-#   my data and the jarvis catalog? 
-orbit='gd1'
-noise='desi'
-rvir_index=0
-
-##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
-filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
-with open(filename, 'rb') as handle:
-    data_dict = pickle.load(handle)
-
-coords_obs = data_dict['coords_obs']
-sc = data_dict['sc_straighter']
-
-distances = coords_obs.distance.to(u.kpc).value
-trim_new = data_dict['trim_new']
-unbound = data_dict['unbound']
-
-nonrem = data_dict['nonrem']
-phot = data_dict['catalog_photometry']
-
-phot_iso = data_dict['phot']
-
-cut = data_dict['cut_for_catalog_photometry']
-matched_flag = data_dict['matched_to_catalog_photometry']
-matched_full = np.full(len(cut), fill_value = False)
-matched_full[cut] = matched_flag
-
-
-noise_dict = data_dict['noise_catalog_photometry']
-noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
-rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
-alive = data_dict['alive']
-acceptable_G = data_dict['acceptable_G']
-cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
-
-N_jarvis = 679 #<-- length of jarvis catalog. 
-particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
-bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
-ordered_IDs = particle_IDs[bright_ordering]
-used_IDs = ordered_IDs[:N_jarvis]
-top_N_jarvis = np.isin(particle_IDs, used_IDs)
-good_RV = (top_N_jarvis) & (rverr<10.) #km/s       
-
-use = cut & matched_full & good_pm & good_RV #& nonrem
-
-
-### jarvis catalog...
-jt = Table.read(repo_path+'/data/jarvis26_Table7.fits',format='fits')
-plt.hist(jt['V_ERR'], bins=np.arange(0, 10, 0.25), histtype='step', lw=3)
-plt.hist(rverr[use], bins=np.arange(0, 10, 0.25), histtype='step', lw=3)
-### a little bit not good idk. 
-# %%
 #-----------------------------------------------------#
 #   binary fractions in thin stream vs cocoon         # 
 #-----------------------------------------------------#
@@ -727,27 +673,6 @@ ax.set_ylabel(r'$G$')
 ax.legend(loc='lower left', fontsize=15)
 plt.savefig("plots/matching_catalog_mags.pdf", dpi=300, bbox_inches='tight')
 
-# ax = axs[1]
-
-
-# ax.hist(mGphot_cat[:N_jarvis], bins=bins,
-#         # histtype='step',
-#         color='k', alpha=0.2, 
-#         lw=3, label='brightest stars \nin catalog');
-
-
-
-# ax.hist(mGphot_brightsort[:N_jarvis], bins=bins,
-#         histtype='step', lw=3, 
-#         color='k', 
-#         label="brightest stars\nfrom isochrone \nmapping");
-
-# ax.legend(loc='upper left')
-
-# ax.set_xlabel(r'$G$')
-# ax.set_ylabel(r'Count')
-
-
 # %%
 #
 
@@ -860,18 +785,24 @@ def demo_data(orbit, rvir, tt, noise=None, include_binaries=False, return_mask=F
 #       plots to demonstrate the GMM results             #
 #       for individuaal simulations (success and fails)  #
 #--------------------------------------------------------#
-
+# %%
+cm.get_bibtex()
+# %%
 # c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
-noise = 'desi' #<-- None, 'via', 'via10hr', 'desi'
+noise = None #<-- None, 'via', 'via10hr', 'desi'
 include_binaries = False
 case_name = case_label(noise, include_binaries) #<-- e.g. desi_noise_CoM; can't disagree with the flags any more
 tt = Table.read(table_path+case_name+".fits", format="fits")
 c_labels = ["#CCC9E7", "#2F2F2F"]
 # c_labels = ['orange','white','midnightblue']
-cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+# cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+# cocoon_cmap = cm.get_sub_cmap(cm.bubblegum, 0.4,1.).reversed()
+cocoon_cmap = cm.get_sub_cmap(cm.horizon, 0.2,0.8).reversed()
+
+
 
 orbit = 'gd1'
-rvir_indices = [0] #<-- any subset of range(len(rvirs)), one column each
+rvir_indices = [0, 3] #<-- any subset of range(len(rvirs)), one column each
 
 keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
 key_labels = [
@@ -913,7 +844,7 @@ for ii, rvir_index in enumerate(rvir_indices):
         ylims[jj] = max(ylims[jj], 3*np.std(ysel))
 
     if noise is None:
-        axs[0, ii].set_title(r'$R_{\rm vir,0}=%.2f$ pc, $f_{\rm c}=%.2f$'%(rvir, row['f_cocoon'][0]), fontsize=13)
+        axs[0, ii].set_title(r'Progenitor $R_{\rm vir,0}=%.2f$ pc'%(rvir), fontsize=13)
 
     if noise is not None:
         axs[0, ii].set_title(
