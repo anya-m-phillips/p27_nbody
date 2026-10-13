@@ -1126,7 +1126,7 @@ tdict = {
 t = Table(tdict)
 
 
-t.write("table2", format='ascii.latex')
+t.write("table2", format='ascii.latex', overwrite=True)
 
 
 # %%
