@@ -276,71 +276,6 @@ t[r'Reference for stream frame'] = frame_citations
 
 t.write("table1", format='ascii.latex')
 
-
-# tt = Table.read(table_path+case_name+".fits", format="fits")
-# okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
-# rvir_cut = tt['Rvir0']<6.
-
-# reordered = np.argsort(pericenters_kpc )
-
-# ccc = cc[1:]
-# fig, axs = plt.subplots(2,3,figsize=[21,14])
-# plt.subplots_adjust(wspace=0.2, hspace=0.2)
-# for ii, orbit in enumerate(tqdm(orbits[reordered])):
-#     orbsel = tt['orbit'] == orbit
-
-#     selection=orbsel & np.logical_and.reduce(okay_mean.T) #& rvir_cut
-
-#     f_cocoons_this_orbit = tt['f_cocoon'][selection]
-
-    
-#     x = tt['Rvir0'][selection]
-#     axs[0,0].plot(x, f_cocoons_this_orbit, 
-#                 label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
-#                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
-#                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
-#                 marker='o', color=ccc[ii], markersize=10)
-
-
-#     ### cocoon ! ! !
-#     phi2_dispersions_this_orbit = tt['S_c'][:,0][selection] #<-- TODO: translate back to angle from distance. 
-#     # phi2_dispersions_this_orbit = (dphi2_dispersions_this_orbit / med_distances[ii]) * u.radian.to(u.degree)
-    
-#     vgsr_dispersions_this_orbit = tt['S_c'][:,-1][selection]
-
-#     axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
-#     axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-')
-
-#     ### thin ! ! !
-#     phi2_dispersions_this_orbit = tt['S_ts'][:,0][selection] #<-- TODO: translate back to angle from distance. 
-#     vgsr_dispersions_this_orbit = tt['S_ts'][:,-1][selection]
-#     axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
-#     axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='--')
-
-# for ax in np.concatenate([axs[0], axs[1]]):
-#     ax.set_ylim(bottom=0)
-#     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
-#     ax.minorticks_off()
-#     ax.set_xticks([.75, 1.5, 3., 6.])
-
-
-
-# axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
-# axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
-# # axs[0,0].set_ylim(0.0, 0.2)
-
-# axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
-# axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
-
-# axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
-# axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
-
-# axs[0,0].legend(loc='upper center', bbox_to_anchor=[0.5,-0.25], fontsize=25)
-
-# axs[1,0].remove()
-
-# plot_filename = "summary_"+case_name
-# plt.savefig(repo_path+"/plots/"+plot_filename, dpi=300, bbox_inches='tight')
 # %%
 #----------------------------#
 # !!!!!! THE MAIN RESULT PLOT W MANY PANELS 
@@ -440,7 +375,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     vgsr_dispersions_this_orbit2 = tt2['S_ts'][:,-1][selection2]
 
     axs[1,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0,
-                                  label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
+                                  label=orbit_titles[reordered][ii]+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
     axs[1,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
 
 

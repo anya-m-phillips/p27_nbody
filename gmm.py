@@ -54,6 +54,10 @@ import inspect_new_sims as simspect
 import pickle
 import argparse
 # %%
+t_jarvis = Table.read(repo_path+"/data/jarvis26_Table7.fits", format='fits')
+N_jarvis = len(t_jarvis)# 679 #<-- length of jarvis catalog. 
+
+# %%
 ### helper functions here:
 def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
     """
@@ -729,7 +733,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
                 
             if noise=='desi':
                 ### IN THIS CASE I WANT TO ONLY USE THE BRIGHTEST N_jarvis STARS!!! 
-                N_jarvis = 679 #<-- length of jarvis catalog. 
+                
                 particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
 
                     

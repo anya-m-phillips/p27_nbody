@@ -163,7 +163,8 @@ survey error models and isochrone photometry. the `__main__` block is entirely c
 
 the `# SCRATCH::::` cells between `trim_obstream_percentile` and `assign_photometry_from_catalog` (the catalog-photometry prototyping) are commented out now, so `import noise` no longer loads a simulation or draws plots.
 - `gaia_g_to_lsst_z` / `lsst_z_to_gaia_g`: the RTN-099 sec 1.3.4 polynomial and its exact inverse (0.014 mag rms).
-- `desi_RVerr(zmag, feh=-2.0)`: `log10(err) = -0.47 + 0.27(z-16) - 0.23[Fe/H]`, from **apparent** z mag. no Teff dependence (TODO in the docstring).
+- `desi_RVerr_from_jarvis(mag)`: **the live DESI model (13 Oct).** the 679 Jarvis+26 table 7 `V_ERR`s (0.46-9.98 km/s), assigned rank for rank: brightest finite `mag` gets the smallest error. stars past the 679th, and NaN mags, get NaN (so NaN DESI noise too). output is `len(mag)`, original order. `final_datasets.survey_noise` calls it with apparent G.
+- `desi_RVerr(zmag, feh=-2.0)`: the old analytic model, `log10(err) = -0.47 + 0.27(z-16) - 0.23[Fe/H]`, from **apparent** z mag. no longer called.
 - `via_RVerr(G, log_Teff, feh=-2.0, exptime_s=3600, nexp=1, **kwargs)`: thin wrapper on `viamock.get_viaspec_errors`, apparent G. viamock's tables cover G in (5, 30); outside that `final_datasets.py` leaves NaN.
 - `get_Teff(R, L)`: Stefan-Boltzmann.
 - `build_isochrone_table` / `isochrone_photometry` / `gaia_from_isochrone`: ZAMS mass -> Gaia mags + `log_Teff` by interpolating a MIST isochrone. **read the precision subsection before touching them.** see the photometry section.
@@ -203,7 +204,8 @@ what's in each pickle -- the `intrinsic_stream_data_v3` dict (so `CoM`/`luminous
 | `trim_new_primaries` | the percentile trim on `sc_primaries`, i.e. with binary orbital motion (used by `binaries` cases) | N |
 | `phot` | isochrone photometry: `G`, `BP_RP`, `z`, `mG`, `mz`, `log_Teff` (absolute unless prefixed `m`) | N |
 | `noise` | isochrone-based noise: sampled `phi1`, `phi2` [deg], `pm_phi1`, `pm_phi2` [mas/yr], `v_gsr_via`, `v_gsr_via10hr`, `v_gsr_desi` [km/s]; errors `rverr_via`, `rverr_via10hr`, `rverr_desi` [km/s], `pm_err_gaia` [**µas/yr**] | N |
-| `cut_for_catalog_photometry` | `unbound & trim_new & nonrem`, the pool eligible for catalog photometry | N |
+| `ontrack_velocity` | `abs(sc_straighter['v_gsr']) < 30` km/s (Jarvis+26-like, true velocities before noise) | N |
+| `cut_for_catalog_photometry` | `unbound & trim_new & nonrem & ontrack_velocity`, the pool eligible for catalog photometry | N |
 | `catalog_photometry` | same keys as `phot` plus `iso_dist` and `catalog_index`; NaN outside the matched stars | N |
 | `matched_to_catalog_photometry` | True where a catalog row was assigned | ⚠️ **`cut.sum()`**, not N |
 | `noise_catalog_photometry` | same keys and units as `noise`, recomputed from `catalog_photometry`; NaN where unmatched | N |
@@ -214,7 +216,7 @@ all of these except the `matched_to_catalog_photometry*` keys are in the *same* 
 ### catalog photometry (the live noisy path)
 per sim, after the isochrone photometry, and **twice**: once with `trim_new` (keys as named) and once with `trim_new_primaries` (keys suffixed `_primaries`). it's a loop over `[(trim_new, ''), (trim_new_primaries, '_primaries')]`. the two pools differ slightly, so the catalog rows go to slightly different N-body stars, but the sample size is `len(catalog)` either way.
 
-1. `cut = unbound & trim & nonrem` -- the pool, so the catalog isn't spent on progenitor stars, remnants or trimmed outliers.
+1. `cut = unbound & trim & nonrem & ontrack_velocity` -- the pool, so the catalog isn't spent on progenitor stars, remnants, trimmed outliers, or stars more than 30 km/s off the v_gsr track (13 Oct, to match Jarvis+26; `ontrack_velocity{sfx}` uses the CoM v_gsr for `''` and the primary's for `_primaries`, so it mostly removes high-amplitude binaries from the binaries cases). every noisy case inherits it through `cut`. noiseless cases (`trim_new & unbound`) do not.
 2. `noise.assign_photometry_from_catalog(iso_phot[cut], distances[cut], catalog=noise.load_gaia_catalog(orbit), track=noise.isochrone_cmd_track(isocmd), N=len(catalog))`. subsetting to `cut` beforehand does the job of the `eligible` kwarg. the brightest `N` pool stars in **isochrone** apparent G get the catalog's apparent G and BP-RP exactly, rank for rank; absolute mags come from the N-body CoM distances, `log_Teff` from the nearest isochrone point, and `z`/`mz` from RTN-099.
 3. the results are scattered back to full length (NaN elsewhere), and DESI / Via 1 hr / Via 10 hr RV errors and Gaia DR3 position/PM errors are recomputed from the new `mG`/`mz`/`log_Teff` with the same `survey_noise` call as the isochrone noise.
 
@@ -257,7 +259,7 @@ the flags can also be set from the command line (`--noise None`, `--include-bina
   - noiseless: `trim_new{sfx} & unbound` (remnants included, as before).
   - noisy: `use = cut & matched_full & good_pm & good_RV & nonrem`, with `good_pm = pm_err_gaia < 0.5 mas/yr` and
     - `via` **and** `via10hr`: `good_RV = rverr < 5 km/s` (via10hr used to be < 10).
-    - `desi`: `good_RV = (brightest 679 stars in catalog mG) & (rverr < 10 km/s)`. 679 = the length of the Jarvis+26 table. note the top 679 are picked *before* the pm/RV cuts, so this can come out under 679 (it doesn't for gd1: all 679 pass).
+    - `desi`: `good_RV = (brightest 679 stars in catalog mG) & (rverr < 10 km/s)`. 679 = the length of the Jarvis+26 table. since the DESI errors are now Jarvis' own, assigned to those same 679 stars (NaN elsewhere, all < 10), this is identical to `np.isfinite(rverr)`.
     - `matched_full` already implies `cut`, which already contains `nonrem`, so it reduces to `matched_full & good_pm & good_RV` (hence the `# do I ...need nonrem????` -- no).
     - `alive` and `acceptable_G` are loaded but no longer used.
     - in practice none of the cuts bite: N fit = catalog size (see the table in the catalog photometry subsection).

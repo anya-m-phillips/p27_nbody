@@ -129,6 +129,7 @@ def lsst_z_to_gaia_g(z, bp_rp):
 def get_Teff(R, L):
     return (L / (4*np.pi*R**2 * const.sigma_sb))**(1/4)
 
+
 def desi_RVerr(zmag, feh=-2.0):
     """
     get RV error for desi data model, which 
@@ -137,6 +138,29 @@ def desi_RVerr(zmag, feh=-2.0):
     """
     log_err = -0.47 + 0.27*(zmag-16) - 0.23*feh
     return 10**log_err
+
+def desi_RVerr_from_jarvis(mag):
+    """
+    DESI RV errors taken exactly from Jarvis+26 table 7 (GD-1, 679 stars), assigned
+    rank for rank: the brightest finite `mag` gets the smallest V_ERR, and so on.
+    stars past the length of the catalog (the faintest ones) and NaN mags get NaN.
+    returns an array the same length as `mag`, in the original order.
+    """
+    p = repo_path+"/data/jarvis26_Table7.fits" #<-- contains RV errors
+    t = Table.read(p, format='fits')
+    verrs = np.sort(np.asarray(t['V_ERR'], dtype=np.float64)) #<-- smallest to largest vgsr errors
+
+    mag = np.asarray(mag, dtype=np.float64)
+    finite = np.flatnonzero(np.isfinite(mag))
+    mag_rank = finite[np.argsort(mag[finite], kind='stable')] #<-- brightest to faintest stars, nans excluded
+
+    n_assign = min(len(mag_rank), len(verrs))
+    verrs_use = np.full(len(mag), fill_value = np.nan)
+    verrs_use[mag_rank[:n_assign]] = verrs[:n_assign] #<-- brightest stars get the smallest verrs; the rest stay nan
+
+    return verrs_use
+
+
 
 ############# decided i don't need a wrapper function for via errors. 
 def via_RVerr(G, log_Teff, feh=-2.0, exptime_s = 3600, nexp=1, **kwargs):

@@ -80,7 +80,8 @@ def survey_noise(mG, mz, log_Teff, rng):
     draw order on `rng` is via, via10hr, desi, pm_phi1, pm_phi2, phi1, phi2 --
     don't reorder, or every downstream realization changes.
     """
-    rverr_desi = noise.desi_RVerr(zmag=mz, feh=-2.0)
+    # rverr_desi = noise.desi_RVerr(zmag=mz, feh=-2.0)
+    rverr_desi = noise.desi_RVerr_from_jarvis(mG) #<-- jarvis+26 V_ERRs by G rank: brightest 679 finite mG get them, everything else nan (and so nan desi noise).
 
     acceptable_G_viamock = (mG>5) & (mG<30) #<-- viamock table range; outside it the via errors are nan.
     rverr_via = np.full(len(mG), fill_value = np.nan)
@@ -283,7 +284,6 @@ def build_data_dict(orbit, prepared, catalog, rng):
     mG = paf.m_from_M(G, dist=distances)
 
 
-    ### UNCOMMENT THE FOLLOWING EVENTUALLY
     alive = on_iso #<-- removes high mass things that are remnants; should already be removed by remnants cut tho? 
     acceptable_G_viamock = (mG>5) & (mG<30)
     data_dict['alive'] = alive
@@ -320,7 +320,11 @@ def build_data_dict(orbit, prepared, catalog, rng):
     #   CoM goes first so its noise draw on `rng` is the same as before.
     for trim, suffix in [(trim_new, ''), (trim_new_primaries, '_primaries')]:
         # filtering out bound/trimmed stars so we don't waste good photometry on them idk
-        cut = unbound & trim & nonrem
+        vgsrs = data_dict['sc_straighter'+suffix]['v_gsr'] #<-- residual about the track; CoM for '', primary RVs for '_primaries'
+        ontrack_velocity = np.abs(vgsrs)<30.0 #<-- consistent w jarvis+26, keep only stars within 30 km/s of the v_gsr stream track. 
+        data_dict['ontrack_velocity'+suffix] = ontrack_velocity
+
+        cut = unbound & trim & nonrem & ontrack_velocity
         iso_phot_use = {key:iso_phot[key][cut] for key in iso_phot.keys()} #<---- trim it down here maybe. same w distances eventually.
         distances_use = distances[cut]
         phot_cheating, matched_flag = noise.assign_photometry_from_catalog(iso_phot_use,
