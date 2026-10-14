@@ -12,7 +12,7 @@ import petar
 import numpy as np
 
 from scipy.stats import binned_statistic, norm, multivariate_normal
-from scipy.optimize import curve_fit, minimize, Bounds
+from scipy.optimize import curve_fit, minimize, Bounds, minimize_scalar
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import CubicSpline
 from scipy.special import expit, logit, logsumexp # inverse-logit / logit, for the f_1 reparameterization
@@ -59,14 +59,67 @@ N_jarvis = len(t_jarvis)# 679 #<-- length of jarvis catalog.
 
 # %%
 ### helper functions here:
-def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
+def mle_sigma(v, e):
+    """
+    from Vedant! dispersion estimate given errors e on data points v.
+    the same idea (each star's variance is sigma^2 + e_i^2) is what the mixture
+    model uses when it's handed x_err -- see component_likelihood. this 1D,
+    one-component version is kept as a cross-check: nll_flat(..., min_components=1,
+    x_err=e[:,None]) on v[:,None] gives the same sigma. NB the (0, 50) bound is
+    in whatever units v is in.
+
+    original docstring
+    MLE of the intrinsic dispersion for v_i ~ N(mu, sigma^2 + e_i^2), mu profiled out.
+    """
+    def nll(sig):
+        w = 1 / (sig**2 + e**2)
+        mu = np.sum(w * v) / np.sum(w)
+        return 0.5 * np.sum(w * (v - mu)**2 - np.log(w))
+    return minimize_scalar(nll, bounds=(0, 50), method='bounded').x
+
+
+def measurement_errors(noise_dict, noise, distances, keys):
+    """
+    per-star 1 sd measurement uncertainties for the GMM fit, (N, K) in the
+    column order of keys, FULL length (index with [use] afterwards). this is
+    the x_err handed to the likelihood -- shared with results.py so the
+    memberships there are computed with the same errors the fit used.
+
+    noise_dict : a saved noise dict (noise_catalog_photometry[_primaries])
+    noise      : 'via', 'via10hr' or 'desi' -- picks rverr_<noise>
+    distances  : CoM heliocentric distances, a Quantity
+
+    - phi2: 0. Gaia position errors are ~1e-5 deg against ~0.1-1 deg stream
+      widths, and final_datasets.py doesn't save them. 0 in quadrature = no change.
+    - v_phi1, v_phi2: pm_err_gaia (uas/yr, per component), converted to km/s
+      with the same (assumed perfect) distances as the noise draw, so there's no
+      distance error term.
+    - v_gsr: rverr_<noise>.
+    these are the widths the saved noise draw was made from, so the error
+    model is exactly right by construction.
+    """
+    pm_err = (noise_dict['pm_err_gaia']*u.microarcsecond/u.yr).to(u.radian/u.s).value
+    v_err = distances.to(u.km).value * pm_err # km/s
+    err_by_key = {
+        'phi2': np.zeros(len(v_err)),
+        'v_phi1': v_err,
+        'v_phi2': v_err,
+        'v_gsr': noise_dict['rverr_'+noise],
+    }
+    return np.column_stack([err_by_key[k] for k in keys])
+
+
+def component_likelihood(x_data, mu, sigma, x_err=None):
     """
     log likelihood of each star under ONE gaussian component, with independent
     (uncorrelated) phase space dimensions.
 
-    x_data : (N, K) array -- N stars, K phase space coords (phi2, pm_phi1, pm_phi2, v_gsr)
+    x_data : (N, K) array -- N stars, K phase space coords (phi2, v_phi1, v_phi2, v_gsr)
     mu     : (K,) array of means
-    sigma  : (K,) array of standard deviations (NOT variances)
+    sigma  : (K,) array of INTRINSIC standard deviations (NOT variances)
+    x_err  : None, or (N, K) array of per-star measurement uncertainties (1 sd),
+             same units and column order as x_data. 0 in a column = that
+             dimension is measured perfectly.
 
     returns : (N,) array of ln p(x_i | mu, sigma)
 
@@ -74,6 +127,15 @@ def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
         p(x_i) = prod_k N(x_ik | mu_k, sigma_k),
     becomes a SUM over k in log space -- this is the "inner" product, and it
     collapses to axis=1 here. broadcasting does the k loop for us.
+
+    with errors: star i's TRUE value is drawn from N(mu, sigma^2), and then we
+    observe it with gaussian noise of width e_i. a gaussian convolved with a
+    gaussian is a gaussian whose variances add, so the OBSERVED value is
+        x_i ~ N(mu_k, sigma_k^2 + e_ik^2).
+    that's the whole trick (same as mle_sigma, and "extreme deconvolution",
+    Bovy, Hogg & Roweis 2011, for diagonal errors). sigma stays the intrinsic
+    width that the fit reports; each star just gets a wider gaussian by its own
+    error. (sigma is (K,) and x_err is (N, K), so the sum broadcasts to (N, K).)
     """
     mu = np.atleast_1d(mu)
     sigma = np.atleast_1d(sigma)
@@ -83,14 +145,21 @@ def component_likelihood(x_data, mu, sigma): #<-- this can stay the same...
                                                  #    negative sigma gets rejected
                                                  #    instead of getting a nan.
 
-    return norm.logpdf(x_data, loc=mu, scale=sigma).sum(axis=1)
+    if x_err is None:
+        scale = sigma #<-- kept separate so the noiseless fits are bit-identical to before
+    else:
+        scale = np.sqrt(sigma**2 + x_err**2)
 
-def gmm_negative_loglikelihood(component_fractions, means, sigmas, data):
+    return norm.logpdf(x_data, loc=mu, scale=scale).sum(axis=1)
+
+def gmm_negative_loglikelihood(component_fractions, means, sigmas, data, x_err=None):
     """
     all inputs should be numpy arrays
     component fractions should have length (n_components - 1) -- the last weight
     is implicit, fixed by sum(Q) = 1, so only n-1 of them are free
     means, sigmas should have length n_components x four dimensions
+    x_err : None, or (N, K) per-star uncertainties, see component_likelihood.
+            sigmas are then the INTRINSIC (error-deconvolved) widths.
     """
     ### number of components
     n_components = len(component_fractions)+1 #<-- provide the first n-1 components, last one is so that they sum to 1
@@ -106,7 +175,7 @@ def gmm_negative_loglikelihood(component_fractions, means, sigmas, data):
         return np.inf
 
     
-    ln_ps = np.array([component_likelihood(data, means[j], sigmas[j])
+    ln_ps = np.array([component_likelihood(data, means[j], sigmas[j], x_err)
                       for j in range(n_components)]) #<-- this is the likelihood over the four dimensions
 
     Qs = np.append(component_fractions, 1 - np.sum(component_fractions))
@@ -368,9 +437,16 @@ def unpack_params(theta, K=4, min_components=2):
     return Qs[:-1], means, sigmas
 
 
-def nll_flat(theta, x_data, min_components=2):
+def nll_flat(theta, x_data, min_components=2, x_err=None):
     """
     the objective actually handed to minimize().
+
+    x_err : None, or (N, K) per-star uncertainties (see component_likelihood).
+            it goes in through args like x_data does, and it comes AFTER
+            min_components so the old args=(x_data,) / args=(x_data, 1) calls
+            still mean what they did. with errors:
+                args=(x_data, 2, x_err)   # mixture
+                args=(x_data, 1, x_err)   # single gaussian
 
     K is read off x_data.shape[1] rather than defaulted, so theta can never be
     unpacked against the wrong number of phase space dimensions.
@@ -392,7 +468,7 @@ def nll_flat(theta, x_data, min_components=2):
     """
     return gmm_negative_loglikelihood(*unpack_params(theta, K=x_data.shape[1],
                                                      min_components=min_components),
-                                      x_data)
+                                      x_data, x_err)
 
 
 def sort_components(component_fractions, means, sigmas, sort_dim=-1):
@@ -423,12 +499,17 @@ def sort_components(component_fractions, means, sigmas, sort_dim=-1):
     return Qs[order][:-1], means[order], sigmas[order]
 
 
-def component_responsibilities(x_data, component_fractions, means, sigmas):
+def component_responsibilities(x_data, component_fractions, means, sigmas, x_err=None):
     """
     the FULL responsibility matrix: posterior probability that star i was drawn
     from component j, for every component.
 
         R[j, i] = Q_j p_j(x_i) / sum_k Q_k p_k(x_i)
+
+    x_err : pass the same (N, K) uncertainties the fit used. then p_j is the
+            error-broadened gaussian, so a star with a big RV error sitting 5
+            km/s off the track isn't automatically called cocoon. with
+            x_err=None and a fit that used errors, the memberships are wrong.
 
     everything stays in logs and comes back through a single logsumexp, so this
     never overflows even when the individual ln p are ~ -3000. columns sum to 1
@@ -458,14 +539,14 @@ def component_responsibilities(x_data, component_fractions, means, sigmas):
                          "got %s" % Qs)
 
     # (n_components, N) -- ln Q_j + ln p_j(x_i)
-    ln_w = np.array([np.log(Qs[j]) + component_likelihood(x_data, means[j], sigmas[j])
+    ln_w = np.array([np.log(Qs[j]) + component_likelihood(x_data, means[j], sigmas[j], x_err)
                      for j in range(n_components)])
 
     return np.exp(ln_w - logsumexp(ln_w, axis=0)) 
 
 
 def component_membership_probability(x_data, component_fractions, means, sigmas,
-                                     component=0, sort_dim=None):
+                                     component=0, sort_dim=None, x_err=None):
     """
     posterior probability that each star belongs to the component(s) you ask for.
     this is the indexable version of membership_probability.
@@ -485,6 +566,9 @@ def component_membership_probability(x_data, component_fractions, means, sigmas,
                narrow -> cocoon meaning, so a mislabelled fit raises instead of
                quietly reporting the wrong population.
 
+    x_err : (N, K) per-star uncertainties, if the fit used them. see
+            component_responsibilities.
+
     returns : (N,) array in [0, 1]
     """
     sigmas = np.asarray(sigmas, dtype=float)
@@ -496,7 +580,7 @@ def component_membership_probability(x_data, component_fractions, means, sigmas,
                              "sort_dim=%i (widths %s) -- call sort_components "
                              "first" % (sort_dim, widths))
 
-    R = component_responsibilities(x_data, component_fractions, means, sigmas)
+    R = component_responsibilities(x_data, component_fractions, means, sigmas, x_err)
 
     if isinstance(component, (int, np.integer)):
         return R[component]
@@ -507,7 +591,8 @@ def component_membership_probability(x_data, component_fractions, means, sigmas,
     return np.atleast_2d(R[component]).sum(axis=0)
 
 
-def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=-1):
+def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=-1,
+                           x_err=None):
     """
     posterior probability that each star belongs to the THIN STREAM, defined as
     any of the n-1 narrower components -- i.e. everything except the final
@@ -536,7 +621,7 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 
     return component_membership_probability(x_data, fracs, means, sigmas,
                                             component=slice(0, -1),
-                                            sort_dim=sort_dim)
+                                            sort_dim=sort_dim, x_err=x_err)
 
 def bic(lnL0, k, N):
     """
@@ -572,8 +657,8 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     parser = argparse.ArgumentParser()
     parser.add_argument('--noise', default=noise, type=lambda s: None if s=='None' else s)
     parser.add_argument('--include-binaries', default=include_binaries, type=lambda s: s=='True')
-    parser.add_argument('--constrain-widths', default=constrain_widths, type=lambda s: s=='True')
-    parser.add_argument('--supplemental', default=supplemental, type=lambda s: s=='True')
+    parser.add_argument('--constrain-widths', default=constrain_widths, type=lambda s: s=='False')
+    parser.add_argument('--supplemental', default=supplemental, type=lambda s: s=='False')
     parser.add_argument('--make-plots', default=make_plots, type=lambda s: s=='True')
     args, _ = parser.parse_known_args()
     noise, include_binaries, constrain_widths = args.noise, args.include_binaries, args.constrain_widths
@@ -785,6 +870,20 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
                 [sc_straighter[k][use]+noise_dict[k][use] for k in keys]
             )
 
+        ### per-star 1 sd uncertainties, (N, K), same column order as keys. these
+        #   go into the likelihood so the fitted sigmas are INTRINSIC widths (see
+        #   component_likelihood). None for noiseless = the old likelihood exactly.
+        #   they're the same widths the saved noise draw was made from, so the
+        #   error model is exactly right by construction.
+        if noise is None:
+            x_err = None
+
+        if noise is not None:
+            x_err = measurement_errors(noise_dict, noise, distances, keys)[use]
+            if not np.all(np.isfinite(x_err)):
+                raise ValueError("%s %.2f: %i non-finite errors in the fitted sample"
+                                 % (sim, rvir, np.sum(~np.isfinite(x_err))))
+
         ## set initial guesses for the mixture models: 
         sd = x_data.std(axis=0)
         mu_1, sigma_1 = np.zeros(len(keys)), 0.1 * sd  # thin: narrower than the data
@@ -816,7 +915,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
         # (only warns) but DOES honour bounds, so pass them -- otherwise stage 1
         # can walk the mean outside the box and SLSQP silently CLIPS x0 back in,
         # throwing away the basin Powell was run to find.
-        result_free = minimize(nll_flat, x0=theta0, args=(x_data,), method='Powell', # https://en.wikipedia.org/wiki/Powell%27s_method
+        result_free = minimize(nll_flat, x0=theta0, args=(x_data, 2, x_err), method='Powell', # https://en.wikipedia.org/wiki/Powell%27s_method
                             bounds=bounds,
                             options={'maxiter': 100000, 'maxfev': 100000})
 
@@ -824,7 +923,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
             # stage 2: re-fit from there, WITH the constraint. SLSQP from a cold
             # start collapses this likelihood onto a single component, hence two stages.
             result = minimize(nll_flat, x0=result_free.x,
-                            args=(x_data,),
+                            args=(x_data, 2, x_err),
                             method='SLSQP',
                             bounds=bounds,          # bounds and constraints coexist
                             constraints=constraints,
@@ -836,7 +935,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
         ### single-component gaussian, the null model for the BIC comparison.
         # empty fractions array -> length-2K theta; min_components=1 goes in via args.
         theta0_one = pack_params(np.array([]), np.array([np.zeros(len(keys))]), np.array([sd]))
-        result_one = minimize(nll_flat, x0=theta0_one, args=(x_data, 1), method='Powell',
+        result_one = minimize(nll_flat, x0=theta0_one, args=(x_data, 1, x_err), method='Powell',
                             options={'maxiter': 100000, 'maxfev': 100000})
 
         # BIC takes the log likelihood (-nll); k = len(theta) = 2K = 8 for one component, (n-1) + 2nK = 17 for two.
@@ -878,7 +977,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
                 
             ##### This will be re-calculated later, in results.py using the parameters that i save to a table now. 
             # for now only calculating because it goes into the sanity check making plots step. 
-            p1, p2 = [component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+            p1, p2 = [component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i, x_err=x_err) for cc_i in range(ncomponents)]
             p_thin = p1
             ts = p1>0.5
             p_cocoon = 1-p_thin

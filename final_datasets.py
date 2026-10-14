@@ -134,7 +134,7 @@ def survey_noise(mG, mz, log_Teff, rng):
 
 # if __name__=="__main__": #<-- i think these dictionaries should have _all_ the info I need, so will just run as a notebook, once which gives me the data I need for every "case"
 print("rng prep")
-rng = np.random.default_rng(seed=42)
+rng = np.random.default_rng(seed=0)
 
 #### load 12 Gyr feh=-2.0 isocshrone with artpop:
 print("preparing CMD")

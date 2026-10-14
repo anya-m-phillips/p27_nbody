@@ -275,7 +275,7 @@ t[r'$D_{\rm med}$'] = np.round(med_distances,2)
 t[r'$r_{\rm peri}$'] = np.round(pericenters_kpc,2)
 t[r'Reference for stream frame'] = frame_citations
 
-t.write("table1", format='ascii.latex')
+# t.write("table1", format='ascii.latex')
 
 # %%
 #----------------------------#
@@ -744,12 +744,23 @@ def observed(key, sc_straighter, noise_dict, use):
     return y
 
 
-def p_cocoon_from_table(x_data, row):
-    '''p_cocoon per star under the mixture model saved in one row of a gmm table'''
+def observed_errors(data_dict, noise_dict, noise, use):
+    '''(N, K) per-star errors for the `use` stars, exactly as gmm.py passes them to the fit (None if noiseless)'''
+    if noise_dict is None:
+        return None
+    return gmm.measurement_errors(noise_dict, noise, data_dict['coords_obs'].distance, fit_keys)[use]
+
+
+def p_cocoon_from_table(x_data, row, x_err=None):
+    '''
+    p_cocoon per star under the mixture model saved in one row of a gmm table.
+    the table's sigmas are INTRINSIC widths for noisy cases, so pass the same
+    x_err the fit used (observed_errors) or the memberships come out wrong.
+    '''
     means_fit = np.array([row['M_ts'][0], row['M_c'][0]])
     sigmas_fit = np.array([row['S_ts'][0], row['S_c'][0]])
     fracs_fit = np.array([1-row['f_cocoon'][0], row['f_cocoon'][0]])
-    p_thin = gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0)
+    p_thin = gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0, x_err=x_err)
     return 1-p_thin
 
 
@@ -772,7 +783,8 @@ def demo_data(orbit, rvir, tt, noise=None, include_binaries=False, return_mask=F
 
     #### the fit is in transverse velocities; the plot shows proper motions
     x_data = np.column_stack([observed(k, sc_straighter, noise_dict, use) for k in fit_keys])
-    p_cocoon = p_cocoon_from_table(x_data, row)
+    x_err = observed_errors(data_dict, noise_dict, noise, use)
+    p_cocoon = p_cocoon_from_table(x_data, row, x_err)
 
     ydict = {k: observed(k, sc_straighter, noise_dict, use) for k in ['phi2','pm_phi1','pm_phi2','v_gsr']}
     if return_mask==False:
@@ -901,7 +913,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     x_data = np.column_stack([observed(k, sc_fig1, noise_fig1, use) for k in fit_keys])
 
     p_cocoon = np.full(len(use), fill_value=np.nan) #<-- nan for stars that weren't in the fit (bound, or outside the trim)
-    p_cocoon[use] = p_cocoon_from_table(x_data, row)
+    p_cocoon[use] = p_cocoon_from_table(x_data, row, observed_errors(data_dict, noise_fig1, fig1_noise, use))
     thin = use & (p_cocoon<0.5) #<-- nan < 0.5 is False
 
     #### the progenitor (2 rtid) is dropped from both panels; everything else unbound goes in the right one
