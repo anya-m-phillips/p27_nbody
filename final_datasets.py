@@ -470,7 +470,7 @@ if args.which in ['all','jarvis']:
     t_jarvis['v_phi2'] = v_from_pm(t_jarvis['DELTA_PM_PHI2'], t_jarvis['dkpc_from_track'])
     t_jarvis['v_phi2_err'] = v_from_pm(t_jarvis['PM_PHI2_ERR'], t_jarvis['dkpc_from_track'])
 
-    ssc_jarvis = {
+    sc_jarvis = {
         "phi1":np.asarray(t_jarvis['phi1']),
         "phi2":np.asarray(t_jarvis['DELTA_PHI2']),
         "pm_phi1":np.asarray(t_jarvis['DELTA_PM_PHI1']),
@@ -480,7 +480,9 @@ if args.which in ['all','jarvis']:
         "v_phi2":np.asarray(t_jarvis['v_phi2'])
     }
 
-    noise_dict_jarvis = {
+    ### 1 sd uncertainties, NOT a noise draw (the data are real, so they already contain the noise).
+    #   same keys as sc_jarvis; gmm.py hands these to the likelihood as x_err.
+    errors_jarvis = {
         "phi1":np.zeros(len(t_jarvis)), # ra/dec errors aren't provided; hopefully this is okay... 
         "phi2":np.zeros(len(t_jarvis)), # ra/dec errors aren't provided; hopefully this is okay... 
         "pm_phi1":np.asarray(t_jarvis['PM_PHI1_ERR']),
@@ -491,7 +493,7 @@ if args.which in ['all','jarvis']:
     }
 
 
-    data_dict_jarvis = {"ssc_straighter":ssc_jarvis, "noise_dict":noise_dict_jarvis}
+    data_dict_jarvis = {"sc_straighter":sc_jarvis, "errors":errors_jarvis} #<-- sc_straighter matches the n-body pickles' key
     data_dict_jarvis['p_contam'] = t_jarvis['P_CONTAMINANT']
 
     filename = "/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/jarvis26.pickle"

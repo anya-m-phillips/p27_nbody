@@ -307,7 +307,7 @@ okay_mean = np.abs(tt['M_c']) < 0.5*np.asarray(tt['S_c'])
 
 
 tt2 = Table.read(table_path+caseII+".fits", format='fits')
-okay_mean2 = np.abs(tt2['M_c']) < 0.5*np.asarray(tt['S_c'])
+okay_mean2 = np.abs(tt2['M_c']) < 0.5*np.asarray(tt2['S_c'])
 
 
 reordered = np.argsort(pericenters_kpc)
@@ -324,8 +324,17 @@ axs[1,1].axhspan(jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_sphi2_ts+jarvis_sph
                  color='k', alpha=0.1)
 axs[0,2].axhspan(jarvis_svgsr_c-jarvis_svgsr_c_err, jarvis_svgsr_c+jarvis_svgsr_c_err, 
                  color='k', alpha=0.1, label = "Values from Jarvis+26")
-axs[1,2].axhspan(jarvis_svgsr_ts-jarvis_svgsr_ts_err, jarvis_svgsr_ts+jarvis_svgsr_ts_err, 
+axs[1,2].axhspan(jarvis_svgsr_ts-jarvis_svgsr_ts_err, jarvis_svgsr_ts+jarvis_svgsr_ts_err,
                  color='k', alpha=0.1)
+
+### this model (gmm.py --jarvis-data True) fit to the Jarvis+26 data itself, with their errors.
+t_jarvis_fit = Table.read(table_path+"jarvis26.fits", format="fits")[0]
+jarvis_fit_style = dict(color='k', ls='--', lw=2, zorder=1)
+axs[0,0].axhline(t_jarvis_fit['f_cocoon'], **jarvis_fit_style)
+axs[0,1].axhline(t_jarvis_fit['S_c'][0], **jarvis_fit_style)
+axs[0,2].axhline(t_jarvis_fit['S_c'][-1], label="This model fit to Jarvis+26 data", **jarvis_fit_style)
+axs[1,1].axhline(t_jarvis_fit['S_ts'][0], **jarvis_fit_style)
+axs[1,2].axhline(t_jarvis_fit['S_ts'][-1], **jarvis_fit_style)
 
 plt.subplots_adjust(wspace=0.2, hspace=0.2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
@@ -359,7 +368,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     phi2_dispersions_this_orbit2 = tt2['S_c'][:,0][selection2]
 
     vgsr_dispersions_this_orbit = tt['S_c'][:,-1][selection]
-    vgsr_dispersions_this_orbit2 = tt2['S_c'][:,-1][selection]
+    vgsr_dispersions_this_orbit2 = tt2['S_c'][:,-1][selection2]
 
     axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
     axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
@@ -474,7 +483,7 @@ for case in [caseI, caseII]:
         axs[1,2].scatter(row['Rvir0'], row['S_ts'][-1], **style)
 
 
-axs[0,1].legend(loc='lower right', bbox_to_anchor=[2, 1.],
+axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
                 title='Supplemental simulations', ncol=2)
 for ax in np.concatenate([axs[0], axs[1]]):
     ax.set_ylim(bottom=0)

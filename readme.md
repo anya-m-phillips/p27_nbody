@@ -25,6 +25,8 @@ noise.py             (imported as noise)     -- isochrone photometry + survey er
 
 the two **supplemental simulations** (`gd1_2xbinaries`, `gd1_2xN`; see their own section) go through the same pipeline: `python final_datasets.py --which supplemental`, then `python gmm.py --noise None --include-binaries {False,True} --supplemental True`.
 
+the **real Jarvis+26 GD-1 data** goes through the end of the pipeline too, so the sims can be compared to a fit made with the same model (see its own section): `python final_datasets.py --which jarvis`, then `python gmm.py --jarvis-data True`.
+
 
 # supplemental simulations (11 Oct)
 one-off GD-1 runs outside the main grid, to separate the effect of binaries and of N from the effect of density. 5 copies each; **only copy 0 is used so far** (all five `gd1_2xN` copies were checked once, see below).
@@ -71,6 +73,50 @@ what the noiseless fits give, against the grid's `gd1` at the same rvir0 (the gr
     the CoM f_c jumps around between 0.25 and 0.54, while the two components stay within ~1.3x of each other in width. that's two near-equal gaussians splitting one population, not a thin stream plus a cocoon. ΔBIC still favours two components (690-910), which is just the stream not being a single gaussian. by eye, the "cocoon" component is the +phi2 side, concentrated in the tail just leading the bound progenitor (phi1 ≈ -35 to -20), where phi2 steps by ~0.5 deg across the progenitor and v_gsr has strong epicyclic feathers. a degree-5 `poly_straightening` over the whole stream can't follow that step. **so most likely a straightening problem for streams with a surviving progenitor**, not a dynamical cocoon. not tested: masking a window around the progenitor, or straightening each tail separately.
   - the copy 1-4 pickles are `p27_data_dicts/gd1_2xN_copy<k>_6.00.pickle` (`python final_datasets.py --which supplemental --sims gd1_2xN --copies 1 2 3 4`). they aren't in any `gmm.py` table: `--supplemental True` only fits copy 0.
 
+
+# the real Jarvis+26 GD-1 data (15 Oct)
+the same two-component mixture, with `x_err`, run on the Jarvis+26 DESI GD-1 members themselves using their own errors. the sims can then be compared to a fit made with exactly the same model, instead of to the published numbers.
+
+```
+python final_datasets.py --which jarvis   -> <scratch>/p27_data_dicts/jarvis26.pickle
+python gmm.py --jarvis-data True          -> data/gmm_tables/jarvis26.fits  (+ p27_sanity_plots/jarvis26/jarvis26.pdf)
+```
+
+**the pickle** (the `args.which in ['all','jarvis']` block at the end of `final_datasets.py`) is built from `data/jarvis26_Table7.fits`, all 679 rows in table order. it is much smaller than a sim pickle and has three keys:
+
+| key | what |
+|---|---|
+| `sc_straighter` | same key and coordinate names as the sims' straightened CoM dict. `phi1`; `phi2` = `DELTA_PHI2` [deg]; `pm_phi1`/`pm_phi2` = `DELTA_PM_PHI1`/`DELTA_PM_PHI2` [mas/yr]; `v_gsr` = `DELTA_VGSR` [km/s]; `v_phi1`/`v_phi2` [km/s], converted from the PM residuals. all are residuals about **Jarvis' own track**, not our straightening |
+| `errors` | the 1 sd uncertainties, under the same keys as `sc_straighter`. there's no noise draw: the data are real, so the noise is already in them. `phi1`/`phi2` = 0 (the table has no position errors), `pm_phi*` = `PM_PHI*_ERR`, `v_gsr` = `V_ERR`, `v_phi*` = the converted PM errors |
+| `p_contam` | `1 - P_THIN - P_COCOON`, an astropy `Column` |
+
+- **PM -> v_phi uses a distance track, not per-star distances**: a `CubicSpline` through Jarvis' track distances (phi1 = -90 ... 40 deg, 9.12 ... 19.95 kpc), evaluated at each star's phi1. there's no distance uncertainty in the v_phi errors and `DISTMOD` isn't used. this is a known limitation, accepted for now.
+
+**the fit** (`gmm.py --jarvis-data True`; also `--jarvis_data`, or `jarvis_data=True` in the file):
+- forces `noise=None`, `include_binaries=False`, and prints a line if it had to override them. it raises if combined with `--supplemental`.
+- `use = p_contam < 0.5`: 608 of the 679 stars.
+- `x_data = sc_straighter[keys][use]`, used as it is (it's real data, so no noise is added). `x_err = errors[keys][use]`, so the fitted sigmas are intrinsic, deconvolved widths.
+- the initial guesses, Powell, BIC and the optional `--constrain-widths` stage are the same as for the sims.
+- the case name is `jarvis26[_constrained]`, not `noiseless_CoM`, so the grid table isn't overwritten. the table has one row: `sim = 'jarvis26'`, `orbit = 'gd1'`, `Rvir0 = NaN`.
+
+**result** (15 Oct, unconstrained; phi2 in deg, velocities in km/s), against the published Jarvis+26 values hardcoded in `results.py`:
+
+| | this model | Jarvis+26 |
+|---|---|---|
+| f_cocoon | 0.328 | 0.30 ± 0.02 (0.318 = sum P_COCOON / sum(P_THIN + P_COCOON) on the same 608 stars) |
+| sigma_phi2, thin | 0.237 | 0.23 ± 0.01 |
+| sigma_v_gsr, thin | 2.52 | 2.49 ± 0.28 |
+| sigma_phi2, cocoon | 2.15 | 2.18 ± 0.17 |
+| sigma_v_gsr, cocoon | 6.13 | 6.13 ± 0.75 |
+
+- the other two dimensions: thin sigma_v_phi1, sigma_v_phi2 = 2.87, 0.87; cocoon 33.7, 3.84. the cocoon's 34 km/s in v_phi1 looks large; it may come from the distance track, but that hasn't been checked.
+- ΔBIC (one − two) = 1266, so a cocoon is strongly preferred. every cocoon mean is within 0.25 sigma of zero (passes `okay_mean`).
+- **so the model reproduces the published decomposition**, which also answers the `DELTA_PHI2`-in-degrees question (yes).
+- **the sims are colder and less cocoon-rich than real GD-1 in every panel except the binaries cocoon v_gsr.** noiseless grid maxima: f_cocoon 0.25 (CoM), cocoon sigma_phi2 1.17 deg, thin sigma_phi2 0.18 deg, thin sigma_v_gsr ≤ 1.06 km/s. the cocoon sigma_v_gsr is 0.7-3.7 km/s for CoM but 4.7-8.3 km/s with binary orbits, which brackets the real 6.1.
+- `results.py` draws these values as black dashed lines on the summary figure.
+
+still open: per-star distances (`DISTMOD`) and distance errors in the v_phi conversion, or fitting in proper motions directly / dropping the PM dimensions; whether Jarvis' track matches our straightening closely enough that the residuals are comparable.
+
 # TODOs
 the live ones, collected here. details are in each script's section below.
 - ~~**`noise.py` / photometry:** star-by-star catalog photometry~~ **done** (30 Sep): `final_datasets.py` calls `noise.assign_photometry_from_catalog` against the BPW25 Gaia catalog for each stream and saves a second photometry + noise set (`catalog_photometry`, `noise_catalog_photometry`), and every noisy `gmm.py` case now uses those. open questions it left behind are in the "catalog photometry" subsection under `final_datasets.py`: which N-body stars are eligible to be matched, dereddening, `p_mem`, and the fact that the noisy sample size now *is* the catalog size (46 stars for C-19).
@@ -84,9 +130,9 @@ the live ones, collected here. details are in each script's section below.
 - observed-frame straightening: not 100% convinced it's successful for M3 or Pal 5, which have notable diverging tails that end up in the cocoon. (M3 is currently dropped from the pipeline anyway.)
 - `m3` frame: may settle for "stream on an M3-like orbit" (see the gala gotchas section).
 - `animations/`: make the movie scripts array jobs (one sub-job per frame) instead of looping. (`particle_spray_vs_nbody.py` already is.)
-- **one noise seed (0) everywhere for the final version:** the `desi` tables are on seed 0; re-run `via_noise_CoM`, `via_noise_binaries` and `via10hr_noise_CoM`. the supplemental loop in `final_datasets.py` still uses `default_rng(seed=42)` (no noisy supplemental case has been fit yet), so switch it before any are.
+- **one noise seed (0) everywhere for the final version:** the `desi` and `via` tables (`CoM` and `binaries`) are on seed 0 with `x_err` (via re-run 15 Oct); still re-run `via10hr_noise_CoM`. the supplemental loop in `final_datasets.py` still uses `default_rng(seed=42)` (no noisy supplemental case has been fit yet), so switch it before any are.
 - GMM: emcee for posteriors after maximum likelihood (see the GMM "next" section).
-- **plan: run the full mixture model, with `x_err`, on the Jarvis+26 DESI data itself** (`data/jarvis26_Table7.fits`, 679 GD-1 members), using their actual errors. this measures the real GD-1 thin stream / cocoon with exactly the machinery used on the sims, so the two can be compared directly (instead of comparing to their published fit). the table has what's needed: `DELTA_PHI2`, `DELTA_PM_PHI1`, `DELTA_PM_PHI2`, `DELTA_VGSR` (residuals about their track), `V_ERR`, `PM_PHI1_ERR`, `PM_PHI2_ERR`, `DISTMOD`, `P_THIN`/`P_COCOON`. **open question first: how to handle the proper-motion errors.** our `keys` fit transverse velocities, so their PM errors have to become v_phi errors, and with `DISTMOD` as the distance the distance uncertainty and the track's distance gradient enter too (the sims assume perfect distances). the alternatives: fit in proper motions directly, or drop the PM dimensions. also check whether Jarvis' residuals were taken about a track that matches our straightening, and that `DELTA_PHI2` is in degrees.
+- ~~**run the full mixture model, with `x_err`, on the Jarvis+26 DESI data itself**~~ **done** (15 Oct): `final_datasets.py --which jarvis` + `gmm.py --jarvis-data True`. it reproduces their published decomposition. PMs were converted to v_phi with their distance track, not per-star distances. still open: `DISTMOD` and distance errors, or fitting in PMs / dropping the PM dimensions; whether their track matches our straightening. see "the real Jarvis+26 GD-1 data".
 
 
 # map of code
@@ -94,8 +140,8 @@ the live ones, collected here. details are in each script's section below.
 - `FINAL_ics_nolmc.csv`: credit Vedant Chandra, present-day positions, velocities of some promising streams. Age and progenitor mass estimates also given. **the `name` column for the six run orbits has been renamed to the short keys i index by** (`gd1`, `pa5`, `aau`, `m3`, `c19`, `jet`) so that `prog_tab[prog_tab['name']==orbit]` just works. everything else in the table keeps its original name.
 - `init_displacements.txt`: generated in `get_init_displacements.py`, Vedant's progenitor locations back-integrated by their stream ages, plus 100 Myr to account for initial expansion due to massive star evolution, rounded to a multiple of 10 so that I can safely output sim snapshots every 10 Myr and get the present day in the final snapshot. **positions in this file are in pc** (that's what `petar.init` wants), velocities in km/s -- see the units bullet in the `paf` notes, this caused a real bug.
 - `bpw25_catalogs/<orbit>.fits`: credit Bonaca & Price-Whelan (2025), one per stream, named by the short keys (`gd1`, `pa5`, `aau`, `m3`, `c19`, `jet`); loaded by `noise.load_gaia_catalog(orbit)`. Gaia columns (`phot_g_mean_mag`, `bp_rp`, astrometry) plus `dist`, `Vr`, `FeH`, `p_mem`. **`dist` is mostly masked** -- only 43 of 1578 `gd1` rows have one -- and there's no extinction column, so `bp_rp` is presumably not dereddened. (`stream_catalogs.py` still reads the old long filenames, e.g. `GD-1.fits`.)
-- `jarvis26_Table7.fits`: Jarvis+26 table 7, DESI GD-1 members (679 stars). also at `/n/home02/amphillips/data/`.
-- `gmm_tables/<case>.fits`: output of `gmm.py`, one table per case (see `gmm.py` below). as of 30 Sep, the `via`, `via10hr` and `desi` tables come from the catalog-photometry pickles. the `noiseless_*` tables are older (25-27 Sep) and predate today's pickles. the noisy `*_binaries` tables were fit with the CoM `trim_new` and CoM-trim catalog photometry, which `gmm.py` no longer does (see the trim bullet under `final_datasets.py`). re-run everything before comparing noisy with noiseless.
+- `jarvis26_Table7.fits`: Jarvis+26 table 7, DESI GD-1 members (679 stars). also at `/n/home02/amphillips/data/`. source of `jarvis26.pickle` (see "the real Jarvis+26 GD-1 data") and of the DESI RV errors (`noise.desi_RVerr_from_jarvis`).
+- `gmm_tables/<case>.fits`: output of `gmm.py`, one table per case (see `gmm.py` below). as of 30 Sep, the `via`, `via10hr` and `desi` tables come from the catalog-photometry pickles. the `noiseless_*` tables are older (25-27 Sep) and predate today's pickles. the noisy `*_binaries` tables were fit with the CoM `trim_new` and CoM-trim catalog photometry, which `gmm.py` no longer does (see the trim bullet under `final_datasets.py`). re-run everything before comparing noisy with noiseless. (15 Oct: `desi_noise_*` and `via_noise_*` are now current, see the `x_err` subsection; `jarvis26.fits` is the fit to the real data.)
 - `data_dicts/`: empty. the pickles actually live on scratch (see logistics).
 
 ## `/scripts`
@@ -180,7 +226,7 @@ the `# SCRATCH::::` cells between `trim_obstream_percentile` and `assign_photome
 `assign_photometry_from_catalog` is on the live path now: `final_datasets.py` calls it once per sim, and its output is what the noisy `gmm.py` cases fit. see the catalog photometry subsection under `final_datasets.py`.
 
 ## `final_datasets.py`
-assembles one data dictionary per simulation and pickles it. imports `paf`, `simspect`, `noise`. no `__main__` guard (it's a script). the per-sim work is `build_data_dict(orbit, prepared, catalog, rng)` and the pickling `dump_data_dict(data_dict, name, rvir)`; `--which {all,grid,supplemental}` picks which loop runs (default `all`; read with `parse_known_args`, so it still runs as a notebook). the supplemental loop does `--sims` (default: every `simspect.supplemental_sims` entry) x `--copies` (default `0`), each with its own seed-42 generator. copy 0 is pickled as `<sim>_<rvir>`, and copy k as `<sim>_copy<k>_<rvir>`. what it does, per orbit x rvir:
+assembles one data dictionary per simulation and pickles it. imports `paf`, `simspect`, `noise`. no `__main__` guard (it's a script). the per-sim work is `build_data_dict(orbit, prepared, catalog, rng)` and the pickling `dump_data_dict(data_dict, name, rvir)`; `--which {all,grid,supplemental,jarvis}` picks which loop runs (default `all`; read with `parse_known_args`, so it still runs as a notebook). `jarvis` only builds `jarvis26.pickle` from the real Jarvis+26 table, no simulation involved (see "the real Jarvis+26 GD-1 data"). the supplemental loop does `--sims` (default: every `simspect.supplemental_sims` entry) x `--copies` (default `0`), each with its own seed-42 generator. copy 0 is pickled as `<sim>_<rvir>`, and copy k as `<sim>_copy<k>_<rvir>`. what it does, per orbit x rvir:
 - **which sims:** `orbits = ['gd1','aau','pa5','jet','c19']` -- **M3 is dropped**, circ is not included. `stellar_pop='hm'` only (`mass_index = 1`). copies tried in order 0..4, except `aau`, which tries 4..0 to dodge a misbehaving copy. (the `if orbit != 'gd1': continue` used to re-run GD-1 alone is still there, commented out.)
 - **progenitor removal:** `N_rtid_boundary = 2.0` for every orbit -- "unbound" = outside 2x the petar tidal radius, to make sure the progenitor is fully removed and stars that get recaptured as rtid re-expands aren't counted. (an orbital-phase-dependent 1x/2x choice was tried and abandoned. the orbital phase is still computed, though no longer printed, and it's computed at the wrong time -- see the bugs list.)
 - **coordinates:** `coords_obs` (CoM `SkyCoord`), then two straightened versions: `sc` from CoM, and `sc_primaries` from the luminous component with `PM_treatment='CoM'` hardcoded -- i.e. binaries get the **primary's** instantaneous RV/phi2/distance but the **CoM** proper motions (decided 24 Sep). both are then `poly_straightening`-ed. (`streamframe_coords_observed` is called twice in a row with the same arguments, which is harmless but redundant.)
@@ -252,8 +298,9 @@ a case is set by three flags at the top of `__main__`, and they build `case_name
 | `include_binaries` | `True` / `False` | `binaries` uses `sc_straighter_primaries` (binary orbital motion in the RVs); `CoM` uses `sc_straighter`. picks the suffix `sfx = '_primaries' if include_binaries else ''`, which selects the coords, `trim_new{sfx}`, and all four catalog products, for noiseless and noisy cases alike |
 | `constrain_widths` | `True` / `False` | adds `_constrained`: stage-2 SLSQP with the sigma-ratio constraint. `False` = Powell only, unconstrained |
 | `supplemental` | `True` / `False` | fit the supplemental sims instead of the grid; the table is `<case_name>_supplemental.fits` |
+| `jarvis_data` | `True` / `False` | fit the real Jarvis+26 GD-1 data (`jarvis26.pickle`) instead of any sim. forces `noise=None`, `include_binaries=False`; the case is `jarvis26[_constrained]`. see "the real Jarvis+26 GD-1 data" |
 
-the flags can also be set from the command line (`--noise None`, `--include-binaries True`, `--constrain-widths`, `--supplemental`, `--make-plots`, each taking `True`/`False`); the values in the file are the defaults. the loop is over a flat list of `(sim, orbit, rvir)` runs, where `sim` names the pickle (== `orbit` for the grid).
+the flags can also be set from the command line (`--noise None`, `--include-binaries True`, `--constrain-widths`, `--supplemental`, `--make-plots`, `--jarvis-data` (or `--jarvis_data`), each taking `True`/`False`); the values in the file are the defaults. (between commit 3affe0c and 15 Oct, `--constrain-widths` and `--supplemental` were parsed as `s=='False'`, i.e. inverted. any table made from the command line with those flags in that window has the opposite setting from what was typed.) the loop is over a flat list of `(sim, orbit, rvir)` runs, where `sim` names the pickle (== `orbit` for the grid).
 
 - **fit dimensions:** `keys = ['phi2', 'v_phi1', 'v_phi2', 'v_gsr']` -- phi2 in **degrees** (not `d_phi2`), and the proper motions converted to **transverse velocities** (km/s, using the CoM distance) before straightening. with noise, the PM noise is converted to v_phi1/v_phi2 with the same (assumed-perfect) distances.
 - **noisy cases read the catalog-based products:** `phot = data_dict['catalog_photometry'+sfx]`, `noise_dict = data_dict['noise_catalog_photometry'+sfx]` (likewise `cut_for_*` and `matched_to_*`). the isochrone-based `phot`/`noise` lines are commented out just above them. switching back needs the old `use` lines too (also commented out), since the isochrone path depends on `alive`/`acceptable_G` and has no `matched` mask.
@@ -266,14 +313,17 @@ the flags can also be set from the command line (`--noise None`, `--include-bina
     - `alive` and `acceptable_G` are loaded but no longer used.
     - in practice none of the cuts bite: N fit = catalog size (see the table in the catalog photometry subsection).
   - `desi` fits **GD-1 only**.
+  - `jarvis_data`: `p_contam < 0.5` (608 of 679), with `x_err` from the pickle's `errors` dict (its real 1 sd uncertainties).
 - **orbits:** same five as `final_datasets.py`; no M3.
-- **output:** `data/gmm_tables/<case_name>.fits` with columns `sim` (added 11 Oct; older tables don't have it), `orbit`, `Rvir0`, `M_ts`, `S_ts` (thin-stream means/sigmas, 4-vectors in `keys` order), `M_c`, `S_c` (cocoon), `f_cocoon`, `BIC_one`, `BIC_two` (tables written before 30 Sep don't have the BIC columns). sanity plots (points coloured by p_cocoon + histograms) to `/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/<case_name>/<orbit>_<rvir>.pdf` when `make_plots=True` -- those directories have to exist already. the `# %%` cells after the table write are quick-look plots.
+- **output:** `data/gmm_tables/<case_name>.fits` with columns `sim` (added 11 Oct; older tables don't have it), `orbit`, `Rvir0`, `M_ts`, `S_ts` (thin-stream means/sigmas, 4-vectors in `keys` order), `M_c`, `S_c` (cocoon), `f_cocoon`, `BIC_one`, `BIC_two` (tables written before 30 Sep don't have the BIC columns). sanity plots (points coloured by p_cocoon + histograms) to `/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/<case_name>/<orbit>_<rvir>.pdf` (`jarvis26/jarvis26.pdf` for the real data) when `make_plots=True` -- those directories have to exist already. the `# %%` cells after the table write are quick-look plots.
 - the table doesn't record `keys`, so nothing tells you from the file itself whether column 0 is phi2 or d_phi2 -- the "translate back to angle from distance" TODOs in `results.py` suggest some earlier tables were fit in `d_phi2`. regenerate rather than trust an old table if it matters.
 
 **model choice:** each sim also gets a single-component gaussian fit, and both BICs go in the table. the expectation is that for noisy/down-sampled data some sims will prefer one component, which gets called a **non-detection of a cocoon**. see the model choice section below.
 
 ## `results.py`
-notebook-style cells making the (nice) plots from the tables and pickles: `f_cocoon` / cocoon + thin sigma_phi2, sigma_vgsr vs rvir0 per orbit (ordered by pericenter), CoM vs binaries overlay, with the GD-1 rvir0 = 0.75 DESI/Via points and the supplemental sims on top (`plots/summary_cocoon_ts_properties.pdf`; reads the `noiseless_*_supplemental.fits` tables), binary fractions in the cocoon vs thin stream (`plots/binary_fractions.pdf`), and the demo cocoon-separation panels. imports `gmm` for the membership functions. rows are filtered with `okay_mean = |M_c| < 0.5 S_c` in every dimension, i.e. a fit whose "cocoon" is displaced off-track is dropped from the plot rather than shown. TODO: rewrite.
+notebook-style cells making the (nice) plots from the tables and pickles: `f_cocoon` / cocoon + thin sigma_phi2, sigma_vgsr vs rvir0 per orbit (ordered by pericenter), CoM vs binaries overlay, with the GD-1 rvir0 = 0.75 DESI/Via points and the supplemental sims on top (`plots/summary_cocoon_ts_properties.pdf`; reads the `noiseless_*_supplemental.fits` tables), binary fractions in the cocoon vs thin stream (`plots/binary_fractions.pdf`), and the demo cocoon-separation panels. imports `gmm` for the membership functions. `okay_mean = |M_c| < 0.5 S_c` (in every dimension) is computed to drop fits whose "cocoon" is displaced off-track, but in the summary figure the filter is commented out, so every row is drawn. TODO: rewrite.
+
+the summary figure has two Jarvis+26 references per panel: a grey band = the published values ± errors (hardcoded `jarvis_*` numbers at the top of the cell), and a **black dashed line** = this model fit to their data (read from `data/gmm_tables/jarvis26.fits`, so it follows a refit).
 
 ⚠️ `results.py` still reads the **unsuffixed** catalog keys (`catalog_photometry`, `cut_for_catalog_photometry`, ... around lines 163 and 501, and in `demo_data`), so its noisy `binaries` panels use the CoM-trim photometry, unlike `gmm.py`. give it the same `sfx` switch.
 
@@ -650,10 +700,11 @@ every likelihood function (`component_likelihood`, `gmm_negative_loglikelihood`,
 - `nll_flat(theta, x_data, min_components=2, x_err=None)`. `x_err` comes after `min_components` so the old `args=(x_data,)` / `(x_data, 1)` still work. with errors: `args=(x_data, 2, x_err)` / `(x_data, 1, x_err)`.
 - `x_err=None` is the old likelihood bit for bit, and noiseless cases use it.
 - `gmm.measurement_errors(noise_dict, noise, distances, keys)` builds the full-length array: phi2 = 0 (Gaia position errors are ~1e-5 deg, and they aren't saved); v_phi1 = v_phi2 = `pm_err_gaia` converted to km/s with the CoM distance (same as the noise draw, no distance error); v_gsr = `rverr_<noise>`. `gmm.py` main and `results.py` (`observed_errors` -> `p_cocoon_from_table(x_data, row, x_err)`) both call it, so p_cocoon in the demo panels and Figure 1 uses the same errors as the fit. checked: noise draw / error has std 1.00 +- 0.02 in each velocity dimension.
+- **`x_err` is always the 1 sd uncertainty, never the sampled noise.** for the sims the saved noise draw only goes into `x_data` (and the sanity-plot scatter), and `x_err` comes from the error columns (`rverr_<noise>`, `pm_err_gaia`). for the real Jarvis+26 data nothing is added to `x_data`, and `x_err` is the pickle's `errors` dict. checked 15 Oct: GD-1 0.75 `via` CoM, `x_err[:, v_gsr]` == `rverr_via` exactly; for Jarvis, `x_err[:, v_gsr]` == `V_ERR` and `x_data[:, v_gsr]` == `DELTA_VGSR`.
 - **memberships need `x_err` too.** with the table's intrinsic sigmas and no `x_err`, every noisy star looks too far off-track and gets pushed into the cocoon.
 - GD-1 rvir0 = 0.75, `via`, CoM, without -> with `x_err`: f_cocoon 0.136 -> 0.098, thin sigma_v_gsr 0.81 -> 0.50 (noiseless 0.46), cocoon sigma_v_gsr 1.97 -> 2.07 (noiseless 2.32). **the v_phi1 / v_phi2 sigmas go to ~0**, because the Gaia transverse-velocity errors (median ~7 km/s) are ~10x the true scatter of these stars (~0.6-0.9 km/s). so a ~0 there means "not resolved by Gaia" (an upper limit), not a measurement of 0, and the `sigma_ratio_constraint` on v_phi2 can't mean anything in that regime. the old noisy fits' 7-14 km/s in v_phi were the error bars.
   (these numbers are from the seed-42 noise draw.)
-- **which tables are current** (14 Oct, after the grid seed went 42 -> 0, see `final_datasets.py`): `desi_noise_CoM` and `desi_noise_binaries` are fit with `x_err` on the seed-0 pickles. `via_noise_CoM` and `via_noise_binaries` were fit with `x_err` but on the old seed-42 draw, and `via10hr_noise_CoM` (30 Sep) predates `x_err`. **for the final version everything should use the same seed (0)**, so re-run the via cases before using them with `results.py`, which now broadens with `x_err`.
+- **which tables are current** (15 Oct, after the grid seed went 42 -> 0, see `final_datasets.py`): `desi_noise_CoM`, `desi_noise_binaries`, `via_noise_CoM` and `via_noise_binaries` are all fit with `x_err` on the seed-0 (14 Oct) pickles, unconstrained. only `via10hr_noise_CoM` (30 Sep) is left: it predates `x_err` and seed 0, so re-run it before using it with `results.py`, which now broadens with `x_err`. `jarvis26` is fit with `x_err` from the real errors.
 
 ### a width at ~0 = unresolved, not "approaches the errors"
 - **ignoring the errors**, the fitted width tends to the *observed* spread `sqrt(sigma^2 + e^2)`, i.e. ~e when sigma << e. that measures the instrument, not the stream.
@@ -661,7 +712,7 @@ every likelihood function (`component_likelihood`, `gmm_negative_loglikelihood`,
 - in the code, "0.000" means ln sigma drifted down that flat floor; the exact value means nothing.
 - **the v_phi zeros are genuinely unresolved** (~7 km/s Gaia errors, N ~ 1600 -> resolvable down to ~1.4 km/s, true ~0.35).
 - **the seed-42 DESI thin sigma_v_gsr = 0 (GD-1, 0.75, CoM) was a fluke of the noise draw, not a resolution limit.** with the Jarvis errors (median 3.1 km/s, but 44 stars < 1 km/s, which carry most of the information), a 0.46 km/s width is resolvable: toy realizations give a median estimate of 0.45, with 5% at 0. in the seed-42 draw the 44 precise stars had noise/error std 0.89, and 500 fresh draws on the same stars put only 3.4% at 0. its profile gave a 95% upper limit of ~0.41 against a true 0.47 (~1.9 sigma low). **after the switch to seed 0 the DESI thin dispersion is back near the N-body value.**
-- real GD-1 is much hotter than the sim: Jarvis+26 find ~2.5 km/s for the thin stream (`mle_sigma` on their P_THIN > 0.5 stars gives 2.37, against a naive std of 5.85 and a median V_ERR of 3.3), vs 0.46 km/s for the simulated GD-1 at 0.75 pc. their value being close to the DESI errors is a coincidence; it's a deconvolved width.
+- real GD-1 is much hotter than the sim: Jarvis+26 find ~2.5 km/s for the thin stream (`mle_sigma` on their P_THIN > 0.5 stars gives 2.37, against a naive std of 5.85 and a median V_ERR of 3.3; this model fit to their data gives 2.52, see "the real Jarvis+26 GD-1 data"), vs 0.46 km/s for the simulated GD-1 at 0.75 pc. their value being close to the DESI errors is a coincidence; it's a deconvolved width.
 - to do: a profile-likelihood helper in `gmm.py` for upper limits (the loop in `claude_profile_desi.py`), and refitting the small-N cases on several noise seeds to see how much of each table entry is the draw.
 
 diagonal sigma only: the model gives up correlations *within* a component (e.g. phi2 with v_gsr along the track). those should be small post-straightening, but that's an assumption worth checking on the residuals.
@@ -821,7 +872,7 @@ in rough order of how much they'd hurt:
 - the circular orbit simulation is from the [Phillips+26](https://iopscience.iop.org/article/10.3847/1538-4357/ae680b) grid, stored at `/n/holystore01/LABS/conroy_lab/Lab/amphillips/finished_grid/` in the directories that begin with 0-7 (see `extended_grid_info`).
 
 ## derived data products:
-- pickles (`final_datasets.py`): `/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/<orbit>_<rvir:.2f>.pickle` -- scratch, see the purge warning.
+- pickles (`final_datasets.py`): `/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/<orbit>_<rvir:.2f>.pickle` -- scratch, see the purge warning. the real-data pickle is `jarvis26.pickle` in the same directory (cheap to rebuild with `--which jarvis`).
 - GMM sanity plots (`gmm.py`): `/n/netscratch/conroy_lab/Lab/amphillips/p27_sanity_plots/<case_name>/` -- one subdir per case, must exist before running.
 - movie frames (`animations/`): `/n/netscratch/conroy_lab/Lab/amphillips/movies/<movie name>/`. `particle_spray_vs_nbody/` also holds the cached spray (`spray_gd1_hm_0.75_0.h5`); scratch, so regenerate with `--make-spray` if it's been purged.
 - GMM tables: `data/gmm_tables/` in the repo.

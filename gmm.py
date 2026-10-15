@@ -654,19 +654,30 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     noise = 'via' # <-- None or 'via' or 'desi' or 'via10hr'
     include_binaries=True
     supplemental=False #<-- True: fit the supplemental sims (simspect.supplemental_sims) instead of the grid; table gets '_supplemental'
+    jarvis_data=False #<-- True: fit the real Jarvis+26 DESI GD-1 members (jarvis26.pickle from final_datasets.py --which jarvis) with their own errors. table is 'jarvis26[_constrained]'
 
     ### command-line overrides of the flags above, e.g. `python gmm.py --noise None --include-binaries False --supplemental True`.
     #   parse_known_args so this still runs as a notebook.
     parser = argparse.ArgumentParser()
-    # parser.add_argument("--jarvis_data") #<-- an argument for whether this is jarvis data -- if so pull the jarvis_data_dict
     parser.add_argument('--noise', default=noise, type=lambda s: None if s=='None' else s)
     parser.add_argument('--include-binaries', default=include_binaries, type=lambda s: s=='True')
-    parser.add_argument('--constrain-widths', default=constrain_widths, type=lambda s: s=='False')
-    parser.add_argument('--supplemental', default=supplemental, type=lambda s: s=='False')
+    parser.add_argument('--constrain-widths', default=constrain_widths, type=lambda s: s=='True')
+    parser.add_argument('--supplemental', default=supplemental, type=lambda s: s=='True')
     parser.add_argument('--make-plots', default=make_plots, type=lambda s: s=='True')
+    parser.add_argument('--jarvis-data', '--jarvis_data', dest='jarvis_data', default=jarvis_data, type=lambda s: s=='True')
     args, _ = parser.parse_known_args()
     noise, include_binaries, constrain_widths = args.noise, args.include_binaries, args.constrain_widths
-    supplemental, make_plots = args.supplemental, args.make_plots
+    supplemental, make_plots, jarvis_data = args.supplemental, args.make_plots, args.jarvis_data
+
+    if jarvis_data:
+        ### real data: the observational errors are already in the residuals (nothing to
+        #   draw), and the RVs are whatever the binaries do to them. so it's always the
+        #   noise=None / include_binaries=False path, with x_err from the table's errors.
+        if supplemental:
+            raise ValueError("--jarvis-data and --supplemental are mutually exclusive")
+        if (noise is not None) or include_binaries:
+            print("jarvis data: overriding noise=%s, include_binaries=%s -> None, False" % (noise, include_binaries))
+        noise, include_binaries = None, False
 
     if noise is None:
         cd0 = 'noiseless'
@@ -684,6 +695,8 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
         cd2 = ''
 
     case_name = cd0+"_"+cd1+cd2
+    if jarvis_data:
+        case_name = 'jarvis26'+cd2 #<-- NOT noiseless_CoM, or it'd overwrite the grid table
     table_name = case_name+"_supplemental" if supplemental else case_name #<-- sanity plots still go in the case_name directory
 
     print("running case:", case_name, "(supplemental sims)" if supplemental else "")
@@ -733,111 +746,124 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
         runs = [(orbit, orbit, rvir) for orbit in orbits for rvir in rvirs]
     if noise=='desi': #<-- for DESI, only look at GD-1, just for the jarvis comparison. other streams don't seem to have enough surviving members for this to work.
         runs = [run for run in runs if run[1]=='gd1']
+    if jarvis_data:
+        runs = [('jarvis26', 'gd1', np.nan)] #<-- one "sim", no rvir (Rvir0 = nan in the table)
 
     print("starting loop...")
     for sim, orbit, rvir in tqdm(runs):
         ii = orbits.index(orbit) #<-- for phi1_lims
 
-        filename = datapath+"%s_%.2f.pickle"%(sim, rvir)
+        filename = datapath+("jarvis26.pickle" if jarvis_data else "%s_%.2f.pickle"%(sim, rvir))
         with open(filename, 'rb') as handle:
             data_dict = pickle.load(handle)
 
-        CMdict, lumdict = data_dict['CoM'], data_dict['luminous']
-        coords_obs = data_dict['coords_obs'] #<-- coordinate object
-        distances = coords_obs.distance
+        if jarvis_data:
+            ### observed residuals about the jarvis track, already in keys' units (PMs -> v_phi
+            #   with their distance track in final_datasets.py), and their 1 sd errors in the
+            #   same keys. no noise to add; the errors only go into the likelihood.
+            sc_straighter = data_dict['sc_straighter']
+            errors_dict = data_dict['errors'] #<-- 1 sd uncertainties, not a noise draw
+            use = np.asarray(data_dict['p_contam']) < 0.5 #<-- drop likely contaminants (p_contam = 1 - P_THIN - P_COCOON)
+
+        else:
+            CMdict, lumdict = data_dict['CoM'], data_dict['luminous']
+            coords_obs = data_dict['coords_obs'] #<-- coordinate object
+            distances = coords_obs.distance
 
 
-        ### when deciding whether to include binaries, the decision is between 
-        #   
-        #   the suffix picks the coords, the percentile trim, and the catalog
-        #   photometry/noise products that were made with that trim.
-        sfx = '_primaries' if include_binaries else ''
-        sc_straighter = data_dict['sc_straighter'+sfx] #<-- dictionary
-
-
-
-
-
-        if noise is not None:
-            ### these dictionaries are from the "just isochrone matching"
-            #   photometry generation
-            # phot = data_dict['phot']
-            # noise_dict = data_dict['noise']
-
-            phot = data_dict['catalog_photometry'+sfx]
-            cut =  data_dict['cut_for_catalog_photometry'+sfx] #<-- this is unbound & trim_new[_primaries] & nonrem.
-            matched_flag = data_dict['matched_to_catalog_photometry'+sfx]
-
-
-            ### building out the full matched array so I can 
-            #   combine it in the 'use' business.
-            matched_full = np.full(len(cut), fill_value = False)
-            matched_full[cut] = matched_flag
+            ### when deciding whether to include binaries, the decision is between 
+            #   
+            #   the suffix picks the coords, the percentile trim, and the catalog
+            #   photometry/noise products that were made with that trim.
+            sfx = '_primaries' if include_binaries else ''
+            sc_straighter = data_dict['sc_straighter'+sfx] #<-- dictionary
 
 
 
-            noise_dict = data_dict['noise_catalog_photometry'+sfx]
 
 
-            noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+            if noise is not None:
+                ### these dictionaries are from the "just isochrone matching"
+                #   photometry generation
+                # phot = data_dict['phot']
+                # noise_dict = data_dict['noise']
 
-            rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
-
-            # in a perfect world, we'd fold in a mag-dependent parallax uncertainty -> distance uncertainty 
-            #   -> quadrature summed pm + distance uncertainty would give the velocity fractional uncertainty.
-            #   however actual distances to stream stars should be a little better than gaia parallax-based distances
-            #   and their determination is less straightforward. assuming I know the distances perfectly for now. 
-            noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-            noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-            noise_dict['d_phi2'] = distances.to(u.kpc).value * (noise_dict['phi2']*u.degree).to(u.radian).value
-
-        ### boolean masks :p
-        unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
-        inMW_na = data_dict['inMW_na']
+                phot = data_dict['catalog_photometry'+sfx]
+                cut =  data_dict['cut_for_catalog_photometry'+sfx] #<-- this is unbound & trim_new[_primaries] & nonrem.
+                matched_flag = data_dict['matched_to_catalog_photometry'+sfx]
 
 
-        # trim in the space the GMM sees: CoM coords for CoM cases, binary
-        #   orbital motion included for binaries cases. same for noisy cases,
-        #   since the catalog photometry was matched within the same trim.
-        trim_new = data_dict['trim_new'+sfx]
-
-        alive = data_dict['alive']
-        acceptable_G = data_dict['acceptable_G'] #<-- this is only for isochrone-based. not for catalog-based, where everything is OK (i think; would be good to verify.)
+                ### building out the full matched array so I can 
+                #   combine it in the 'use' business.
+                matched_full = np.full(len(cut), fill_value = False)
+                matched_full[cut] = matched_flag
 
 
-        if noise is None: #<-- raw N-body case; only care that stuff is within the percentile trim and unbound from the cluster
-            use = trim_new & unbound
+
+                noise_dict = data_dict['noise_catalog_photometry'+sfx]
+
+
+                noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+
+                rverr = noise_dict['rverr_'+noise] #<-- this is the RV uncertainty. the above is the noise sampled from a gaussian of width rverr_[survey]
+
+                # in a perfect world, we'd fold in a mag-dependent parallax uncertainty -> distance uncertainty 
+                #   -> quadrature summed pm + distance uncertainty would give the velocity fractional uncertainty.
+                #   however actual distances to stream stars should be a little better than gaia parallax-based distances
+                #   and their determination is less straightforward. assuming I know the distances perfectly for now. 
+                noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+                noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+                noise_dict['d_phi2'] = distances.to(u.kpc).value * (noise_dict['phi2']*u.degree).to(u.radian).value
+
+            ### boolean masks :p
+            unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
+            inMW_na = data_dict['inMW_na']
+
+
+            # trim in the space the GMM sees: CoM coords for CoM cases, binary
+            #   orbital motion included for binaries cases. same for noisy cases,
+            #   since the catalog photometry was matched within the same trim.
+            trim_new = data_dict['trim_new'+sfx]
+
+            alive = data_dict['alive']
+            acceptable_G = data_dict['acceptable_G'] #<-- this is only for isochrone-based. not for catalog-based, where everything is OK (i think; would be good to verify.)
+
+
+            if noise is None: #<-- raw N-body case; only care that stuff is within the percentile trim and unbound from the cluster
+                use = trim_new & unbound
             
             
-        if noise is not None: #<-- semi-realistic observations case; throw out remnants, things outside a painted on stellar population, with unacceptable viamock errors ...
+            if noise is not None: #<-- semi-realistic observations case; throw out remnants, things outside a painted on stellar population, with unacceptable viamock errors ...
                 
-            cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-            good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
+                cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+                good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms. 
                 
-            if noise in ['via', 'via10hr']:
-                good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
-                # use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
+                if noise in ['via', 'via10hr']:
+                    good_RV = rverr<5.0 #km/s #<--- pretty happy with how this mag distribution comes out...
+                    # use = trim_new & unbound & alive & nonrem & acceptable_G & good_pm & good_RV
 
 
                 
-            if noise=='desi':
-                ### IN THIS CASE I WANT TO ONLY USE THE BRIGHTEST N_jarvis STARS!!! 
+                if noise=='desi':
+                    ### IN THIS CASE I WANT TO ONLY USE THE BRIGHTEST N_jarvis STARS!!! 
                 
-                particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
+                    particle_IDs = np.arange(0, len(phot['mG']), 1).astype(int)
 
                     
-                bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
-                ordered_IDs = particle_IDs[bright_ordering]
-                used_IDs = ordered_IDs[:N_jarvis]
+                    bright_ordering = np.argsort(phot['mG']) #<-- nans have moved to the end
+                    ordered_IDs = particle_IDs[bright_ordering]
+                    used_IDs = ordered_IDs[:N_jarvis]
 
-                top_N_jarvis = np.isin(particle_IDs, used_IDs)
+                    top_N_jarvis = np.isin(particle_IDs, used_IDs)
 
-                good_RV = (top_N_jarvis) & (rverr<10.) #km/s
-                # use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
+                    good_RV = (top_N_jarvis) & (rverr<10.) #km/s
+                    # use = trim_new & unbound & alive & nonrem & good_pm & good_RV#<-- no acceptable G range for DESI errors. 
 
 
 
-            use = cut & matched_full & good_pm & good_RV & nonrem #<--- do I ...need nonrem????
+                use = cut & matched_full & good_pm & good_RV & nonrem #<--- do I ...need nonrem????
+
+
 
 
         #### a second for troubleshooting what the best cuts to make are to ~match the DESI mag distribution...
@@ -882,8 +908,13 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
         if noise is None:
             x_err = None
 
+        if jarvis_data: #<-- the real errors, stored under the same keys as the residuals (phi2 err = 0)
+            x_err = np.column_stack([errors_dict[k][use] for k in keys]).astype(float)
+
         if noise is not None:
             x_err = measurement_errors(noise_dict, noise, distances, keys)[use]
+
+        if x_err is not None:
             if not np.all(np.isfinite(x_err)):
                 raise ValueError("%s %.2f: %i non-finite errors in the fitted sample"
                                  % (sim, rvir, np.sum(~np.isfinite(x_err))))
@@ -1066,7 +1097,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
 
 
             case_dir = case_name+"/" #<-- have made all of these directories in scratch. 
-            plt.savefig(plot_path+case_dir+"%s_%.2f.pdf"%(sim, rvir),
+            plt.savefig(plot_path+case_dir+(sim+".pdf" if jarvis_data else "%s_%.2f.pdf"%(sim, rvir)),
                         dpi=300, bbox_inches='tight')
 
             
