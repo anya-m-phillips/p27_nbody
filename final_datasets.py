@@ -13,7 +13,7 @@ import numpy as np
 from scipy.stats import binned_statistic, norm, multivariate_normal
 from scipy.optimize import curve_fit, minimize, Bounds
 # from scipy.ndimage import gaussian_filter1d
-# from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicSpline
 from scipy.special import expit, logit, logsumexp # inverse-logit / logit, for the f_1 reparameterization
 
 
@@ -60,6 +60,8 @@ import inspect_new_sims as simspect
 import noise as noise #<-- for like isochrone stuff. 
 
 import argparse
+import cmasher as cmr
+
 # %%
 def trim_obstream_percentile(sc, p=[1,99], 
                             trim_keys=['phi1','d_phi2','v_phi1','v_phi2','v_gsr','distance']):
@@ -361,7 +363,7 @@ def dump_data_dict(data_dict, name, rvir):
 ### which sims to (re)make: the main grid, the supplemental sims (simspect.supplemental_sims), or both.
 #   parse_known_args so this still runs as a notebook (default 'all').
 parser = argparse.ArgumentParser()
-parser.add_argument('--which', choices=['all', 'grid', 'supplemental'], default='all')
+parser.add_argument('--which', choices=['all', 'grid', 'supplemental','jarvis'], default='all')
 # supplemental sims only: which sims and which copies. copy 0 -> <sim>_<rvir>.pickle, copy k -> <sim>_copy<k>_<rvir>.pickle
 parser.add_argument('--sims', nargs='+', default=list(simspect.supplemental_sims))
 parser.add_argument('--copies', nargs='+', type=int, default=[0])
@@ -441,4 +443,59 @@ if args.which in ['all', 'supplemental']:
             data_dict = build_data_dict(orbit, prepared, noise.load_gaia_catalog(orbit), rng_supplemental)
             dump_data_dict(data_dict, sim if copy==0 else sim+"_copy%i"%copy, sim_info['rvir'])
 
-# %%
+
+if args.which in ['all','jarvis']:
+    print("jarvis+26 data")
+    # also making a data_dict for the jarvis table so that I can run my fit on that data and 
+    # make sure i get consitent-ish parameters. 
+    t_jarvis = Table.read(repo_path+"/data/jarvis26_Table7.fits", format='fits')
+    # gd1_tracks = Table.read(repo_path+"/data/jarvis26_table3.fits", format='fits') #<-- don't need this, just want distances. 
+    t_jarvis['P_CONTAMINANT'] = 1-(t_jarvis['P_THIN']+t_jarvis['P_COCOON'])
+    sel = t_jarvis['P_CONTAMINANT']<0.5
+
+    phi1_jarvis = np.array([-90, -70, -50, -35, -20, 0, 25, 40]) * u.degree
+    d_jarvis = np.array([9.12, 8.32, 7.76, 7.59, 8.32, 9.77, 14.45, 19.95]) * u.kpc
+    distance_spline = CubicSpline(phi1_jarvis.to(u.degree).value, d_jarvis.to(u.kpc).value)
+
+    t_jarvis['dkpc_from_track'] = distance_spline(t_jarvis['phi1'])
+
+    def v_from_pm(pm_mas_yr, d_kpc): #<-- translating proper motions -> transverse velocities with the distance track. a little hand-wavey.
+        v = pm_mas_yr*(u.mas/u.yr).to(u.radian/u.s) * d_kpc*(u.kpc).to(u.km)
+        return v
+
+
+    t_jarvis['v_phi1'] = v_from_pm(t_jarvis['DELTA_PM_PHI1'], t_jarvis['dkpc_from_track'])
+    t_jarvis['v_phi1_err'] = v_from_pm(t_jarvis['PM_PHI1_ERR'], t_jarvis['dkpc_from_track'])
+
+    t_jarvis['v_phi2'] = v_from_pm(t_jarvis['DELTA_PM_PHI2'], t_jarvis['dkpc_from_track'])
+    t_jarvis['v_phi2_err'] = v_from_pm(t_jarvis['PM_PHI2_ERR'], t_jarvis['dkpc_from_track'])
+
+    ssc_jarvis = {
+        "phi1":np.asarray(t_jarvis['phi1']),
+        "phi2":np.asarray(t_jarvis['DELTA_PHI2']),
+        "pm_phi1":np.asarray(t_jarvis['DELTA_PM_PHI1']),
+        "pm_phi2":np.asarray(t_jarvis['DELTA_PM_PHI2']),
+        "v_gsr":np.asarray(t_jarvis['DELTA_VGSR']),
+        "v_phi1":np.asarray(t_jarvis['v_phi1']),
+        "v_phi2":np.asarray(t_jarvis['v_phi2'])
+    }
+
+    noise_dict_jarvis = {
+        "phi1":np.zeros(len(t_jarvis)), # ra/dec errors aren't provided; hopefully this is okay... 
+        "phi2":np.zeros(len(t_jarvis)), # ra/dec errors aren't provided; hopefully this is okay... 
+        "pm_phi1":np.asarray(t_jarvis['PM_PHI1_ERR']),
+        "pm_phi2":np.asarray(t_jarvis['PM_PHI2_ERR']),
+        "v_gsr":np.asarray(t_jarvis['V_ERR']),
+        "v_phi1":np.asarray(t_jarvis['v_phi1_err']),
+        "v_phi2":np.asarray(t_jarvis['v_phi2_err'])
+    }
+
+
+    data_dict_jarvis = {"ssc_straighter":ssc_jarvis, "noise_dict":noise_dict_jarvis}
+    data_dict_jarvis['p_contam'] = t_jarvis['P_CONTAMINANT']
+
+    filename = "/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/jarvis26.pickle"
+    with open(filename, 'wb') as handle:
+            pickle.dump(data_dict_jarvis, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # %%

@@ -57,6 +57,9 @@ import argparse
 t_jarvis = Table.read(repo_path+"/data/jarvis26_Table7.fits", format='fits')
 N_jarvis = len(t_jarvis)# 679 #<-- length of jarvis catalog. 
 
+t_jarvis['P_CONTAMINANT'] = 1-(t_jarvis['P_THIN']+t_jarvis['P_COCOON'])
+use_jarvis = t_jarvis['P_CONTAMINANT']<0.5 #<-- minimize contamination. 
+
 # %%
 ### helper functions here:
 def mle_sigma(v, e):
@@ -655,6 +658,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     ### command-line overrides of the flags above, e.g. `python gmm.py --noise None --include-binaries False --supplemental True`.
     #   parse_known_args so this still runs as a notebook.
     parser = argparse.ArgumentParser()
+    # parser.add_argument("--jarvis_data") #<-- an argument for whether this is jarvis data -- if so pull the jarvis_data_dict
     parser.add_argument('--noise', default=noise, type=lambda s: None if s=='None' else s)
     parser.add_argument('--include-binaries', default=include_binaries, type=lambda s: s=='True')
     parser.add_argument('--constrain-widths', default=constrain_widths, type=lambda s: s=='False')
