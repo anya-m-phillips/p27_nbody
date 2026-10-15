@@ -681,7 +681,30 @@ ax.set_xlabel(r'$G_{B_P} - G_{R_P}$')
 ax.set_ylabel(r'$G$')
 ax.legend(loc='lower left', fontsize=15)
 plt.savefig("plots/matching_catalog_mags.pdf", dpi=300, bbox_inches='tight')
+# %%
+t_jarvis = Table.read(repo_path+"/data/jarvis26_Table7.fits", format='fits')
+orbit = 'gd1'
+rvir_index=0
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
 
+phot = data_dict['phot']
+catphot = data_dict['catalog_photometry']
+z = catphot['mz']
+g = catphot['mG']
+desi_rverr = n.desi_RVerr(z)
+
+fig, ax = plt.subplots()
+ax.scatter(g, desi_rverr, c='k', label='$\\it{Gaia}$ catalog with\nKoposov+26 relation', s=5, rasterized=True)
+ax.scatter(t_jarvis['GMAG0'], t_jarvis['V_ERR'], label='Jarvis+26 catalog', c='cornflowerblue', s=5, rasterized=True)
+ax.legend(loc='upper left', markerscale=4)
+# ax.set_ylim(5e-1, 1.5e1)
+# ax.set_xlim(16,22)
+ax.set_yscale('log')
+ax.set_xlabel(r'$G$')
+ax.set_ylabel(r'$\sigma_v~[\rm km~s^{-1}]$')
+plt.savefig("plots/rverr_comparison.pdf", dpi=300, bbox_inches='tight')
 # %%
 #
 
