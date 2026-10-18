@@ -316,25 +316,27 @@ ccc = cc[1:]
 fig, axs = plt.subplots(2,3,figsize=[21,14])
 
 
-axs[0,0].axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, 
-                 color='k', alpha=0.1)
-axs[0,1].axhspan(jarvis_sphi2_c-jarvis_sphi2_c_err, jarvis_sphi2_c+jarvis_sphi2_c_err, 
-                 color='k', alpha=0.1)
-axs[1,1].axhspan(jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_sphi2_ts+jarvis_sphi2_ts_err, 
-                 color='k', alpha=0.1)
-axs[0,2].axhspan(jarvis_svgsr_c-jarvis_svgsr_c_err, jarvis_svgsr_c+jarvis_svgsr_c_err, 
-                 color='k', alpha=0.1, label = "Values from Jarvis+26")
-axs[1,2].axhspan(jarvis_svgsr_ts-jarvis_svgsr_ts_err, jarvis_svgsr_ts+jarvis_svgsr_ts_err,
-                 color='k', alpha=0.1)
+# (jarvis comparison moved to the sigma-vs-sigma figure below; commented out here)
+# axs[0,0].axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err,
+#                  color='k', alpha=0.1)
+# axs[0,1].axhspan(jarvis_sphi2_c-jarvis_sphi2_c_err, jarvis_sphi2_c+jarvis_sphi2_c_err,
+#                  color='k', alpha=0.1)
+# axs[1,1].axhspan(jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_sphi2_ts+jarvis_sphi2_ts_err,
+#                  color='k', alpha=0.1)
+# axs[0,2].axhspan(jarvis_svgsr_c-jarvis_svgsr_c_err, jarvis_svgsr_c+jarvis_svgsr_c_err,
+#                  color='k', alpha=0.1, label = "Values from Jarvis+26")
+# axs[1,2].axhspan(jarvis_svgsr_ts-jarvis_svgsr_ts_err, jarvis_svgsr_ts+jarvis_svgsr_ts_err,
+#                  color='k', alpha=0.1)
 
 ### this model (gmm.py --jarvis-data True) fit to the Jarvis+26 data itself, with their errors.
+### (the table and style are still defined because the sigma-vs-sigma figure below uses them.)
 t_jarvis_fit = Table.read(table_path+"jarvis26.fits", format="fits")[0]
 jarvis_fit_style = dict(color='k', ls='--', lw=2, zorder=1)
-axs[0,0].axhline(t_jarvis_fit['f_cocoon'], **jarvis_fit_style)
-axs[0,1].axhline(t_jarvis_fit['S_c'][0], **jarvis_fit_style)
-axs[0,2].axhline(t_jarvis_fit['S_c'][-1], label="This model fit to Jarvis+26 data", **jarvis_fit_style)
-axs[1,1].axhline(t_jarvis_fit['S_ts'][0], **jarvis_fit_style)
-axs[1,2].axhline(t_jarvis_fit['S_ts'][-1], **jarvis_fit_style)
+# axs[0,0].axhline(t_jarvis_fit['f_cocoon'], **jarvis_fit_style)
+# axs[0,1].axhline(t_jarvis_fit['S_c'][0], **jarvis_fit_style)
+# axs[0,2].axhline(t_jarvis_fit['S_c'][-1], label="This model fit to Jarvis+26 data", **jarvis_fit_style)
+# axs[1,1].axhline(t_jarvis_fit['S_ts'][0], **jarvis_fit_style)
+# axs[1,2].axhline(t_jarvis_fit['S_ts'][-1], **jarvis_fit_style)
 
 plt.subplots_adjust(wspace=0.2, hspace=0.2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
@@ -398,8 +400,10 @@ axs[1,1].legend(loc='upper left', bbox_to_anchor=[-1.2, 1],
                 title='Main simulation grid')
 
 axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, label='system CMs')
-axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary orbits')
-axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.4,1], ncol=3)
+axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary\norbits')
+# axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.4,1], ncol=3)
+axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.5,-1.25], ncol=2)
+
 
 axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
 axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
@@ -434,30 +438,30 @@ labels=[
     'Via/CM'
 ]
 
-### different noise protocols
-for ii, f in enumerate(files):
-    t_obs = Table.read(table_path+f, format='fits')
-    row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')] # only making one comparison. 
-
-    axs[0,0].scatter(row['Rvir0'], row['f_cocoon'], 
-                label=labels[ii],
-                marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                edgecolor='k' if 'binaries' in labels[ii] else 'w', 
-                lw=1.5, s=200)
-    axs[0,1].scatter(row['Rvir0'], row['S_c'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                            edgecolor='k' if 'binaries' in labels[ii] else 'w', 
-                            lw=1., s=200)
-    axs[0,2].scatter(row['Rvir0'], row['S_c'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                            edgecolor='k' if 'binaries' in labels[ii] else 'w', 
-                            lw=1., s=200)
-    axs[1,1].scatter(row['Rvir0'], row['S_ts'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
-                             edgecolor='k' if 'binaries' in labels[ii] else 'w', 
-                             lw=1., s=200)
-    axs[1,2].scatter(row['Rvir0'], row['S_ts'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k', 
-                            edgecolor='k' if 'binaries' in labels[ii] else 'w',
-                            lw=1., s=200)
-axs[0,0].legend(loc='lower left', bbox_to_anchor=[0.0,-1.25], fontsize=20,
-                title='Varied noise protocols')
+### different noise protocols (commented out: mock-observed points now live in the sigma-vs-sigma figure below)
+# for ii, f in enumerate(files):
+#     t_obs = Table.read(table_path+f, format='fits')
+#     row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')] # only making one comparison.
+#
+#     axs[0,0].scatter(row['Rvir0'], row['f_cocoon'],
+#                 label=labels[ii],
+#                 marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
+#                 edgecolor='k' if 'binaries' in labels[ii] else 'w',
+#                 lw=1.5, s=200)
+#     axs[0,1].scatter(row['Rvir0'], row['S_c'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
+#                             edgecolor='k' if 'binaries' in labels[ii] else 'w',
+#                             lw=1., s=200)
+#     axs[0,2].scatter(row['Rvir0'], row['S_c'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
+#                             edgecolor='k' if 'binaries' in labels[ii] else 'w',
+#                             lw=1., s=200)
+#     axs[1,1].scatter(row['Rvir0'], row['S_ts'][:,0], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
+#                              edgecolor='k' if 'binaries' in labels[ii] else 'w',
+#                              lw=1., s=200)
+#     axs[1,2].scatter(row['Rvir0'], row['S_ts'][:,-1], marker=markers[ii], color='none' if 'binaries' in labels[ii] else 'k',
+#                             edgecolor='k' if 'binaries' in labels[ii] else 'w',
+#                             lw=1., s=200)
+# axs[0,0].legend(loc='lower left', bbox_to_anchor=[0.0,-1.25], fontsize=20,
+#                 title='Varied noise protocols')
 
 
 #   ADD THE SUPPLEMENTAL GD-1 SIMS (noiseless; gmm.py --supplemental True). gd1 colour,
@@ -476,28 +480,24 @@ for case in [caseI, caseII]:
             continue #<--- skipping until i make the denser version of this. 
         style = dict(marker=supp_markers[sim], s=supp_sizes[sim], lw=2 if is_bin else 1, zorder=5,
                      color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k')
-        axs[0,0].scatter(row['Rvir0'], row['f_cocoon'],  **style)
-        axs[0,1].scatter(row['Rvir0'], row['S_c'][0], label=supp_labels[sim]+label_addon, **style)
+        axs[0,0].scatter(row['Rvir0'], row['f_cocoon'], label=supp_labels[sim]+label_addon,   **style)
+        axs[0,1].scatter(row['Rvir0'], row['S_c'][0], **style)
         axs[0,2].scatter(row['Rvir0'], row['S_c'][-1], **style)
         axs[1,1].scatter(row['Rvir0'], row['S_ts'][0], **style)
         axs[1,2].scatter(row['Rvir0'], row['S_ts'][-1], **style)
 
 
-axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
-                title='Supplemental simulations', ncol=2)
+# axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
+#                 title='Supplemental simulations', ncol=2)
+axs[0,0].legend(loc='lower left', bbox_to_anchor=[-0., -1.1],
+                title='Supplemental simulations', ncol=1)
 for ax in np.concatenate([axs[0], axs[1]]):
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
 
-# plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
 # %%
-# CLAUDE START HERE
-# next we want to plot sigma_vr vs sigma_phi2. 
-# start with just all the cocoon points. 
-# use all the same markers as in the above plot.
-# size the N-body sim points by initial virial radius
-# include the jarvis values for the cocoon as a grey rectangle enclosing the convidence interval i defined above.
-# include the measurement that my fit makes for the jarvis data as a black X
+# DISPERSION VS WIDTH FOR THIN STREAM AND COCOON, INCLUDING MOCK OBSERVATIONS
 from matplotlib.patches import Rectangle
 
 def size_from_rvir(r):
@@ -522,10 +522,34 @@ components = [
     ('S_c',  'cocoon', (jarvis_sphi2_c,  jarvis_sphi2_c_err,  jarvis_svgsr_c,  jarvis_svgsr_c_err)),
     ('S_ts', 'thin stream', (jarvis_sphi2_ts, jarvis_sphi2_ts_err, jarvis_svgsr_ts, jarvis_svgsr_ts_err)),
 ]
-fig, axs_ss = plt.subplots(1, 2, figsize=[16,7])
-plt.subplots_adjust(wspace=0.2)
+fig, axs_ss = plt.subplots(1, 3, figsize=[24,7])
+plt.subplots_adjust(wspace=0.25)
 
-for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss, components):
+# left panel: f_cocoon vs rvir0, GD-1 only (CMs), plus the mock-observed points
+axf = axs_ss[0]
+axf.axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, color='k', alpha=0.1)
+axf.axhline(t_jarvis_fit['f_cocoon'], **jarvis_fit_style)
+sel = (tt['orbit'] == 'gd1')
+order = np.argsort(tt['Rvir0'][sel])
+rr = np.asarray(tt['Rvir0'][sel])[order]
+ff = np.asarray(tt['f_cocoon'][sel])[order]
+axf.plot(rr, ff, color=gd1_color, zorder=1)
+axf.scatter(rr, ff, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2)
+for ii, f in enumerate(files):
+    t_obs = Table.read(table_path+f, format='fits')
+    row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
+    axf.scatter(row['Rvir0'], row['f_cocoon'], marker=markers[ii],
+                color='none' if 'binaries' in labels[ii] else 'k',
+                edgecolor='k' if 'binaries' in labels[ii] else 'w', lw=1.5,
+                s=size_from_rvir(row['Rvir0']) * 3, zorder=4)
+axf.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+axf.set_ylabel(r'$f_{\rm cocoon}$')
+axf.set_xticks([.75, 1.5, 3., 6.])
+axf.minorticks_off()
+axf.set_ylim(bottom=0)
+axf.set_title('GD-1')
+
+for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
     # jarvis+26 published confidence region
     ax.add_patch(Rectangle((jx-jxe, jy-jye), 2*jxe, 2*jye,
                            color='k', alpha=0.1, lw=0, zorder=0, label='Values from Jarvis+26'))
@@ -580,8 +604,8 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss, components):
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
 
-axs_ss[1].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
-plt.savefig("plots/summary_cocoon_sigma_vs_sigma.pdf", dpi=300, bbox_inches='tight')
+axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
+plt.savefig("plots/jarvis_comparison.pdf", dpi=300, bbox_inches='tight')
 
 
 # %%
