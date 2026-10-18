@@ -489,7 +489,101 @@ for ax in np.concatenate([axs[0], axs[1]]):
     ax.set_ylim(bottom=0)
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
 
-plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
+# %%
+# CLAUDE START HERE
+# next we want to plot sigma_vr vs sigma_phi2. 
+# start with just all the cocoon points. 
+# use all the same markers as in the above plot.
+# size the N-body sim points by initial virial radius
+# include the jarvis values for the cocoon as a grey rectangle enclosing the convidence interval i defined above.
+# include the measurement that my fit makes for the jarvis data as a black X
+from matplotlib.patches import Rectangle
+
+def size_from_rvir(r):
+    return 60*(np.asarray(r, dtype=float)/0.75)**0.7 # 60 -> ~250 pt^2 from 0.75 -> 6 pc
+
+files = [
+    'desi_noise_binaries.fits',
+    'desi_noise_CoM.fits',
+    'via_noise_binaries.fits',
+    'via_noise_CoM.fits'
+]
+markers = ['o', 'o', 'v', 'v']
+labels=[
+    'DESI/binaries',
+    'DESI/CM',
+    'Via/binaries',
+    'Via/CM'
+]
+
+# (table column, panel title, jarvis published (x, xerr, y, yerr))
+components = [
+    ('S_c',  'cocoon', (jarvis_sphi2_c,  jarvis_sphi2_c_err,  jarvis_svgsr_c,  jarvis_svgsr_c_err)),
+    ('S_ts', 'thin stream', (jarvis_sphi2_ts, jarvis_sphi2_ts_err, jarvis_svgsr_ts, jarvis_svgsr_ts_err)),
+]
+fig, axs_ss = plt.subplots(1, 2, figsize=[16,7])
+plt.subplots_adjust(wspace=0.2)
+
+for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss, components):
+    # jarvis+26 published confidence region
+    ax.add_patch(Rectangle((jx-jxe, jy-jye), 2*jxe, 2*jye,
+                           color='k', alpha=0.1, lw=0, zorder=0, label='Values from Jarvis+26'))
+    # this model fit to the jarvis data
+    ax.scatter(t_jarvis_fit[scol][0], t_jarvis_fit[scol][-1], marker='x', color='k', s=250,
+               lw=1 , zorder=6, label='This model fit to Jarvis+26 data')
+
+    # main grid: CMs, joined in order of rvir0
+    for ii, orbit in enumerate(orbits[reordered]):
+        sel = (tt['orbit'] == orbit)
+        order = np.argsort(tt['Rvir0'][sel])
+        xx = np.asarray(tt[scol][sel][:,0])[order]
+        yy = np.asarray(tt[scol][sel][:,-1])[order]
+        rr = np.asarray(tt['Rvir0'][sel])[order]
+        ax.plot(xx, yy, color=ccc[ii], ls='-', zorder=1)
+        ax.scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=ccc[ii], zorder=2)
+        ax.plot([None], [None], color=ccc[ii], marker='o', markersize=8,
+                label=orbit_titles[reordered][ii]+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
+
+    # survey-noise points, GD-1 rvir0 = 0.75 only
+    for ii, f in enumerate(files):
+        t_obs = Table.read(table_path+f, format='fits')
+        row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
+        is_bin = 'binaries' in labels[ii]
+        ax.scatter(row[scol][:,0], row[scol][:,-1], marker=markers[ii],
+                   s=size_from_rvir(row['Rvir0']) * 3,
+                   color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
+                   lw=1.5, zorder=4, label=labels[ii])
+
+    # supplemental GD-1 sims
+    for case in [caseI]:
+        t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
+        is_bin = 'binaries' in case
+        for row in t_supp:
+            sim = row['sim']
+            if sim == 'gd1_2xN':
+                continue
+            ax.scatter(row[scol][0], row[scol][-1], marker=supp_markers[sim],
+                       s=size_from_rvir(row['Rvir0']) * (450/200), lw=2 if is_bin else 1, zorder=5,
+                       color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k',
+                       label=supp_labels[sim]+('/binaries' if is_bin else '/CM'))
+
+    # marker-size key
+    for r in [0.75, 1.5, 3., 6.]:
+        ax.scatter([None], [None], s=size_from_rvir(r), color='grey', label=r'$R_{\rm vir,0}=%g$ pc'%r)
+
+    short = 'cocoon' if scol == 'S_c' else 'thin'
+    ax.set_xlabel(r'$\sigma_{\phi_2, \rm %s}~[\degree]$'%short)
+    ax.set_ylabel(r'$\sigma_{v_{\rm GSR}, \rm %s}~[\rm km~s^{-1}]$'%short)
+    # ax.set_title(ctitle)
+    ax.text(0.05, 0.95, ctitle, ha='left', va='top', transform=ax.transAxes)
+    ax.set_xlim(left=0)
+    ax.set_ylim(bottom=0)
+
+axs_ss[1].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
+plt.savefig("plots/summary_cocoon_sigma_vs_sigma.pdf", dpi=300, bbox_inches='tight')
+
+
 # %%
 #-----------------------------------------------------#
 #   binary fractions in thin stream vs cocoon         # 
