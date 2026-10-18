@@ -547,14 +547,14 @@ axf.set_ylabel(r'$f_{\rm cocoon}$')
 axf.set_xticks([.75, 1.5, 3., 6.])
 axf.minorticks_off()
 axf.set_ylim(bottom=0)
-axf.set_title('GD-1')
+# axf.set_title('GD-1')
 
 for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
     # jarvis+26 published confidence region
     ax.add_patch(Rectangle((jx-jxe, jy-jye), 2*jxe, 2*jye,
                            color='k', alpha=0.1, lw=0, zorder=0, label='Values from Jarvis+26'))
     # this model fit to the jarvis data
-    ax.scatter(t_jarvis_fit[scol][0], t_jarvis_fit[scol][-1], marker='x', color='k', s=250,
+    ax.plot(t_jarvis_fit[scol][0], t_jarvis_fit[scol][-1], marker='x', ls='--', color='k', markersize=10,
                lw=1 , zorder=6, label='This model fit to Jarvis+26 data')
 
     # main grid: CMs, joined in order of rvir0
