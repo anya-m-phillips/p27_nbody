@@ -737,6 +737,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
 
     tab_sims, tab_orbits, tab_rvirs, Mts, Sts, Mc, Sc, fc = [], [], [], [], [], [], [], []
     BIC_one, BIC_two = [], []
+    M_1comp, S_1comp = [], []
 
     ### one (sim, orbit, rvir) per fit. `sim` names the pickle: the orbit for the grid,
     #   the supplemental sim's name otherwise.
@@ -974,6 +975,9 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
                             options={'maxiter': 100000, 'maxfev': 100000})
 
         # BIC takes the log likelihood (-nll); k = len(theta) = 2K = 8 for one component, (n-1) + 2nK = 17 for two.
+        _, mu_one, sigma_one = unpack_params(result_one.x, K=len(keys), min_components=1)
+        M_1comp.append(mu_one[0])
+        S_1comp.append(sigma_one[0])
         BIC_one.append(bic(-result_one.fun, k=len(result_one.x), N=len(x_data)))
         BIC_two.append(bic(-result.fun, k=len(result.x), N=len(x_data)))
 
@@ -1115,6 +1119,8 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     t_out['M_c'] = np.array(Mc)
     t_out['S_c'] = np.array(Sc)
     t_out['f_cocoon'] = np.array(fc)
+    t_out['M_1comp'] = np.array(M_1comp)
+    t_out['S_1comp'] = np.array(S_1comp)
     t_out['BIC_one'] = np.array(BIC_one)
     t_out['BIC_two'] = np.array(BIC_two)
     t_out.write(table_path+table_name+".fits", overwrite=True)

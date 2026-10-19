@@ -4,6 +4,10 @@ Exploring an N-body grid of mock streams to probe effects of progenitor dynamics
 - **detectability**: under realistic survey noise + down-sampling (Via, DESI), when is a cocoon actually recoverable? a one-component model being preferred = a cocoon non-detection (see the `gmm.py` TODO).
 
 
+# working preferences
+- **make code changes with the Edit/Write tools, not by running python/sed/shell commands that rewrite files**, so the changes show up in the editor diff view for the user to inspect and approve. (user preference, 19 Oct)
+
+
 # workflow
 
 ```

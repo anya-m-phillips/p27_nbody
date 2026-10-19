@@ -313,7 +313,7 @@ okay_mean2 = np.abs(tt2['M_c']) < 0.5*np.asarray(tt2['S_c'])
 reordered = np.argsort(pericenters_kpc)
 
 ccc = cc[1:]
-fig, axs = plt.subplots(2,3,figsize=[21,14])
+fig, axs = plt.subplots(3,3,figsize=[21,21])
 
 
 # (jarvis comparison moved to the sigma-vs-sigma figure below; commented out here)
@@ -396,6 +396,12 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
     axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
 
+    ### one-component fit ! ! !
+    axs[2,1].plot(x, tt['S_1comp'][:,0][selection], marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
+    axs[2,2].plot(x, tt['S_1comp'][:,-1][selection], marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
+    axs[2,1].plot(x2, tt2['S_1comp'][:,0][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+    axs[2,2].plot(x2, tt2['S_1comp'][:,-1][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+
 axs[1,1].legend(loc='upper left', bbox_to_anchor=[-1.2, 1], 
                 title='Main simulation grid')
 
@@ -415,12 +421,16 @@ axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
 axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
 axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
 
-for ax in np.concatenate([axs[0], axs[1]]):
+axs[2,1].set_ylabel(r'$\sigma_{\phi_2, \rm 1~comp}~[\degree]$')
+axs[2,2].set_ylabel(r'$\sigma_{v_{\rm GSR, 1~comp}}~[\rm km~s^{-1}]$')
+
+for ax in axs.flatten():
     ax.minorticks_off()
     ax.set_xticks([.75, 1.5, 3., 6.])
 
 
 axs[1,0].remove()
+axs[2,0].remove()
 
 
 #   ADD A DATA POINT FOR THE FIT WITH DESI-LIKE NOISE AND DOWN-SAMPLING
@@ -485,14 +495,17 @@ for case in [caseI, caseII]:
         axs[0,2].scatter(row['Rvir0'], row['S_c'][-1], **style)
         axs[1,1].scatter(row['Rvir0'], row['S_ts'][0], **style)
         axs[1,2].scatter(row['Rvir0'], row['S_ts'][-1], **style)
+        axs[2,1].scatter(row['Rvir0'], row['S_1comp'][0], **style)
+        axs[2,2].scatter(row['Rvir0'], row['S_1comp'][-1], **style)
 
 
 # axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
 #                 title='Supplemental simulations', ncol=2)
 axs[0,0].legend(loc='lower left', bbox_to_anchor=[-0., -1.1],
                 title='Supplemental simulations', ncol=1)
-for ax in np.concatenate([axs[0], axs[1]]):
-    ax.set_ylim(bottom=0)
+for ax in axs.flatten():
+    if ax in fig.axes: #<-- skips the removed panels
+        ax.set_ylim(bottom=0)
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
 
 plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
@@ -603,6 +616,29 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
     ax.text(0.05, 0.95, ctitle, ha='left', va='top', transform=ax.transAxes)
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
+
+### GD-1 one-component fits on the far right (thin stream) panel, unlabeled for now:
+#   noiseless CMs joined in rvir0 order, then the survey-noise points at rvir0 = 0.75.
+# sel = (tt['orbit'] == 'gd1')
+# order = np.argsort(tt['Rvir0'][sel])
+# rr = np.asarray(tt['Rvir0'][sel])[order]
+# xx = np.asarray(tt['S_1comp'][sel][:,0])[order]
+# yy = np.asarray(tt['S_1comp'][sel][:,-1])[order]
+# axs_ss[2].plot(xx, yy, color=gd1_color, ls='-', zorder=1, alpha=0.5)
+# axs_ss[2].scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2, alpha=0.5)
+# for ii, f in enumerate(files):
+#     t_obs = Table.read(table_path+f, format='fits')
+#     row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
+#     is_bin = 'binaries' in labels[ii]
+#     axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker=markers[ii],
+#                       s=size_from_rvir(row['Rvir0']) * 3,
+#                       color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
+#                       lw=1.5, zorder=4, alpha=0.5)
+# # set_xlim/set_ylim(left=0) in the panel loop above turned autoscaling off, freezing the upper
+# # limits before these points existed. turn it back on, then re-pin the lower limits.
+# axs_ss[2].autoscale(axis='both')
+# axs_ss[2].set_xlim(left=0)
+# axs_ss[2].set_ylim(bottom=0)
 
 axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
 plt.savefig("plots/jarvis_comparison.pdf", dpi=300, bbox_inches='tight')
