@@ -508,7 +508,7 @@ for ax in axs.flatten():
         ax.set_ylim(bottom=0)
     ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
 
-plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
 # %%
 # DISPERSION VS WIDTH FOR THIN STREAM AND COCOON, INCLUDING MOCK OBSERVATIONS
 from matplotlib.patches import Rectangle
@@ -619,30 +619,43 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
 
 ### GD-1 one-component fits on the far right (thin stream) panel, unlabeled for now:
 #   noiseless CMs joined in rvir0 order, then the survey-noise points at rvir0 = 0.75.
-# sel = (tt['orbit'] == 'gd1')
-# order = np.argsort(tt['Rvir0'][sel])
-# rr = np.asarray(tt['Rvir0'][sel])[order]
-# xx = np.asarray(tt['S_1comp'][sel][:,0])[order]
-# yy = np.asarray(tt['S_1comp'][sel][:,-1])[order]
+sel = (tt['orbit'] == 'gd1')
+order = np.argsort(tt['Rvir0'][sel])
+rr = np.asarray(tt['Rvir0'][sel])[order]
+xx = np.asarray(tt['S_1comp'][sel][:,0])[order]
+yy = np.asarray(tt['S_1comp'][sel][:,-1])[order]
 # axs_ss[2].plot(xx, yy, color=gd1_color, ls='-', zorder=1, alpha=0.5)
 # axs_ss[2].scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2, alpha=0.5)
-# for ii, f in enumerate(files):
-#     t_obs = Table.read(table_path+f, format='fits')
-#     row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
-#     is_bin = 'binaries' in labels[ii]
-#     axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker=markers[ii],
-#                       s=size_from_rvir(row['Rvir0']) * 3,
-#                       color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
-#                       lw=1.5, zorder=4, alpha=0.5)
-# # set_xlim/set_ylim(left=0) in the panel loop above turned autoscaling off, freezing the upper
-# # limits before these points existed. turn it back on, then re-pin the lower limits.
-# axs_ss[2].autoscale(axis='both')
-# axs_ss[2].set_xlim(left=0)
-# axs_ss[2].set_ylim(bottom=0)
+for ii, f in enumerate(files):
+    t_obs = Table.read(table_path+f, format='fits')
+    row = t_obs[t_obs['orbit']=='gd1']   # every rvir0 in the table, not just 0.75
+    row = row[np.argsort(row['Rvir0'])]
+    is_bin = 'binaries' in labels[ii]
+    if is_bin==False:
+        continue
+    axs_ss[2].plot(row['S_1comp'][:,0], row['S_1comp'][:,-1], color='k', ls=':', lw=1,
+                   zorder=3, alpha=0.5)
+    axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker=markers[ii],
+                      s=size_from_rvir(row['Rvir0']) * 3,
+                      color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
+                      lw=1.5, zorder=4, alpha=0.5)
+
+axs_ss[2].annotate("Single-component fits\nfrom noised data,\nwith binaries",
+                   [0.3, 2.25],
+                   [0.2, 1.0], 
+                   arrowprops={"width":3})
+
+# set_xlim/set_ylim(left=0) in the panel loop above turned autoscaling off, freezing the upper
+# limits before these points existed. turn it back on, then re-pin the lower limits.
+axs_ss[2].autoscale(axis='both')
+axs_ss[2].set_xlim(left=0)
+axs_ss[2].set_ylim(bottom=0)
 
 axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
-plt.savefig("plots/jarvis_comparison.pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
 
+
+# %%
 
 # %%
 #-----------------------------------------------------#
