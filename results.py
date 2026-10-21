@@ -3,11 +3,12 @@
 #       this notebook                               #
 #---------------------------------------------------#
 # %%
-import sys
+import sys, os
 repo_path = "/n/home02/amphillips/p27_nbody"
 script_path = repo_path+"/scripts"
 import petar
 import numpy as np
+import h5py
 
 from scipy.stats import binned_statistic, norm, multivariate_normal
 from scipy.optimize import curve_fit, minimize, Bounds
@@ -652,7 +653,7 @@ axs_ss[2].set_xlim(left=0)
 axs_ss[2].set_ylim(bottom=0)
 
 axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
-plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
 
 
 # %%
@@ -871,7 +872,7 @@ ax.legend(loc='upper left', markerscale=4)
 ax.set_yscale('log')
 ax.set_xlabel(r'$G$')
 ax.set_ylabel(r'$\sigma_v~[\rm km~s^{-1}]$')
-plt.savefig("plots/rverr_comparison.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/rverr_comparison.pdf", dpi=300, bbox_inches='tight')
 # %%
 #
 
@@ -1076,101 +1077,8 @@ cb.set_label(r'$p_{\rm cocoon}$', fontsize=15)
 plot_name = "demo_cocoon_separation_rvir0" if case_name=='noiseless_CoM' else "demo_cocoon_separation_"+case_name
 if orbit!='gd1':
     plot_name += "_"+orbit
-plt.savefig("plots/"+plot_name+".pdf", dpi=300, bbox_inches='tight')
-# %%
-#--------------------------------------------------------#
-#       FIGURE 1: every rvir0 = 0.75 pc stream at        #
-#       present day, galactocentric z vs x.              #
-#       left: thin streams only (cocoons removed);       #
-#       right: everything unbound from the progenitor.   #
-#--------------------------------------------------------#
-fig1_rvir = 0.75
-fig1_noise, fig1_include_binaries = None, False #<-- the gmm.py fit that decides who's in the cocoon
-# right panel: True = every unbound star, including the ones trim_new dropped before the fit
-#   (phi1 tails, distance outliers, early escapers), so left vs right is cocoon + trim.
-#   False = only the stars the gmm saw, so left vs right is exactly the cocoon.
-fig1_include_trimmed = True
-tt_fig1 = Table.read(table_path+case_label(fig1_noise, fig1_include_binaries)+".fits", format="fits")
+# plt.savefig("plots/"+plot_name+".pdf", dpi=300, bbox_inches='tight')
 
-orbit_title_map = {o:t for o, t in zip(orbits, orbit_titles)}
-reordered = np.argsort(pericenters_kpc) #<-- same as the main result plot
-
-#### load everything first, then plot.
-#   loop in pericenter order so ccc[ii] is the same color per orbit as in the summary plots.
-fig1_x, fig1_y, fig1_z = [], [], [] # galactocentric, kpc
-fig1_n_sim = [] # which stream each star belongs to (index into orbits[reordered])
-fig1_thin = [] # in the gmm fit AND p_cocoon < 0.5
-fig1_fit = [] # in the gmm fit at all
-
-for ii, orbit in enumerate(tqdm(orbits[reordered])):
-    filename = datapath+"%s_%.2f.pickle"%(orbit, fig1_rvir)
-    with open(filename, 'rb') as handle:
-        data_dict = pickle.load(handle)
-
-    use, sc_fig1, noise_fig1 = gmm_selection(data_dict, noise=fig1_noise, include_binaries=fig1_include_binaries)
-    row = tt_fig1[(tt_fig1['orbit']==orbit) & (tt_fig1['Rvir0']==fig1_rvir)]
-    x_data = np.column_stack([observed(k, sc_fig1, noise_fig1, use) for k in fit_keys])
-
-    p_cocoon = np.full(len(use), fill_value=np.nan) #<-- nan for stars that weren't in the fit (bound, or outside the trim)
-    p_cocoon[use] = p_cocoon_from_table(x_data, row, observed_errors(data_dict, noise_fig1, fig1_noise, use))
-    thin = use & (p_cocoon<0.5) #<-- nan < 0.5 is False
-
-    #### the progenitor (2 rtid) is dropped from both panels; everything else unbound goes in the right one
-    unbound = data_dict['unbound']
-    x, y, z = data_dict['CoM']['pos'].to(u.kpc).value[unbound].T
-
-    fig1_x.append(x)
-    fig1_y.append(y)
-    fig1_z.append(z)
-    fig1_n_sim.append(np.full(len(x), fill_value=ii))
-    fig1_thin.append(thin[unbound])
-    fig1_fit.append(use[unbound])
-
-    print("%s: %i unbound, %i in the fit, %i thin stream"%(orbit, unbound.sum(), use.sum(), thin.sum()))
-
-fig1_x, fig1_y, fig1_z = np.concatenate(fig1_x), np.concatenate(fig1_y), np.concatenate(fig1_z)
-fig1_n_sim = np.concatenate(fig1_n_sim)
-fig1_thin = np.concatenate(fig1_thin)
-fig1_fit = np.concatenate(fig1_fit)
-
-
-n_orbits = len(orbits)
-cmap_fig1 = mcolors.ListedColormap(ccc[:n_orbits])
-# discrete norm: one color band per orbit, boundaries on the half-integers
-norm_fig1 = mcolors.BoundaryNorm(np.arange(n_orbits+1)-0.5, cmap_fig1.N)
-
-fig, axs = plt.subplots(1, 2, figsize=[16, 8], sharex=True, sharey=True)
-plt.subplots_adjust(wspace=0.05)
-
-
-for ax in axs:
-    for width, height in [(2, 2), (3, 2), (0.5, 0.5), (30, 0.5)]:
-        ax.add_patch(Ellipse(xy=[0, 0], width=width, height=height, angle=0,
-                            facecolor='none', edgecolor='black', linewidth=1))
-
-panel_selections = [fig1_thin, np.ones(len(fig1_thin), dtype=bool) if fig1_include_trimmed else fig1_fit]
-panel_titles = ['Thin stream only', 'All stars']
-for ax, sel, title in zip(axs, panel_selections, panel_titles):
-    # order = np.argsort(fig1_y[sel]) #<-- most negative y drawn first (bottom), most positive y last (top)
-    order = np.argsort(fig1_x[sel])
-    ax.scatter(fig1_y[sel][order], fig1_z[sel][order],
-               c=fig1_n_sim[sel][order], cmap=cmap_fig1, norm=norm_fig1,
-               s=1, rasterized=True)
-    ax.text(0.05, 0.95, title, ha='left', va='top', transform=ax.transAxes)
-    ax.set_xlabel(r'$y~[\rm kpc]$')
-    ax.set_aspect('equal')
-
-axs[0].set_xlim(-35, 35)
-axs[0].set_ylim(-35, 35)
-axs[0].set_ylabel(r'$z~[\rm kpc]$')
-
-
-
-handles = [Line2D([], [], ls='', marker='o', markersize=8, color=ccc[ii], label=orbit_title_map[orbit])
-           for ii, orbit in enumerate(orbits[reordered])]
-axs[1].legend(handles=handles, loc='lower right', fontsize=15)
-
-plt.savefig("plots/fig1_motiv_notrim.pdf", dpi=300, bbox_inches='tight')
 # %%
 #--------------------------------------------------------#
 #   getting stuff together for a table summarizing a     #
@@ -1268,7 +1176,5 @@ tdict = {
 t = Table(tdict)
 
 
-t.write("table2", format='ascii.latex', overwrite=True)
+# t.write("table2", format='ascii.latex', overwrite=True)
 
-
-# %%
