@@ -281,6 +281,29 @@ t[r'Reference for stream frame'] = frame_citations
 # !!!!!! THE MAIN RESULT PLOT W MANY PANELS 
 #----------------------------#
 
+#----------------------------------#
+#   in case i want density on the  #
+#   x-axis                         #
+#----------------------------------#
+def rho_rho0(Mfrac, Rfrac):
+    return Mfrac * Rfrac**(-3)
+
+radius_fracs = np.array([1., 2., 4., 8.])
+mass_fracs = np.array([1.,1.,1.,1.])
+density_fracs = rho_rho0(mass_fracs, radius_fracs)
+
+print(density_fracs)
+
+### toggle: True -> x-axis is rho_prog/rho_0 (relative to the densest grid sim, Rvir0=0.75 pc, Mfrac=1)
+### False -> x-axis is Rvir0 [pc]
+x_is_density = True
+supp_mass_fracs = {'gd1_2xbinaries':1., 'gd1_2xN':2., 'gd1_2xN_dense':2.} # radius fracs come from Rvir0/0.75 (2, 4, 4)
+def x_axis_values(rvir0, mfrac=1.):
+    """what goes on the x-axis for a sim with initial radius rvir0 [pc] and mass fraction mfrac."""
+    if x_is_density:
+        return rho_rho0(mfrac, np.asarray(rvir0, dtype=float)/0.75)
+    return np.asarray(rvir0, dtype=float)
+
 ### getting jarvis values to paste on:
 jarvis_svgsr_ts = 2.49
 jarvis_svgsr_ts_err = 0.28
@@ -349,14 +372,16 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     f_cocoons_this_orbit = tt['f_cocoon'][selection]
     f_cocoons_this_orbit2 = tt2['f_cocoon'][selection2]
     
-    x = tt['Rvir0'][selection]
-    x2 = tt2['Rvir0'][selection2]
-    axs[0,0].plot(x, f_cocoons_this_orbit, 
+    x = x_axis_values(tt['Rvir0'][selection])
+    x2 = x_axis_values(tt2['Rvir0'][selection2])
+    axs[0,0].plot(x, 
+                f_cocoons_this_orbit, 
                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
                 marker='o', color=ccc[ii], markersize=10, zorder=0)
 
-    axs[0,0].plot(x2, f_cocoons_this_orbit2, 
+    axs[0,0].plot(x2, 
+                f_cocoons_this_orbit2, 
                 # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
@@ -407,11 +432,12 @@ axs[1,1].legend(loc='upper left', bbox_to_anchor=[-1.2, 1],
 axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, label='system CMs')
 axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary\norbits')
 # axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.4,1], ncol=3)
-axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.5,-1.25], ncol=2)
+axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.53,-0.95], ncol=2)
 
 
 axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
-axs[0,0].set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+x_label = r'$\rho_{\rm prog}/\rho_0$' if x_is_density else r'$R_{\rm vir, 0}~[\rm pc]$'
+axs[0,0].set_xlabel(x_label)
 # axs[0,0].set_ylim(0.0, 0.2)
 
 axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
@@ -425,7 +451,13 @@ axs[2,2].set_ylabel(r'$\sigma_{v_{\rm GSR, 1~comp}}~[\rm km~s^{-1}]$')
 
 for ax in axs.flatten():
     ax.minorticks_off()
-    ax.set_xticks([.75, 1.5, 3., 6.])
+    if x_is_density:
+        ax.set_xscale('log')
+        ax.set_xticks(density_fracs)
+        ax.set_xticklabels(['1']+[r'$2^{%d}$'%round(np.log2(d)) for d in density_fracs[1:]])
+        ax.invert_xaxis() # densest (rho/rho_0 = 1) on the left, as the smallest Rvir0 is
+    else:
+        ax.set_xticks([.75, 1.5, 3., 6.])
 
 
 axs[1,0].remove()
@@ -490,25 +522,37 @@ for case in [caseI, caseII]:
             continue #<--- skipping until i make the denser version of this. 
         style = dict(marker=supp_markers[sim], s=supp_sizes[sim], lw=2 if is_bin else 1, zorder=5,
                      color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k')
-        axs[0,0].scatter(row['Rvir0'], row['f_cocoon'], label=supp_labels[sim]+label_addon,   **style)
-        axs[0,1].scatter(row['Rvir0'], row['S_c'][0], **style)
-        axs[0,2].scatter(row['Rvir0'], row['S_c'][-1], **style)
-        axs[1,1].scatter(row['Rvir0'], row['S_ts'][0], **style)
-        axs[1,2].scatter(row['Rvir0'], row['S_ts'][-1], **style)
-        axs[2,1].scatter(row['Rvir0'], row['S_1comp'][0], **style)
-        axs[2,2].scatter(row['Rvir0'], row['S_1comp'][-1], **style)
+        xs = x_axis_values(row['Rvir0'], supp_mass_fracs[sim])
+        axs[0,0].scatter(xs, row['f_cocoon'], label=supp_labels[sim]+label_addon,   **style)
+        axs[0,1].scatter(xs, row['S_c'][0], **style)
+        axs[0,2].scatter(xs, row['S_c'][-1], **style)
+        axs[1,1].scatter(xs, row['S_ts'][0], **style)
+        axs[1,2].scatter(xs, row['S_ts'][-1], **style)
+        axs[2,1].scatter(xs, row['S_1comp'][0], **style)
+        axs[2,2].scatter(xs, row['S_1comp'][-1], **style)
 
 # axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
 #                 title='Supplemental simulations', ncol=2)
-axs[0,0].legend(loc='lower left', bbox_to_anchor=[-0., -1.1],
-                title='Supplemental simulations', ncol=1)
+axs[0,0].legend(loc='lower left', bbox_to_anchor=[-0.15, -1.25],
+                title='Supplemental simulations', ncol=2)
 for ax in axs.flatten():
     if ax in fig.axes: #<-- skips the removed panels
         ax.set_ylim(bottom=0)
-    ax.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+    ax.set_xlabel(x_label)
 
-# plt.savefig("plots/summary_cocoon_ts_properties.pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/summary_cocoon_ts_properties_density.pdf", dpi=300, bbox_inches='tight')
 # %%
+#-----------------------------------------------------#
+#   the same as the above but re-cast in terms of     #
+#   fractions of the densest progenitor density       #
+#   so the x-axis is in units of rho/rho_0 and the    #
+#   densest sim has a value of 1                      #
+#-----------------------------------------------------#
+
+
+
+# %%
+#-------------------------------------------------------#
 # DISPERSION VS WIDTH FOR THIN STREAM AND COCOON, INCLUDING MOCK OBSERVATIONS
 from matplotlib.patches import Rectangle
 
@@ -600,7 +644,7 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
             if sim == 'gd1_2xN':
                 continue
             ax.scatter(row[scol][0], row[scol][-1], marker=supp_markers[sim],
-                       s=size_from_rvir(row['Rvir0']) * (450/200), lw=2 if is_bin else 1, zorder=5,
+                       s=size_from_rvir(1.5) * (450/200), lw=2 if is_bin else 1, zorder=5, # same size as the 2xbinaries markers for every supplemental sim
                        color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k',
                        label=supp_labels[sim]+('/binaries' if is_bin else '/CM'))
 
@@ -639,6 +683,14 @@ for ii, f in enumerate(files):
                       color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
                       lw=1.5, zorder=4, alpha=0.5)
 
+### the denser 2xN sim, DESI noise, with binaries, one component: open 'D' (matches the binaries-only points above)
+# t_dense = Table.read(table_path+"desi_noise_binaries_supplemental.fits", format='fits')
+# row = t_dense[t_dense['sim']=='gd1_2xN_dense']
+# axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker='D',
+#                   s=size_from_rvir(row['Rvir0']) * 3,
+#                   color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5,
+#                   label=supp_labels['gd1_2xN_dense']+r'/DESI/binaries, 1 comp')
+
 axs_ss[2].annotate("Single-component fits\nfrom noised data,\nwith binaries",
                    [0.3, 2.25],
                    [0.2, 1.0], 
@@ -651,7 +703,7 @@ axs_ss[2].set_xlim(left=0)
 axs_ss[2].set_ylim(bottom=0)
 
 axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
-# plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
 
 
 # %%
