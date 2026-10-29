@@ -162,7 +162,7 @@ def prepare_nbody_data_anycopy(orbit, stellar_pop='lm', rvir_index=0, copies=ran
 supplemental_base_path = '/n/netscratch/conroy_lab/Lab/amphillips/extended_grid/' #<-- netscratch! 90-day purge.
 supplemental_sims = {
     'gd1_2xbinaries': {'orbit':'gd1', 'rvir':1.5}, #<-- binary fraction ~doubled: 4491 binaries in 14999 stars
-    'gd1_2xN':        {'orbit':'gd1', 'rvir':6.0}, #<-- 30000 stars (5295 binaries), same binary demographics
+    'gd1_2xN_dense':  {'orbit':'gd1', 'rvir':3.0}, #<-- 30000 stars (5295 binaries), same binary demographics
 }
 
 def retrieve_supplemental_sim_info(sim, copy=0):

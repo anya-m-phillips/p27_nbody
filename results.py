@@ -66,8 +66,6 @@ table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 #   the observability given distances to all    #
 #   the streams, which noise i use, etc.        #
 #-----------------------------------------------#
-
-
 make_plots=False
 constrain_widths=False
 noise = None #<-- None or 'via' or 'desi'
@@ -478,15 +476,16 @@ labels=[
 #   ADD THE SUPPLEMENTAL GD-1 SIMS (noiseless; gmm.py --supplemental True). gd1 colour,
 #   filled = CMs, open = with binary orbits, same as the observed points above.
 gd1_color = ccc[list(orbits[reordered]).index('gd1')]
-supp_markers = {'gd1_2xbinaries':'*', 'gd1_2xN':'D'}
-supp_labels = {'gd1_2xbinaries':r'$2\times f_{\rm bin}$', 'gd1_2xN':r'$2\times N$'}
-supp_sizes = {'gd1_2xbinaries':450, 'gd1_2xN':200}
+supp_markers = {'gd1_2xbinaries':'*', 'gd1_2xN_dense':'D'}
+supp_labels = {'gd1_2xbinaries':r'$2\times f_{\rm bin}$', 'gd1_2xN_dense':r'$2\times N$'}
+supp_sizes = {'gd1_2xbinaries':450, 'gd1_2xN_dense':200}
 for case in [caseI, caseII]:
     t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
     is_bin = 'binaries' in case
     label_addon = '/binaries' if is_bin else '/CM'
     for row in t_supp:
         sim = row['sim']
+        print(sim)
         if sim=='gd1_2xN':
             continue #<--- skipping until i make the denser version of this. 
         style = dict(marker=supp_markers[sim], s=supp_sizes[sim], lw=2 if is_bin else 1, zorder=5,
@@ -498,7 +497,6 @@ for case in [caseI, caseII]:
         axs[1,2].scatter(row['Rvir0'], row['S_ts'][-1], **style)
         axs[2,1].scatter(row['Rvir0'], row['S_1comp'][0], **style)
         axs[2,2].scatter(row['Rvir0'], row['S_1comp'][-1], **style)
-
 
 # axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
 #                 title='Supplemental simulations', ncol=2)
