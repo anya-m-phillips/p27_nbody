@@ -297,8 +297,12 @@ print(density_fracs)
 ### toggle: True -> x-axis is rho_prog/rho_0 (relative to the densest grid sim, Rvir0=0.75 pc, Mfrac=1)
 ### False -> x-axis is Rvir0 [pc]
 x_is_density = True
-### toggle: True -> only the GD-1 orbit from the main grid (CMs + binaries), plus the supplemental GD-1 sims
-gd1_only = True
+### toggle which version of the figure to make:
+### 'orbits' -> every orbit in the main grid, system CMs only (no binary orbits, no supplemental sims); only the orbits legend
+### 'gd1'    -> the GD-1 orbit only, CMs + with binary orbits, plus the supplemental GD-1 sims; no orbits legend
+summary_version = 'orbits' #'orbits'
+assert summary_version in ['orbits', 'gd1'], summary_version
+varied_orbits = summary_version == 'orbits'
 supp_mass_fracs = {'gd1_2xbinaries':1., 'gd1_2xN':2., 'gd1_2xN_dense':2.} # radius fracs come from Rvir0/0.75 (2, 4, 4)
 def x_axis_values(rvir0, mfrac=1.):
     """what goes on the x-axis for a sim with initial radius rvir0 [pc] and mass fraction mfrac."""
@@ -337,7 +341,8 @@ okay_mean2 = np.abs(tt2['M_c']) < 0.5*np.asarray(tt2['S_c'])
 reordered = np.argsort(pericenters_kpc)
 
 ccc = cc[1:]
-fig, axs = plt.subplots(3,3,figsize=[21,21])
+nrows = 2 if varied_orbits else 3 #<-- the one-component fit row is only in the 'gd1' version
+fig, axs = plt.subplots(nrows,3,figsize=[21,7*nrows])
 
 
 # (jarvis comparison moved to the sigma-vs-sigma figure below; commented out here)
@@ -364,7 +369,7 @@ jarvis_fit_style = dict(color='k', ls='--', lw=2, zorder=1)
 
 plt.subplots_adjust(wspace=0.2, hspace=0.2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
-    if gd1_only and orbit != 'gd1':
+    if not varied_orbits and orbit != 'gd1':
         continue #<-- skipping inside the loop so gd1 keeps its colour (ccc[ii])
     orbsel = tt['orbit'] == orbit
     orbsel2 = tt2['orbit'] == orbit
@@ -382,15 +387,18 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
                 f_cocoons_this_orbit, 
                 # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
                 # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
+                label=None if varied_orbits else 'Main grid/CM', # 'gd1' version: collected into the one legend below
                 marker='o', color=ccc[ii], markersize=10, zorder=0)
 
-    axs[0,0].plot(x2, 
-                f_cocoons_this_orbit2, 
-                # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
-                # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
-                # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
-                marker='o', color=ccc[ii], markersize=10,
-                ls=':', zorder=0)
+    if not varied_orbits:
+        axs[0,0].plot(x2,
+                    f_cocoons_this_orbit2,
+                    # label=orbit+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii],
+                    # label = orbit+r'; $\varphi_{\rm orb} =%.2f$'%orbital_phases[reordered][ii],
+                    # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
+                    label='Main grid/binaries',
+                    marker='o', color=ccc[ii], markersize=10,
+                    ls=':', zorder=0)
 
 
     ### cocoon ! ! !
@@ -403,8 +411,9 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     axs[0,1].plot(x, phi2_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
     axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
 
-    axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
-    axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+    if not varied_orbits:
+        axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+        axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
     # axs[0,2].set_yscale('log')
 
     ### thin ! ! !
@@ -421,22 +430,22 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
 
     # axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
     # axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
-    axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
-    axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+    if not varied_orbits:
+        axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+        axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
 
     ### one-component fit ! ! !
-    axs[2,1].plot(x, tt['S_1comp'][:,0][selection], marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
-    axs[2,2].plot(x, tt['S_1comp'][:,-1][selection], marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
-    axs[2,1].plot(x2, tt2['S_1comp'][:,0][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
-    axs[2,2].plot(x2, tt2['S_1comp'][:,-1][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+    if not varied_orbits:
+        axs[2,1].plot(x, tt['S_1comp'][:,0][selection], marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
+        axs[2,2].plot(x, tt['S_1comp'][:,-1][selection], marker='o', color=ccc[ii], markersize=10, ls='-', zorder=0)
+        axs[2,1].plot(x2, tt2['S_1comp'][:,0][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+        axs[2,2].plot(x2, tt2['S_1comp'][:,-1][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
 
-axs[1,1].legend(loc='upper left', bbox_to_anchor=[-1.2, 1], 
-                title='Main simulation grid')
-
-axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, label='system CMs')
-axs[0,2].plot([None],[None], c='k', marker='o', markersize=10, ls=':', label='with binary\norbits')
-# axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.4,1], ncol=3)
-axs[0,2].legend(loc='lower left', bbox_to_anchor=[-2.53,-0.95], ncol=2)
+legend_kwargs = dict(loc='center', bbox_to_anchor=[-0.75, 0.5]) #<-- same spot for both versions
+if varied_orbits:
+    axs[1,1].legend(**legend_kwargs)#,
+                    # title='Main simulation grid')
+# (the 'gd1' version's legend is made after the supplemental sims are added, below)
 
 
 axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
@@ -450,11 +459,11 @@ axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
 axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
 axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
 
-axs[2,1].set_ylabel(r'$\sigma_{\phi_2, \rm 1~comp}~[\degree]$')
-axs[2,2].set_ylabel(r'$\sigma_{v_{\rm GSR, 1~comp}}~[\rm km~s^{-1}]$')
+if not varied_orbits:
+    axs[2,1].set_ylabel(r'$\sigma_{\phi_2, \rm 1~comp}~[\degree]$')
+    axs[2,2].set_ylabel(r'$\sigma_{v_{\rm GSR, 1~comp}}~[\rm km~s^{-1}]$')
 
 for ax in axs.flatten():
-    ax.minorticks_off()
     if x_is_density:
         ax.set_xscale('log')
         ax.set_xticks(density_fracs)
@@ -462,10 +471,12 @@ for ax in axs.flatten():
         ax.invert_xaxis() # densest (rho/rho_0 = 1) on the left, as the smallest Rvir0 is
     else:
         ax.set_xticks([.75, 1.5, 3., 6.])
+    ax.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back on
 
 
 axs[1,0].remove()
-axs[2,0].remove()
+if not varied_orbits:
+    axs[2,0].remove()
 
 
 #   ADD A DATA POINT FOR THE FIT WITH DESI-LIKE NOISE AND DOWN-SAMPLING
@@ -510,41 +521,48 @@ labels=[
 
 
 #   ADD THE SUPPLEMENTAL GD-1 SIMS (noiseless; gmm.py --supplemental True). gd1 colour,
-#   filled = CMs, open = with binary orbits, same as the observed points above.
-gd1_color = ccc[list(orbits[reordered]).index('gd1')]
-supp_markers = {'gd1_2xbinaries':'*', 'gd1_2xN_dense':'D'}
-supp_labels = {'gd1_2xbinaries':r'$2\times f_{\rm bin}$', 'gd1_2xN_dense':r'$2\times N$'}
-supp_sizes = {'gd1_2xbinaries':450, 'gd1_2xN_dense':200}
-for case in [caseI, caseII]:
-    t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
-    is_bin = 'binaries' in case
-    label_addon = '/binaries' if is_bin else '/CM'
-    for row in t_supp:
-        sim = row['sim']
-        print(sim)
-        if sim=='gd1_2xN':
-            continue #<--- skipping until i make the denser version of this. 
-        style = dict(marker=supp_markers[sim], s=supp_sizes[sim], lw=2 if is_bin else 1, zorder=5,
-                     color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k')
-        xs = x_axis_values(row['Rvir0'], supp_mass_fracs[sim])
-        axs[0,0].scatter(xs, row['f_cocoon'], label=supp_labels[sim]+label_addon,   **style)
-        axs[0,1].scatter(xs, row['S_c'][0], **style)
-        axs[0,2].scatter(xs, row['S_c'][-1], **style)
-        axs[1,1].scatter(xs, row['S_ts'][0], **style)
-        axs[1,2].scatter(xs, row['S_ts'][-1], **style)
-        axs[2,1].scatter(xs, row['S_1comp'][0], **style)
-        axs[2,2].scatter(xs, row['S_1comp'][-1], **style)
+#   filled = CMs, open = with binary orbits, same as the observed points above. ('gd1' version only)
+if not varied_orbits:
+    gd1_color = ccc[list(orbits[reordered]).index('gd1')]
+    supp_markers = {'gd1_2xbinaries':'*', 'gd1_2xN_dense':'D'}
+    supp_labels = {'gd1_2xbinaries':r'$2\times f_{\rm bin}$', 'gd1_2xN_dense':r'$2\times N$'}
+    supp_sizes = {'gd1_2xbinaries':450, 'gd1_2xN_dense':200}
+    for case in [caseI, caseII]:
+        t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
+        is_bin = 'binaries' in case
+        label_addon = '/binaries' if is_bin else '/CM'
+        for row in t_supp:
+            sim = row['sim']
+            print(sim)
+            if sim=='gd1_2xN':
+                continue #<--- skipping until i make the denser version of this.
+            style = dict(marker=supp_markers[sim], s=supp_sizes[sim], lw=2 if is_bin else 1, zorder=5,
+                         color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k')
+            xs = x_axis_values(row['Rvir0'], supp_mass_fracs[sim])
+            axs[0,0].scatter(xs, row['f_cocoon'], label=supp_labels[sim]+label_addon,   **style)
+            axs[0,1].scatter(xs, row['S_c'][0], **style)
+            axs[0,2].scatter(xs, row['S_c'][-1], **style)
+            axs[1,1].scatter(xs, row['S_ts'][0], **style)
+            axs[1,2].scatter(xs, row['S_ts'][-1], **style)
+            axs[2,1].scatter(xs, row['S_1comp'][0], **style)
+            axs[2,2].scatter(xs, row['S_1comp'][-1], **style)
 
-# axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
-#                 title='Supplemental simulations', ncol=2)
-axs[0,0].legend(loc='lower left', bbox_to_anchor=[-0.15, -1.25],
-                title='Supplemental simulations', ncol=2)
+    # axs[0,1].legend(loc='lower right', bbox_to_anchor=[2.2, 1.],
+    #                 title='Supplemental simulations', ncol=2)
+    ### one legend for everything: left column = CMs, right column = with binary orbits
+    ### (ncol fills column by column, so all the /CM entries go first). main grid at the top of each.
+    handles, leg_labels = axs[0,0].get_legend_handles_labels()
+    leg_order = sorted(range(len(leg_labels)),
+                       key=lambda k: (leg_labels[k].endswith('/binaries'), not leg_labels[k].startswith('Main grid')))
+    ### two columns don't fit from legend_kwargs' left edge, so pin the right edge just clear of axs[1,1]'s ylabel instead (same top)
+    axs[1,1].legend([handles[k] for k in leg_order], [leg_labels[k] for k in leg_order],
+                    ncol=2, columnspacing=1.0, loc='center', bbox_to_anchor=[-0.8, -0.1])
 for ax in axs.flatten():
     if ax in fig.axes: #<-- skips the removed panels
         ax.set_ylim(bottom=0)
     ax.set_xlabel(x_label)
 
-plt.savefig("plots/summary_cocoon_ts_properties"+("_density" if x_is_density else "")+("_gd1only" if gd1_only else "")+".pdf",
+plt.savefig("plots/summary_cocoon_ts_properties"+("_density" if x_is_density else "")+("" if varied_orbits else "_gd1only")+".pdf",
             dpi=300, bbox_inches='tight')
 # %%
 #-----------------------------------------------------#
