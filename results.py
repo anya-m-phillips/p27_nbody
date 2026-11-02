@@ -60,7 +60,7 @@ import noise as n
 datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 
-# %%
+
 #-----------------------------------------------#
 #   opening all of the data and checking out    #
 #   the observability given distances to all    #
@@ -297,6 +297,8 @@ print(density_fracs)
 ### toggle: True -> x-axis is rho_prog/rho_0 (relative to the densest grid sim, Rvir0=0.75 pc, Mfrac=1)
 ### False -> x-axis is Rvir0 [pc]
 x_is_density = True
+### toggle: True -> only the GD-1 orbit from the main grid (CMs + binaries), plus the supplemental GD-1 sims
+gd1_only = True
 supp_mass_fracs = {'gd1_2xbinaries':1., 'gd1_2xN':2., 'gd1_2xN_dense':2.} # radius fracs come from Rvir0/0.75 (2, 4, 4)
 def x_axis_values(rvir0, mfrac=1.):
     """what goes on the x-axis for a sim with initial radius rvir0 [pc] and mass fraction mfrac."""
@@ -362,6 +364,8 @@ jarvis_fit_style = dict(color='k', ls='--', lw=2, zorder=1)
 
 plt.subplots_adjust(wspace=0.2, hspace=0.2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
+    if gd1_only and orbit != 'gd1':
+        continue #<-- skipping inside the loop so gd1 keeps its colour (ccc[ii])
     orbsel = tt['orbit'] == orbit
     orbsel2 = tt2['orbit'] == orbit
 
@@ -540,7 +544,8 @@ for ax in axs.flatten():
         ax.set_ylim(bottom=0)
     ax.set_xlabel(x_label)
 
-plt.savefig("plots/summary_cocoon_ts_properties_density.pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/summary_cocoon_ts_properties"+("_density" if x_is_density else "")+("_gd1only" if gd1_only else "")+".pdf",
+            dpi=300, bbox_inches='tight')
 # %%
 #-----------------------------------------------------#
 #   the same as the above but re-cast in terms of     #
