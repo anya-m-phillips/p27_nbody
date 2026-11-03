@@ -577,11 +577,10 @@ labels=[
 #   ADD THE SUPPLEMENTAL GD-1 SIMS (noiseless; gmm.py --supplemental True). gd1 colour,
 #   filled = CMs, open = with binary orbits, same as the observed points above. ('gd1' version only)
 gd1_color = ccc[list(orbits[reordered]).index('gd1')]
-
+supp_markers = {'gd1_2xbinaries':'*', 'gd1_2xN_dense':'D'}
+supp_labels = {'gd1_2xbinaries':r'$2\times f_{\rm bin}$', 'gd1_2xN_dense':r'$2\times N$'}
+supp_sizes = {'gd1_2xbinaries':450, 'gd1_2xN_dense':200}
 if not varied_orbits:
-    supp_markers = {'gd1_2xbinaries':'*', 'gd1_2xN_dense':'D'}
-    supp_labels = {'gd1_2xbinaries':r'$2\times f_{\rm bin}$', 'gd1_2xN_dense':r'$2\times N$'}
-    supp_sizes = {'gd1_2xbinaries':450, 'gd1_2xN_dense':200}
     for case in [caseI, caseII]:
         t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
         is_bin = 'binaries' in case
@@ -621,16 +620,6 @@ plt.savefig("plots/summary_cocoon_ts_properties"+("_density" if x_is_density els
             dpi=300, bbox_inches='tight')
 
 print("boom saved")
-
-# %%
-#-----------------------------------------------------#
-#   the same as the above but re-cast in terms of     #
-#   fractions of the densest progenitor density       #
-#   so the x-axis is in units of rho/rho_0 and the    #
-#   densest sim has a value of 1                      #
-#-----------------------------------------------------#
-
-
 
 # %%
 #-------------------------------------------------------#
@@ -704,7 +693,7 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
         ax.plot(xx, yy, color=ccc[ii], ls='-', zorder=1)
         ax.scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=ccc[ii], zorder=2)
         ax.plot([None], [None], color=ccc[ii], marker='o', markersize=8,
-                label=orbit_titles[reordered][ii]+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
+                label=orbit_titles[reordered][ii])#+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
 
     # survey-noise points, GD-1 rvir0 = 0.75 only
     for ii, f in enumerate(files):
@@ -775,7 +764,7 @@ for ii, f in enumerate(files):
 axs_ss[2].annotate("Single-component fits\nfrom noised data,\nwith binaries",
                    [0.3, 2.25],
                    [0.2, 1.0], 
-                   arrowprops={"width":3})
+                   arrowprops={"width":3, "color":gd1_color})
 
 # set_xlim/set_ylim(left=0) in the panel loop above turned autoscaling off, freezing the upper
 # limits before these points existed. turn it back on, then re-pin the lower limits.
