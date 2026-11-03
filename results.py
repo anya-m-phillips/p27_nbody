@@ -637,375 +637,375 @@ print("boom saved")
 # DISPERSION VS WIDTH FOR THIN STREAM AND COCOON, INCLUDING MOCK OBSERVATIONS
 from matplotlib.patches import Rectangle
 
-# def size_from_rvir(r):
-#     return 60*(np.asarray(r, dtype=float)/0.75)**0.7 # 60 -> ~250 pt^2 from 0.75 -> 6 pc
+def size_from_rvir(r):
+    return 60*(np.asarray(r, dtype=float)/0.75)**0.7 # 60 -> ~250 pt^2 from 0.75 -> 6 pc
 
-# files = [
-#     'desi_noise_binaries.fits',
-#     'desi_noise_CoM.fits',
-#     'via_noise_binaries.fits',
-#     'via_noise_CoM.fits'
-# ]
-# markers = ['o', 'o', 'v', 'v']
-# labels=[
-#     'DESI/binaries',
-#     'DESI/CM',
-#     'Via/binaries',
-#     'Via/CM'
-# ]
+files = [
+    'desi_noise_binaries.fits',
+    'desi_noise_CoM.fits',
+    'via_noise_binaries.fits',
+    'via_noise_CoM.fits'
+]
+markers = ['o', 'o', 'v', 'v']
+labels=[
+    'DESI/binaries',
+    'DESI/CM',
+    'Via/binaries',
+    'Via/CM'
+]
 
-# # (table column, panel title, jarvis published (x, xerr, y, yerr))
-# components = [
-#     ('S_c',  'cocoon', (jarvis_sphi2_c,  jarvis_sphi2_c_err,  jarvis_svgsr_c,  jarvis_svgsr_c_err)),
-#     ('S_ts', 'thin stream', (jarvis_sphi2_ts, jarvis_sphi2_ts_err, jarvis_svgsr_ts, jarvis_svgsr_ts_err)),
-# ]
-# fig, axs_ss = plt.subplots(1, 3, figsize=[24,7])
-# plt.subplots_adjust(wspace=0.25)
+# (table column, panel title, jarvis published (x, xerr, y, yerr))
+components = [
+    ('S_c',  'cocoon', (jarvis_sphi2_c,  jarvis_sphi2_c_err,  jarvis_svgsr_c,  jarvis_svgsr_c_err)),
+    ('S_ts', 'thin stream', (jarvis_sphi2_ts, jarvis_sphi2_ts_err, jarvis_svgsr_ts, jarvis_svgsr_ts_err)),
+]
+fig, axs_ss = plt.subplots(1, 3, figsize=[24,7])
+plt.subplots_adjust(wspace=0.25)
 
-# # left panel: f_cocoon vs rvir0, GD-1 only (CMs), plus the mock-observed points
-# axf = axs_ss[0]
-# axf.axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, color='k', alpha=0.1)
-# axf.axhline(t_jarvis_fit['f_cocoon'], **jarvis_fit_style)
-# sel = (tt['orbit'] == 'gd1')
-# order = np.argsort(tt['Rvir0'][sel])
-# rr = np.asarray(tt['Rvir0'][sel])[order]
-# ff = np.asarray(tt['f_cocoon'][sel])[order]
-# axf.plot(rr, ff, color=gd1_color, zorder=1)
-# axf.scatter(rr, ff, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2)
-# for ii, f in enumerate(files):
-#     t_obs = Table.read(table_path+f, format='fits')
-#     row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
-#     axf.scatter(row['Rvir0'], row['f_cocoon'], marker=markers[ii],
-#                 color='none' if 'binaries' in labels[ii] else 'k',
-#                 edgecolor='k' if 'binaries' in labels[ii] else 'w', lw=1.5,
-#                 s=size_from_rvir(row['Rvir0']) * 3, zorder=4)
-# axf.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
-# axf.set_ylabel(r'$f_{\rm cocoon}$')
-# axf.set_xticks([.75, 1.5, 3., 6.])
-# axf.minorticks_off()
-# axf.set_ylim(bottom=0)
-# # axf.set_title('GD-1')
+# left panel: f_cocoon vs rvir0, GD-1 only (CMs), plus the mock-observed points
+axf = axs_ss[0]
+axf.axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, color='k', alpha=0.1)
+axf.axhline(t_jarvis_fit['f_cocoon'], **jarvis_fit_style)
+sel = (tt['orbit'] == 'gd1')
+order = np.argsort(tt['Rvir0'][sel])
+rr = np.asarray(tt['Rvir0'][sel])[order]
+ff = np.asarray(tt['f_cocoon'][sel])[order]
+axf.plot(rr, ff, color=gd1_color, zorder=1)
+axf.scatter(rr, ff, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2)
+for ii, f in enumerate(files):
+    t_obs = Table.read(table_path+f, format='fits')
+    row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
+    axf.scatter(row['Rvir0'], row['f_cocoon'], marker=markers[ii],
+                color='none' if 'binaries' in labels[ii] else 'k',
+                edgecolor='k' if 'binaries' in labels[ii] else 'w', lw=1.5,
+                s=size_from_rvir(row['Rvir0']) * 3, zorder=4)
+axf.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+axf.set_ylabel(r'$f_{\rm cocoon}$')
+axf.set_xticks([.75, 1.5, 3., 6.])
+axf.minorticks_off()
+axf.set_ylim(bottom=0)
+# axf.set_title('GD-1')
 
-# for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
-#     # jarvis+26 published confidence region
-#     ax.add_patch(Rectangle((jx-jxe, jy-jye), 2*jxe, 2*jye,
-#                            color='k', alpha=0.1, lw=0, zorder=0, label='Values from Jarvis+26'))
-#     # this model fit to the jarvis data
-#     ax.plot(t_jarvis_fit[scol][0], t_jarvis_fit[scol][-1], marker='x', ls='--', color='k', markersize=10,
-#                lw=1 , zorder=6, label='This model fit to Jarvis+26 data')
+for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
+    # jarvis+26 published confidence region
+    ax.add_patch(Rectangle((jx-jxe, jy-jye), 2*jxe, 2*jye,
+                           color='k', alpha=0.1, lw=0, zorder=0, label='Values from Jarvis+26'))
+    # this model fit to the jarvis data
+    ax.plot(t_jarvis_fit[scol][0], t_jarvis_fit[scol][-1], marker='x', ls='--', color='k', markersize=10,
+               lw=1 , zorder=6, label='This model fit to Jarvis+26 data')
 
-#     # main grid: CMs, joined in order of rvir0
-#     for ii, orbit in enumerate(orbits[reordered]):
-#         sel = (tt['orbit'] == orbit)
-#         order = np.argsort(tt['Rvir0'][sel])
-#         xx = np.asarray(tt[scol][sel][:,0])[order]
-#         yy = np.asarray(tt[scol][sel][:,-1])[order]
-#         rr = np.asarray(tt['Rvir0'][sel])[order]
-#         ax.plot(xx, yy, color=ccc[ii], ls='-', zorder=1)
-#         ax.scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=ccc[ii], zorder=2)
-#         ax.plot([None], [None], color=ccc[ii], marker='o', markersize=8,
-#                 label=orbit_titles[reordered][ii]+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
+    # main grid: CMs, joined in order of rvir0
+    for ii, orbit in enumerate(orbits[reordered]):
+        sel = (tt['orbit'] == orbit)
+        order = np.argsort(tt['Rvir0'][sel])
+        xx = np.asarray(tt[scol][sel][:,0])[order]
+        yy = np.asarray(tt[scol][sel][:,-1])[order]
+        rr = np.asarray(tt['Rvir0'][sel])[order]
+        ax.plot(xx, yy, color=ccc[ii], ls='-', zorder=1)
+        ax.scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=ccc[ii], zorder=2)
+        ax.plot([None], [None], color=ccc[ii], marker='o', markersize=8,
+                label=orbit_titles[reordered][ii]+r"; $r_{\rm peri}=%.1f~\rm kpc$"%pericenters_kpc[reordered][ii])
 
-#     # survey-noise points, GD-1 rvir0 = 0.75 only
-#     for ii, f in enumerate(files):
-#         t_obs = Table.read(table_path+f, format='fits')
-#         row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
-#         is_bin = 'binaries' in labels[ii]
-#         ax.scatter(row[scol][:,0], row[scol][:,-1], marker=markers[ii],
-#                    s=size_from_rvir(row['Rvir0']) * 3,
-#                    color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
-#                    lw=1.5, zorder=4, label=labels[ii])
+    # survey-noise points, GD-1 rvir0 = 0.75 only
+    for ii, f in enumerate(files):
+        t_obs = Table.read(table_path+f, format='fits')
+        row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
+        is_bin = 'binaries' in labels[ii]
+        ax.scatter(row[scol][:,0], row[scol][:,-1], marker=markers[ii],
+                   s=size_from_rvir(row['Rvir0']) * 3,
+                   color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
+                   lw=1.5, zorder=4, label=labels[ii])
 
-#     # supplemental GD-1 sims
-#     for case in [caseI]:
-#         t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
-#         is_bin = 'binaries' in case
-#         for row in t_supp:
-#             sim = row['sim']
-#             if sim == 'gd1_2xN':
-#                 continue
-#             ax.scatter(row[scol][0], row[scol][-1], marker=supp_markers[sim],
-#                        s=size_from_rvir(1.5) * (450/200), lw=2 if is_bin else 1, zorder=5, # same size as the 2xbinaries markers for every supplemental sim
-#                        color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k',
-#                        label=supp_labels[sim]+('/binaries' if is_bin else '/CM'))
+    # supplemental GD-1 sims
+    for case in [caseI]:
+        t_supp = Table.read(table_path+case+"_supplemental.fits", format='fits')
+        is_bin = 'binaries' in case
+        for row in t_supp:
+            sim = row['sim']
+            if sim == 'gd1_2xN':
+                continue
+            ax.scatter(row[scol][0], row[scol][-1], marker=supp_markers[sim],
+                       s=size_from_rvir(1.5) * (450/200), lw=2 if is_bin else 1, zorder=5, # same size as the 2xbinaries markers for every supplemental sim
+                       color='none' if is_bin else gd1_color, edgecolor=gd1_color if is_bin else 'k',
+                       label=supp_labels[sim]+('/binaries' if is_bin else '/CM'))
 
-#     # marker-size key
-#     for r in [0.75, 1.5, 3., 6.]:
-#         ax.scatter([None], [None], s=size_from_rvir(r), color='grey', label=r'$R_{\rm vir,0}=%g$ pc'%r)
+    # marker-size key
+    for r in [0.75, 1.5, 3., 6.]:
+        ax.scatter([None], [None], s=size_from_rvir(r), color='grey', label=r'$R_{\rm vir,0}=%g$ pc'%r)
 
-#     short = 'cocoon' if scol == 'S_c' else 'thin'
-#     ax.set_xlabel(r'$\sigma_{\phi_2, \rm %s}~[\degree]$'%short)
-#     ax.set_ylabel(r'$\sigma_{v_{\rm GSR}, \rm %s}~[\rm km~s^{-1}]$'%short)
-#     # ax.set_title(ctitle)
-#     ax.text(0.05, 0.95, ctitle, ha='left', va='top', transform=ax.transAxes)
-#     ax.set_xlim(left=0)
-#     ax.set_ylim(bottom=0)
+    short = 'cocoon' if scol == 'S_c' else 'thin'
+    ax.set_xlabel(r'$\sigma_{\phi_2, \rm %s}~[\degree]$'%short)
+    ax.set_ylabel(r'$\sigma_{v_{\rm GSR}, \rm %s}~[\rm km~s^{-1}]$'%short)
+    # ax.set_title(ctitle)
+    ax.text(0.05, 0.95, ctitle, ha='left', va='top', transform=ax.transAxes)
+    ax.set_xlim(left=0)
+    ax.set_ylim(bottom=0)
 
-# ### GD-1 one-component fits on the far right (thin stream) panel, unlabeled for now:
-# #   noiseless CMs joined in rvir0 order, then the survey-noise points at rvir0 = 0.75.
-# sel = (tt['orbit'] == 'gd1')
-# order = np.argsort(tt['Rvir0'][sel])
-# rr = np.asarray(tt['Rvir0'][sel])[order]
-# xx = np.asarray(tt['S_1comp'][sel][:,0])[order]
-# yy = np.asarray(tt['S_1comp'][sel][:,-1])[order]
-# # axs_ss[2].plot(xx, yy, color=gd1_color, ls='-', zorder=1, alpha=0.5)
-# # axs_ss[2].scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2, alpha=0.5)
-# for ii, f in enumerate(files):
-#     t_obs = Table.read(table_path+f, format='fits')
-#     row = t_obs[t_obs['orbit']=='gd1']   # every rvir0 in the table, not just 0.75
-#     row = row[np.argsort(row['Rvir0'])]
-#     is_bin = 'binaries' in labels[ii]
-#     if is_bin==False:
-#         continue
-#     axs_ss[2].plot(row['S_1comp'][:,0], row['S_1comp'][:,-1], color='k', ls=':', lw=1,
-#                    zorder=3, alpha=0.5)
-#     axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker=markers[ii],
-#                       s=size_from_rvir(row['Rvir0']) * 3,
-#                       color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
-#                       lw=1.5, zorder=4, alpha=0.5)
+### GD-1 one-component fits on the far right (thin stream) panel, unlabeled for now:
+#   noiseless CMs joined in rvir0 order, then the survey-noise points at rvir0 = 0.75.
+sel = (tt['orbit'] == 'gd1')
+order = np.argsort(tt['Rvir0'][sel])
+rr = np.asarray(tt['Rvir0'][sel])[order]
+xx = np.asarray(tt['S_1comp'][sel][:,0])[order]
+yy = np.asarray(tt['S_1comp'][sel][:,-1])[order]
+# axs_ss[2].plot(xx, yy, color=gd1_color, ls='-', zorder=1, alpha=0.5)
+# axs_ss[2].scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2, alpha=0.5)
+for ii, f in enumerate(files):
+    t_obs = Table.read(table_path+f, format='fits')
+    row = t_obs[t_obs['orbit']=='gd1']   # every rvir0 in the table, not just 0.75
+    row = row[np.argsort(row['Rvir0'])]
+    is_bin = 'binaries' in labels[ii]
+    if is_bin==False:
+        continue
+    axs_ss[2].plot(row['S_1comp'][:,0], row['S_1comp'][:,-1], color='k', ls=':', lw=1,
+                   zorder=3, alpha=0.5)
+    axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker=markers[ii],
+                      s=size_from_rvir(row['Rvir0']) * 3,
+                      color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
+                      lw=1.5, zorder=4, alpha=0.5)
 
-# ### the denser 2xN sim, DESI noise, with binaries, one component: open 'D' (matches the binaries-only points above)
-# # t_dense = Table.read(table_path+"desi_noise_binaries_supplemental.fits", format='fits')
-# # row = t_dense[t_dense['sim']=='gd1_2xN_dense']
-# # axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker='D',
-# #                   s=size_from_rvir(row['Rvir0']) * 3,
-# #                   color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5,
-# #                   label=supp_labels['gd1_2xN_dense']+r'/DESI/binaries, 1 comp')
+### the denser 2xN sim, DESI noise, with binaries, one component: open 'D' (matches the binaries-only points above)
+# t_dense = Table.read(table_path+"desi_noise_binaries_supplemental.fits", format='fits')
+# row = t_dense[t_dense['sim']=='gd1_2xN_dense']
+# axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker='D',
+#                   s=size_from_rvir(row['Rvir0']) * 3,
+#                   color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5,
+#                   label=supp_labels['gd1_2xN_dense']+r'/DESI/binaries, 1 comp')
 
-# axs_ss[2].annotate("Single-component fits\nfrom noised data,\nwith binaries",
-#                    [0.3, 2.25],
-#                    [0.2, 1.0], 
-#                    arrowprops={"width":3})
+axs_ss[2].annotate("Single-component fits\nfrom noised data,\nwith binaries",
+                   [0.3, 2.25],
+                   [0.2, 1.0], 
+                   arrowprops={"width":3})
 
-# # set_xlim/set_ylim(left=0) in the panel loop above turned autoscaling off, freezing the upper
-# # limits before these points existed. turn it back on, then re-pin the lower limits.
-# axs_ss[2].autoscale(axis='both')
-# axs_ss[2].set_xlim(left=0)
-# axs_ss[2].set_ylim(bottom=0)
+# set_xlim/set_ylim(left=0) in the panel loop above turned autoscaling off, freezing the upper
+# limits before these points existed. turn it back on, then re-pin the lower limits.
+axs_ss[2].autoscale(axis='both')
+axs_ss[2].set_xlim(left=0)
+axs_ss[2].set_ylim(bottom=0)
 
-# axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
-# plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
-
-
-# # %%
-
-# # %%
-# #-----------------------------------------------------#
-# #   binary fractions in thin stream vs cocoon         # 
-# #-----------------------------------------------------#
-# case = "noiseless_CoM"
-# tt = Table.read(table_path+case+".fits", format="fits")
-# # c_labels = ["#CCC9E7", "#2F2F2F"]
-# c_labels = ['orange','white','midnightblue']
-# cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
-
-# rvir0s = [0.75, 1.5, 3.0, 6.0]
-
-# fig, ax = plt.subplots()
-
-# # for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i think. 
-
-# fbins_ts = []
-# fbls_ts = []
-# fbus_ts = []
-
-# fbins_c = []
-# fbls_c = []
-# fbus_c = []
-
-# for rvir in rvir0s:
-#     orbit = 'gd1' #<-- idk. 
-#     #### extract info about the mixture modele from the saved table:
-#     print(orbit, rvir)
-#     row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
-
-#     means_fit = np.array([
-#         row['M_ts'][0], row['M_c'][0]
-#     ])
-#     sigmas_fit = np.array([
-#         row['S_ts'][0], row['S_c'][0]
-#     ])
-#     fracs_fit = np.array([
-#         1-row['f_cocoon'][0], row['f_cocoon'][0]
-#     ])
-
-#     print(sigmas_fit[-1])
-
-#     ##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
-#     filename = datapath+"%s_%.2f.pickle"%(orbit, rvir) #<-- go for the 
-#     with open(filename, 'rb') as handle:
-#         data_dict = pickle.load(handle)
-
-#     coords_obs = data_dict['coords_obs']
-#     kk = 'sc_straighter'
-#     tn = 'trim_new'
-#     if 'binaries' in case:
-#         kk+='_primaries'
-#         tn+='_primaries' #<-- binaries cases are trimmed with binary orbital motion included, as in gmm.py
-#     sc_straighter = data_dict[kk]
-
-#     distances = coords_obs.distance.to(u.kpc).value
-
-#     nsingles = data_dict['nsingles']
-
-#     # all_IDs = data_dict['IDs']
-
-#     unbound, trim_new = data_dict['unbound'], data_dict[tn]
-
-#     #### put things into thin stream vs cocoon: 
-#     keys = ['phi2','v_phi1','v_phi2','v_gsr']
-#     use = unbound & trim_new
-#     bound = ~unbound
-
-#     x_data = np.column_stack([
-#         sc_straighter[k][use] for k in keys
-#     ])
-
-#     pcs = np.full(len(bound), fill_value = np.nan)
-
-#     ncomponents = 2
-#     p1, p2 = [gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
-#     p_thin = p1
-#     ts = p1>0.5
-#     p_cocoon = 1-p_thin
-
-#     pcs[use] = p_cocoon
-
-#     # single/binary info is contained in the ordering. [:nsingles] are single and [nsingles:] are the binaries. 
-#     n_bound = len(pcs[bound])
-#     binaries_bound = np.sum(bound.astype(int)[nsingles:])
-#     fbin_bound = binaries_bound/n_bound
-
-#     p_cocoon_singles = pcs[:nsingles]
-#     p_cocoon_binaries = pcs[nsingles:]
-
-#     n_ts = len(pcs[(pcs<0.5) & (~np.isnan(pcs))])
-#     n_c = len(pcs[(pcs>0.5) & (~np.isnan(pcs))])
+axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
+plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
 
 
-
-#     nbin_c = len(p_cocoon_binaries[(p_cocoon_binaries>0.5) & (~np.isnan(p_cocoon_binaries))])
-#     nbin_ts = len(p_cocoon_binaries[(p_cocoon_binaries<0.5) & (~np.isnan(p_cocoon_binaries))])
-
-
-
-#     print(orbit)
-#     fbin_ts = nbin_ts / n_ts
-#     fbin_c = nbin_c / n_c
-#     print("\tthin stream binary fraction: ", nbin_ts / n_ts)
-#     print("\tcocoon binary fraction: ", nbin_c / n_c)
-#     print("\tbound fbin", fbin_bound)
-
-
-#     p_ts, P_ts = paf.Prob_of_frac(nbin_ts, n_ts)
-#     lo_ts,m_ts,up_ts = paf.percentile(p_ts, P_ts)
-#     xerr_l, xerr_u = m_ts-lo_ts, up_ts-m_ts
-#     fbins_ts.append(m_ts)
-#     fbls_ts.append(xerr_l)
-#     fbus_ts.append(xerr_u)
-
-#     p_c, P_c = paf.Prob_of_frac(nbin_c, n_c)
-#     lo_c,m_c,up_c = paf.percentile(p_c, P_c)
-#     yerr_l, yerr_u = m_c-lo_c, up_c-m_c
-#     fbins_c.append(m_c)
-#     fbls_c.append(yerr_l)
-#     fbus_c.append(yerr_u)
-
-
-#     # ax.errorbar([m_ts], [m_c], c=ccc[ii],
-#     #             xerr=[[xerr_l], [xerr_u]], yerr=[[yerr_l], [yerr_u]], 
-#     #             markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
-#     #            label=orbit)#+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
-
-# ax.errorbar(rvir0s, fbins_c, yerr=[fbls_c, fbus_c], label='cocoon', capsize=3, marker='o', 
-#             markeredgecolor='k')
-# ax.errorbar(rvir0s, fbins_ts, yerr=[fbls_ts, fbus_ts], label='thin stream', capsize=3, marker='o', 
-#             markeredgecolor='k')
-# ax.set_xlabel(r'$R_{\rm vir,0}~[\rm pc]$')
-# ax.set_ylabel(r'$f_{\rm bin}$')
-# ax.set_title(orbit)
-# # ax.legend(loc='lower right')
-# l = [0,0.4]
-# # ax.set_xlim(l)
-# # ax.set_ylim(l)
-# # ax.plot(l,l, c='k', lw=1)
-# # ax.set_xlabel(r'$f_{\rm bin, ts}$')
-# # ax.set_ylabel(r'$f_{\rm bin, c}$')
-# # ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
-
-# # plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
 # %%
-#--------------------------------------------------------#
-#       plots to demonstrate the need for matching       #
-#   to catalog photometry and the associated binary      #
-#   selection effects.                                   #
-#--------------------------------------------------------#
-# orbit = 'gd1'
-# rvir_index=0
-# filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
-# with open(filename, 'rb') as handle:
-#     data_dict = pickle.load(handle)
 
-# phot = data_dict['phot']
-# catphot = data_dict['catalog_photometry']
-# alive = data_dict['alive']
+# %%
+#-----------------------------------------------------#
+#   binary fractions in thin stream vs cocoon         # 
+#-----------------------------------------------------#
+case = "noiseless_CoM"
+tt = Table.read(table_path+case+".fits", format="fits")
+# c_labels = ["#CCC9E7", "#2F2F2F"]
+c_labels = ['orange','white','midnightblue']
+cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+
+rvir0s = [0.75, 1.5, 3.0, 6.0]
+
+fig, ax = plt.subplots()
+
+# for ii, orbit in enumerate(tqdm(orbits[reordered])): #<--- this i can do later i think. 
+
+fbins_ts = []
+fbls_ts = []
+fbus_ts = []
+
+fbins_c = []
+fbls_c = []
+fbus_c = []
+
+for rvir in rvir0s:
+    orbit = 'gd1' #<-- idk. 
+    #### extract info about the mixture modele from the saved table:
+    print(orbit, rvir)
+    row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+
+    means_fit = np.array([
+        row['M_ts'][0], row['M_c'][0]
+    ])
+    sigmas_fit = np.array([
+        row['S_ts'][0], row['S_c'][0]
+    ])
+    fracs_fit = np.array([
+        1-row['f_cocoon'][0], row['f_cocoon'][0]
+    ])
+
+    print(sigmas_fit[-1])
+
+    ##### let's open all of the dictionaries also to get like a median distance. use the most diffuse guy.
+    filename = datapath+"%s_%.2f.pickle"%(orbit, rvir) #<-- go for the 
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
+
+    coords_obs = data_dict['coords_obs']
+    kk = 'sc_straighter'
+    tn = 'trim_new'
+    if 'binaries' in case:
+        kk+='_primaries'
+        tn+='_primaries' #<-- binaries cases are trimmed with binary orbital motion included, as in gmm.py
+    sc_straighter = data_dict[kk]
+
+    distances = coords_obs.distance.to(u.kpc).value
+
+    nsingles = data_dict['nsingles']
+
+    # all_IDs = data_dict['IDs']
+
+    unbound, trim_new = data_dict['unbound'], data_dict[tn]
+
+    #### put things into thin stream vs cocoon: 
+    keys = ['phi2','v_phi1','v_phi2','v_gsr']
+    use = unbound & trim_new
+    bound = ~unbound
+
+    x_data = np.column_stack([
+        sc_straighter[k][use] for k in keys
+    ])
+
+    pcs = np.full(len(bound), fill_value = np.nan)
+
+    ncomponents = 2
+    p1, p2 = [gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=cc_i) for cc_i in range(ncomponents)]
+    p_thin = p1
+    ts = p1>0.5
+    p_cocoon = 1-p_thin
+
+    pcs[use] = p_cocoon
+
+    # single/binary info is contained in the ordering. [:nsingles] are single and [nsingles:] are the binaries. 
+    n_bound = len(pcs[bound])
+    binaries_bound = np.sum(bound.astype(int)[nsingles:])
+    fbin_bound = binaries_bound/n_bound
+
+    p_cocoon_singles = pcs[:nsingles]
+    p_cocoon_binaries = pcs[nsingles:]
+
+    n_ts = len(pcs[(pcs<0.5) & (~np.isnan(pcs))])
+    n_c = len(pcs[(pcs>0.5) & (~np.isnan(pcs))])
 
 
-# ttgd1 = n.load_gaia_catalog(orbit)
 
-# bins = np.arange(12, 23, 1)
-
-# fig, ax = plt.subplots()#1,2,figsize=[14,7])
-# N_jarvis = 679
-
-# mGphot_cat_argsort = np.argsort(ttgd1['phot_g_mean_mag'])
-# mGphot_cat = np.sort(ttgd1['phot_g_mean_mag'])
-
-# mgPhot_argsort = np.argsort(phot['mG'][alive])
-# mGphot_brightsort = np.sort(phot['mG'][alive])
-
-# # ax = axs[0]
-# ax.scatter(ttgd1['bp_rp'][mGphot_cat_argsort][:N_jarvis], 
-#            ttgd1['phot_g_mean_mag'][mGphot_cat_argsort][:N_jarvis], c=ccc[-2],
-#            label='brightest stars\nin catalog', zorder=1, rasterized=True)
-# ax.scatter(phot['BP_RP'][alive][mgPhot_argsort][:N_jarvis],
-#            phot['mG'][alive][mgPhot_argsort][:N_jarvis], c='0.2', 
-#            label='brightest stars\nfrom isochrone\nmapping', zorder=2, rasterized=True)
-# ax.scatter(phot['BP_RP'], phot['mG'], c='0.8', 
-#            label='all stars\nfrom isochrone\nmapping', zorder=0, rasterized=True)
+    nbin_c = len(p_cocoon_binaries[(p_cocoon_binaries>0.5) & (~np.isnan(p_cocoon_binaries))])
+    nbin_ts = len(p_cocoon_binaries[(p_cocoon_binaries<0.5) & (~np.isnan(p_cocoon_binaries))])
 
 
-# ax.invert_yaxis()
-# ax.set_xlabel(r'$G_{B_P} - G_{R_P}$')
-# ax.set_ylabel(r'$G$')
-# ax.legend(loc='lower left', fontsize=15)
-# plt.savefig("plots/matching_catalog_mags.pdf", dpi=300, bbox_inches='tight')
-# # %%
-# t_jarvis = Table.read(repo_path+"/data/jarvis26_Table7.fits", format='fits')
-# orbit = 'gd1'
-# rvir_index=0
-# filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
-# with open(filename, 'rb') as handle:
-#     data_dict = pickle.load(handle)
 
-# phot = data_dict['phot']
-# catphot = data_dict['catalog_photometry']
-# z = catphot['mz']
-# g = catphot['mG']
-# desi_rverr = n.desi_RVerr(z)
+    print(orbit)
+    fbin_ts = nbin_ts / n_ts
+    fbin_c = nbin_c / n_c
+    print("\tthin stream binary fraction: ", nbin_ts / n_ts)
+    print("\tcocoon binary fraction: ", nbin_c / n_c)
+    print("\tbound fbin", fbin_bound)
 
-# fig, ax = plt.subplots()
-# ax.scatter(g, desi_rverr, c='k', label='$\\it{Gaia}$ catalog with\nKoposov+26 relation', s=5, rasterized=True)
-# ax.scatter(t_jarvis['GMAG0'], t_jarvis['V_ERR'], label='Jarvis+26 catalog', c='cornflowerblue', s=5, rasterized=True)
-# ax.legend(loc='upper left', markerscale=4)
-# # ax.set_ylim(5e-1, 1.5e1)
-# # ax.set_xlim(16,22)
-# ax.set_yscale('log')
-# ax.set_xlabel(r'$G$')
-# ax.set_ylabel(r'$\sigma_v~[\rm km~s^{-1}]$')
-# # plt.savefig("plots/rverr_comparison.pdf", dpi=300, bbox_inches='tight')
-# # %%
-# #
+
+    p_ts, P_ts = paf.Prob_of_frac(nbin_ts, n_ts)
+    lo_ts,m_ts,up_ts = paf.percentile(p_ts, P_ts)
+    xerr_l, xerr_u = m_ts-lo_ts, up_ts-m_ts
+    fbins_ts.append(m_ts)
+    fbls_ts.append(xerr_l)
+    fbus_ts.append(xerr_u)
+
+    p_c, P_c = paf.Prob_of_frac(nbin_c, n_c)
+    lo_c,m_c,up_c = paf.percentile(p_c, P_c)
+    yerr_l, yerr_u = m_c-lo_c, up_c-m_c
+    fbins_c.append(m_c)
+    fbls_c.append(yerr_l)
+    fbus_c.append(yerr_u)
+
+
+    # ax.errorbar([m_ts], [m_c], c=ccc[ii],
+    #             xerr=[[xerr_l], [xerr_u]], yerr=[[yerr_l], [yerr_u]], 
+    #             markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
+    #            label=orbit)#+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
+
+ax.errorbar(rvir0s, fbins_c, yerr=[fbls_c, fbus_c], label='cocoon', capsize=3, marker='o', 
+            markeredgecolor='k')
+ax.errorbar(rvir0s, fbins_ts, yerr=[fbls_ts, fbus_ts], label='thin stream', capsize=3, marker='o', 
+            markeredgecolor='k')
+ax.set_xlabel(r'$R_{\rm vir,0}~[\rm pc]$')
+ax.set_ylabel(r'$f_{\rm bin}$')
+ax.set_title(orbit)
+# ax.legend(loc='lower right')
+l = [0,0.4]
+# ax.set_xlim(l)
+# ax.set_ylim(l)
+# ax.plot(l,l, c='k', lw=1)
+# ax.set_xlabel(r'$f_{\rm bin, ts}$')
+# ax.set_ylabel(r'$f_{\rm bin, c}$')
+# ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
+
+# plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
+%%
+--------------------------------------------------------#
+      plots to demonstrate the need for matching       #
+  to catalog photometry and the associated binary      #
+  selection effects.                                   #
+--------------------------------------------------------#
+orbit = 'gd1'
+rvir_index=0
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
+
+phot = data_dict['phot']
+catphot = data_dict['catalog_photometry']
+alive = data_dict['alive']
+
+
+ttgd1 = n.load_gaia_catalog(orbit)
+
+bins = np.arange(12, 23, 1)
+
+fig, ax = plt.subplots()#1,2,figsize=[14,7])
+N_jarvis = 679
+
+mGphot_cat_argsort = np.argsort(ttgd1['phot_g_mean_mag'])
+mGphot_cat = np.sort(ttgd1['phot_g_mean_mag'])
+
+mgPhot_argsort = np.argsort(phot['mG'][alive])
+mGphot_brightsort = np.sort(phot['mG'][alive])
+
+# ax = axs[0]
+ax.scatter(ttgd1['bp_rp'][mGphot_cat_argsort][:N_jarvis], 
+           ttgd1['phot_g_mean_mag'][mGphot_cat_argsort][:N_jarvis], c=ccc[-2],
+           label='brightest stars\nin catalog', zorder=1, rasterized=True)
+ax.scatter(phot['BP_RP'][alive][mgPhot_argsort][:N_jarvis],
+           phot['mG'][alive][mgPhot_argsort][:N_jarvis], c='0.2', 
+           label='brightest stars\nfrom isochrone\nmapping', zorder=2, rasterized=True)
+ax.scatter(phot['BP_RP'], phot['mG'], c='0.8', 
+           label='all stars\nfrom isochrone\nmapping', zorder=0, rasterized=True)
+
+
+ax.invert_yaxis()
+ax.set_xlabel(r'$G_{B_P} - G_{R_P}$')
+ax.set_ylabel(r'$G$')
+ax.legend(loc='lower left', fontsize=15)
+plt.savefig("plots/matching_catalog_mags.pdf", dpi=300, bbox_inches='tight')
+# %%
+t_jarvis = Table.read(repo_path+"/data/jarvis26_Table7.fits", format='fits')
+orbit = 'gd1'
+rvir_index=0
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
+
+phot = data_dict['phot']
+catphot = data_dict['catalog_photometry']
+z = catphot['mz']
+g = catphot['mG']
+desi_rverr = n.desi_RVerr(z)
+
+fig, ax = plt.subplots()
+ax.scatter(g, desi_rverr, c='k', label='$\\it{Gaia}$ catalog with\nKoposov+26 relation', s=5, rasterized=True)
+ax.scatter(t_jarvis['GMAG0'], t_jarvis['V_ERR'], label='Jarvis+26 catalog', c='cornflowerblue', s=5, rasterized=True)
+ax.legend(loc='upper left', markerscale=4)
+# ax.set_ylim(5e-1, 1.5e1)
+# ax.set_xlim(16,22)
+ax.set_yscale('log')
+ax.set_xlabel(r'$G$')
+ax.set_ylabel(r'$\sigma_v~[\rm km~s^{-1}]$')
+# plt.savefig("plots/rverr_comparison.pdf", dpi=300, bbox_inches='tight')
+# %%
+#
 
 
 #### helpers: rebuild exactly what gmm.py fit, for any case, and evaluate a
@@ -1130,183 +1130,183 @@ def demo_data(orbit, rvir, tt, noise=None, include_binaries=False, return_mask=F
 #    uncomment below when i want to redo these ltr
 #--------------------------------------------------------#
 # %%
-# cm.get_bibtex()
+cm.get_bibtex()
+%%
+c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
+noise = None #<-- None, 'via', 'via10hr', 'desi'
+include_binaries = False
+case_name = case_label(noise, include_binaries) #<-- e.g. desi_noise_CoM; can't disagree with the flags any more
+tt = Table.read(table_path+case_name+".fits", format="fits")
+c_labels = ["#CCC9E7", "#2F2F2F"]
+# c_labels = ['orange','white','midnightblue']
+# cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+# cocoon_cmap = cm.get_sub_cmap(cm.bubblegum, 0.4,1.).reversed()
+cocoon_cmap = cm.get_sub_cmap(cm.horizon, 0.2,0.8).reversed()
+
+
+
+orbit = 'gd1'
+rvir_indices = [0, 3] #<-- any subset of range(len(rvirs)), one column each
+
+keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
+key_labels = [
+    r'$\phi_2~[\degree]$',
+    r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
+    r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
+    r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
+]
+
+# the noisy samples are ~1e2-1e3 stars, the noiseless ones ~1e4: bigger, outlined points for "observed" data
+point_kw = dict(s=5) if noise is None else dict(s=50, edgecolor='k', lw=.5)
+
+ncols = len(rvir_indices)
+fig = plt.figure(figsize=[5*ncols+1, 8])
+# outer grid: the panels, plus a thin column on the far right for the colorbar
+outer = fig.add_gridspec(1, 2, width_ratios=[ncols, 0.05], wspace=0.03)
+axs = outer[0].subgridspec(len(keys), ncols, hspace=0.03, wspace=0.03).subplots(
+    sharex=True, sharey='row', squeeze=False)
+cax = fig.add_subplot(outer[1])
+
+norm_pc = Normalize(vmin=0, vmax=1)
+ylims = np.zeros(len(keys)) #<-- per row, the widest of the columns
+
+for ii, rvir_index in enumerate(rvir_indices):
+    rvir = rvirs[rvir_index]
+    phi1, ydict, p_cocoon, row = demo_data(orbit, rvir, tt, noise=noise, include_binaries=include_binaries)
+    order = np.argsort(p_cocoon) # plot cocoon on top.
+    cocoon_selection = p_cocoon>0.5
+
+    for jj, key in enumerate(keys):
+        y = ydict[key]
+        ax = axs[jj, ii]
+        ax.scatter(phi1[order], y[order],
+                   c=p_cocoon[order], cmap=cocoon_cmap, norm=norm_pc,
+                   rasterized=True, **point_kw)
+
+        # 3 sigma of the cocoon stars (or of everything, if there's no cocoon)
+        ysel = y[cocoon_selection] if cocoon_selection.sum()>1 else y
+        ylims[jj] = max(ylims[jj], 3*np.std(ysel))
+
+    if noise is None:
+        axs[0, ii].set_title(r'Progenitor $R_{\rm vir,0}=%.2f$ pc'%(rvir), fontsize=13)
+
+    if noise is not None:
+        axs[0, ii].set_title(
+            r'$f_{\rm c}=%.2f, \sigma_{\phi_2, c} = %.2f~\degree, \sigma_{v_{\rm GSR}, c} = %.2f~\mathrm{km~s^{-1}} $'%(row['f_cocoon'][0], row['S_c'][:,0][0], row['S_c'][:,-1][0]))
+
+
+    axs[-1, ii].set_xlabel(r'$\phi_1~[\degree]$')
+
+for jj in range(len(keys)):
+    axs[jj, 0].set_ylim(-ylims[jj], ylims[jj]) #<-- shared across the row
+    axs[jj, 0].set_ylabel(key_labels[jj], fontsize=15)
+axs[0, 0].set_xlim(orbit_lim_map[orbit]) #<-- sharex, so this sets every panel
+
+cb = fig.colorbar(ScalarMappable(norm=norm_pc, cmap=cocoon_cmap), cax=cax)
+cb.set_label(r'$p_{\rm cocoon}$', fontsize=15)
+
+# keep the old filename for the noiseless CoM panels; every other case gets its own file
+plot_name = "demo_cocoon_separation_rvir0" if case_name=='noiseless_CoM' else "demo_cocoon_separation_"+case_name
+if orbit!='gd1':
+    plot_name += "_"+orbit
+# plt.savefig("plots/"+plot_name+".pdf", dpi=300, bbox_inches='tight')
+
 # %%
-# c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
-# noise = None #<-- None, 'via', 'via10hr', 'desi'
-# include_binaries = False
-# case_name = case_label(noise, include_binaries) #<-- e.g. desi_noise_CoM; can't disagree with the flags any more
-# tt = Table.read(table_path+case_name+".fits", format="fits")
-# c_labels = ["#CCC9E7", "#2F2F2F"]
-# # c_labels = ['orange','white','midnightblue']
-# # cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
-# # cocoon_cmap = cm.get_sub_cmap(cm.bubblegum, 0.4,1.).reversed()
-# cocoon_cmap = cm.get_sub_cmap(cm.horizon, 0.2,0.8).reversed()
+#--------------------------------------------------------#
+#   getting stuff together for a table summarizing a     #
+#   comparison between the raw N-body models and         #
+#   mock-observed data.                                  #
+#--------------------------------------------------------#
+### will be looping through all of these gmm_tables
+cases = [
+    'noiseless_CoM',
+    'noiseless_binaries',
+    'desi_noise_CoM',
+    'desi_noise_binaries',
+    'via_noise_CoM',
+    'via_noise_binaries'
+]
+labels = [
+    r'Raw $N$-body (CM)',
+    r'Raw $N$-body (binaries)',
+    r'DESI-like noise (CM)',
+    r'DESI-like noise (binaries)',
+    r'Via-like noise (CM)',
+    r'Via-like noise (binaries)',
+]
+noises = [None, None, 'desi','desi','via','via']
+orbit = 'gd1'
+rvir=0.75
+
+filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
+with open(filename, 'rb') as handle:
+    data_dict = pickle.load(handle)
+nsys = len(data_dict['CoM']['pos'])
+nsingles = data_dict['nsingles']
+nbinaries = nsys - nsingles
+# print(nsingles, nbinaries, nsingles+nbinarie)
+isbinary = np.concatenate([np.zeros(nsingles, dtype=int), np.ones(nbinaries, dtype=int)])#.astype(bool)
+# ^ 1 if binary, 0 if single
 
 
+fbins = []
+Nsys = []
+f_cocoons = []
+sigphi2_ts = []
+sigphi2_cs = []
+sigvr_ts = []
+sigvr_cs = []
 
-# orbit = 'gd1'
-# rvir_indices = [0, 3] #<-- any subset of range(len(rvirs)), one column each
-
-# keys = ['phi2','pm_phi1','pm_phi2','v_gsr']
-# key_labels = [
-#     r'$\phi_2~[\degree]$',
-#     r'$\mu_{\phi_1}~[\rm mas~yr^{-1}]$',
-#     r'$\mu_{\phi_2}~[\rm mas~yr^{-1}]$',
-#     r'$v_{\rm GSR}~[\rm km~s^{-1}]$'
-# ]
-
-# # the noisy samples are ~1e2-1e3 stars, the noiseless ones ~1e4: bigger, outlined points for "observed" data
-# point_kw = dict(s=5) if noise is None else dict(s=50, edgecolor='k', lw=.5)
-
-# ncols = len(rvir_indices)
-# fig = plt.figure(figsize=[5*ncols+1, 8])
-# # outer grid: the panels, plus a thin column on the far right for the colorbar
-# outer = fig.add_gridspec(1, 2, width_ratios=[ncols, 0.05], wspace=0.03)
-# axs = outer[0].subgridspec(len(keys), ncols, hspace=0.03, wspace=0.03).subplots(
-#     sharex=True, sharey='row', squeeze=False)
-# cax = fig.add_subplot(outer[1])
-
-# norm_pc = Normalize(vmin=0, vmax=1)
-# ylims = np.zeros(len(keys)) #<-- per row, the widest of the columns
-
-# for ii, rvir_index in enumerate(rvir_indices):
-#     rvir = rvirs[rvir_index]
-#     phi1, ydict, p_cocoon, row = demo_data(orbit, rvir, tt, noise=noise, include_binaries=include_binaries)
-#     order = np.argsort(p_cocoon) # plot cocoon on top.
-#     cocoon_selection = p_cocoon>0.5
-
-#     for jj, key in enumerate(keys):
-#         y = ydict[key]
-#         ax = axs[jj, ii]
-#         ax.scatter(phi1[order], y[order],
-#                    c=p_cocoon[order], cmap=cocoon_cmap, norm=norm_pc,
-#                    rasterized=True, **point_kw)
-
-#         # 3 sigma of the cocoon stars (or of everything, if there's no cocoon)
-#         ysel = y[cocoon_selection] if cocoon_selection.sum()>1 else y
-#         ylims[jj] = max(ylims[jj], 3*np.std(ysel))
-
-#     if noise is None:
-#         axs[0, ii].set_title(r'Progenitor $R_{\rm vir,0}=%.2f$ pc'%(rvir), fontsize=13)
-
-#     if noise is not None:
-#         axs[0, ii].set_title(
-#             r'$f_{\rm c}=%.2f, \sigma_{\phi_2, c} = %.2f~\degree, \sigma_{v_{\rm GSR}, c} = %.2f~\mathrm{km~s^{-1}} $'%(row['f_cocoon'][0], row['S_c'][:,0][0], row['S_c'][:,-1][0]))
+for ii, case in enumerate(cases):
+    noise = noises[ii]
+    tt = Table.read(repo_path+"/data/gmm_tables/%s.fits"%case)
 
 
-#     axs[-1, ii].set_xlabel(r'$\phi_1~[\degree]$')
+    include_binaries=True if "binaries" in case else False
 
-# for jj in range(len(keys)):
-#     axs[jj, 0].set_ylim(-ylims[jj], ylims[jj]) #<-- shared across the row
-#     axs[jj, 0].set_ylabel(key_labels[jj], fontsize=15)
-# axs[0, 0].set_xlim(orbit_lim_map[orbit]) #<-- sharex, so this sets every panel
+    phi1, ydict, p_cocoon, row, use = demo_data(orbit, rvir, tt, noise=noise, 
+                                                include_binaries=include_binaries,
+                                                return_mask=True)
+    print(case)
+    order = np.argsort(p_cocoon) # plot cocoon on top.
+    cocoon_selection = p_cocoon>0.5
 
-# cb = fig.colorbar(ScalarMappable(norm=norm_pc, cmap=cocoon_cmap), cax=cax)
-# cb.set_label(r'$p_{\rm cocoon}$', fontsize=15)
+    isbinary_use = isbinary[use]
+    nsys = len(isbinary[use])
+    fbin = np.sum(isbinary_use) / nsys
+    fbins.append(fbin)
 
-# # keep the old filename for the noiseless CoM panels; every other case gets its own file
-# plot_name = "demo_cocoon_separation_rvir0" if case_name=='noiseless_CoM' else "demo_cocoon_separation_"+case_name
-# if orbit!='gd1':
-#     plot_name += "_"+orbit
-# # plt.savefig("plots/"+plot_name+".pdf", dpi=300, bbox_inches='tight')
+    f_c = row['f_cocoon'][0]
+    sphi2ts, _, _, svrts = row['S_ts'][0]
+    sphi2c, _, _, svrc = row['S_c'][0]
 
-# # %%
-# #--------------------------------------------------------#
-# #   getting stuff together for a table summarizing a     #
-# #   comparison between the raw N-body models and         #
-# #   mock-observed data.                                  #
-# #--------------------------------------------------------#
-# ### will be looping through all of these gmm_tables
-# cases = [
-#     'noiseless_CoM',
-#     'noiseless_binaries',
-#     'desi_noise_CoM',
-#     'desi_noise_binaries',
-#     'via_noise_CoM',
-#     'via_noise_binaries'
-# ]
-# labels = [
-#     r'Raw $N$-body (CM)',
-#     r'Raw $N$-body (binaries)',
-#     r'DESI-like noise (CM)',
-#     r'DESI-like noise (binaries)',
-#     r'Via-like noise (CM)',
-#     r'Via-like noise (binaries)',
-# ]
-# noises = [None, None, 'desi','desi','via','via']
-# orbit = 'gd1'
-# rvir=0.75
+    # print(svrts, svrc)
 
-# filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
-# with open(filename, 'rb') as handle:
-#     data_dict = pickle.load(handle)
-# nsys = len(data_dict['CoM']['pos'])
-# nsingles = data_dict['nsingles']
-# nbinaries = nsys - nsingles
-# # print(nsingles, nbinaries, nsingles+nbinarie)
-# isbinary = np.concatenate([np.zeros(nsingles, dtype=int), np.ones(nbinaries, dtype=int)])#.astype(bool)
-# # ^ 1 if binary, 0 if single
+    f_cocoons.append(f_c)
+    sigphi2_ts.append(sphi2ts)
+    sigphi2_cs.append(sphi2c)
+    sigvr_ts.append(svrts)
+    sigvr_cs.append(svrc)
 
 
-# fbins = []
-# Nsys = []
-# f_cocoons = []
-# sigphi2_ts = []
-# sigphi2_cs = []
-# sigvr_ts = []
-# sigvr_cs = []
+    Nsys.append(nsys)
 
-# for ii, case in enumerate(cases):
-#     noise = noises[ii]
-#     tt = Table.read(repo_path+"/data/gmm_tables/%s.fits"%case)
+f_cocoons = np.array(f_cocoons)
+sigvr_ts = np.array(sigvr_ts)
+sigvr_cs = np.array(sigvr_cs)
+fbins = np.array(fbins)
 
+tdict = {
+    "Noise case":labels,
+    r"$f_{\rm cocoon}$":np.round(f_cocoons, 2),
+    r"$\sigma_{v_{\rm GSR}, t}$":np.round(sigvr_ts,2),
+    r"$\sigma_{v_{\rm GSR}, c}$":np.round(sigvr_cs,2),
+    r"$f_{\rm bin}$":np.round(fbins, 2),
+    r"$N_{\rm sys}$":Nsys
+}
 
-#     include_binaries=True if "binaries" in case else False
-
-#     phi1, ydict, p_cocoon, row, use = demo_data(orbit, rvir, tt, noise=noise, 
-#                                                 include_binaries=include_binaries,
-#                                                 return_mask=True)
-#     print(case)
-#     order = np.argsort(p_cocoon) # plot cocoon on top.
-#     cocoon_selection = p_cocoon>0.5
-
-#     isbinary_use = isbinary[use]
-#     nsys = len(isbinary[use])
-#     fbin = np.sum(isbinary_use) / nsys
-#     fbins.append(fbin)
-
-#     f_c = row['f_cocoon'][0]
-#     sphi2ts, _, _, svrts = row['S_ts'][0]
-#     sphi2c, _, _, svrc = row['S_c'][0]
-
-#     # print(svrts, svrc)
-
-#     f_cocoons.append(f_c)
-#     sigphi2_ts.append(sphi2ts)
-#     sigphi2_cs.append(sphi2c)
-#     sigvr_ts.append(svrts)
-#     sigvr_cs.append(svrc)
+t = Table(tdict)
 
 
-#     Nsys.append(nsys)
-
-# f_cocoons = np.array(f_cocoons)
-# sigvr_ts = np.array(sigvr_ts)
-# sigvr_cs = np.array(sigvr_cs)
-# fbins = np.array(fbins)
-
-# tdict = {
-#     "Noise case":labels,
-#     r"$f_{\rm cocoon}$":np.round(f_cocoons, 2),
-#     r"$\sigma_{v_{\rm GSR}, t}$":np.round(sigvr_ts,2),
-#     r"$\sigma_{v_{\rm GSR}, c}$":np.round(sigvr_cs,2),
-#     r"$f_{\rm bin}$":np.round(fbins, 2),
-#     r"$N_{\rm sys}$":Nsys
-# }
-
-# t = Table(tdict)
-
-
-# # t.write("table2", format='ascii.latex', overwrite=True)
+# t.write("table2", format='ascii.latex', overwrite=True)
 
