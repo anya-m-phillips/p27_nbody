@@ -4,6 +4,9 @@
 #   nbody thin stream + cocoon  `        #
 #----------------------------------------#
 # %%
+print("loading packages")
+
+print("sys/petar")
 import sys, os
 repo_path = "/n/home02/amphillips/p27_nbody"
 script_path = repo_path+"/scripts"
@@ -11,13 +14,14 @@ import petar
 import numpy as np
 import h5py
 
+print("scipy")
 from scipy.stats import binned_statistic, norm, multivariate_normal
 from scipy.optimize import curve_fit, minimize, Bounds
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import CubicSpline
 from scipy.special import expit, logit, logsumexp # inverse-logit / logit, for the f_1 reparameterization
 
-
+print("astropy")
 # import astropy.coordinates as coord
 from astropy.coordinates import Galactocentric, ICRS, CartesianRepresentation,CartesianDifferential
 from astropy.coordinates import SkyCoord
@@ -25,6 +29,7 @@ import astropy.units as u
 import astropy.constants as const
 from astropy.table import Table
 
+print("gala")
 import gala.coordinates as gc
 import gala.dynamics as gd
 import gala.potential as gp
@@ -32,6 +37,8 @@ from gala.dynamics import mockstream as ms
 from gala.units import galactic
 from gala.coordinates import reflex_correct
 
+
+print("mpl")
 import matplotlib.pyplot as plt
 # %matplotlib inline
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -48,6 +55,8 @@ from matplotlib.colors import Normalize
 from matplotlib.colors import LinearSegmentedColormap
 import cmasher as cm
 
+
+print("dribs")
 from tqdm import tqdm
 
 sys.path.append(script_path)
@@ -155,6 +164,9 @@ def load_spray_present_day(spray_file):
     return stream_pos[:, released]
 
 pericenters_kpc = []
+present_rs = []
+apocenters_kpc = []
+
 
 orbit_titles = ['GD-1', 'AAU','Pal 5','Jet','C-19']
 for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think. 
@@ -170,10 +182,21 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
 
     peri = orbit_obj.pericenter().to(u.kpc).value
     pericenters_kpc.append(peri)
+    apo = orbit_obj.apocenter().to(u.kpc).value
+    apocenters_kpc.append(apo)
+
+
+    x,y,z = disp[:3]
+    r = np.sqrt(x**2 + y**2 + z**2)
+    present_rs.append(r)
+
 
 orbit_titles = np.array(orbit_titles)
 
 pericenters_kpc = np.array(pericenters_kpc)
+apocenters_kpc = np.array(apocenters_kpc)
+orbital_phases = (present_rs - pericenters_kpc) / (apocenters_kpc - pericenters_kpc)
+
 
 # %%
 fit_keys = ['phi2','v_phi1','v_phi2','v_gsr'] #<-- gmm.py's keys; also the order of the M_*/S_* columns
@@ -187,7 +210,8 @@ fig1_include_trimmed = True
 tt_fig1 = Table.read(table_path+case_label(fig1_noise, fig1_include_binaries)+".fits", format="fits")
 
 orbit_title_map = {o:t for o, t in zip(orbits, orbit_titles)}
-reordered = np.argsort(pericenters_kpc) #<-- same as the main result plot
+# reordered = np.argsort(pericenters_kpc) #<-- same as the main result plot
+reordered = np.argsort(orbital_phases)
 
 #### load everything first, then plot.
 #   loop in pericenter order so ccc[ii] is the same color per orbit as in the summary plots.
