@@ -923,12 +923,12 @@ l = [0,0.4]
 # ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
 
 # plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
-%%
---------------------------------------------------------#
-      plots to demonstrate the need for matching       #
-  to catalog photometry and the associated binary      #
-  selection effects.                                   #
---------------------------------------------------------#
+# %%
+# --------------------------------------------------------#
+#       plots to demonstrate the need for matching       #
+#   to catalog photometry and the associated binary      #
+#   selection effects.                                   #
+# --------------------------------------------------------#
 orbit = 'gd1'
 rvir_index=0
 filename = datapath+"%s_%.2f.pickle"%(orbit, rvirs[rvir_index])
@@ -1120,7 +1120,7 @@ def demo_data(orbit, rvir, tt, noise=None, include_binaries=False, return_mask=F
 #--------------------------------------------------------#
 # %%
 cm.get_bibtex()
-%%
+# %%
 c_labels = ["#FBBA72","#F5AE66","#EFA15A","#E9944E","#E38741","#DD7A35","#D76D29","#D1601D","#CA5310"]
 noise = None #<-- None, 'via', 'via10hr', 'desi'
 include_binaries = False

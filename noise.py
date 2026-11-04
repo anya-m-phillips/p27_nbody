@@ -458,8 +458,63 @@ def nearest_isochrone_point(G, BP_RP, track, sigma_G=0.2, sigma_color=0.05,
         nearest['dist'][q] = np.sqrt(d2[rows, j])
 
     return nearest
+# %%
+# MAKE A PLOT HERE DEMONSTRATING HOW NEAREST ISOCHRONE POINT WORKS
+# hmm real quick can I plot a color-temperature relation: 
+# isocmd = artpop.fetch_mist_iso_cmd(
+#     log_age=np.log10(12e9),
+#     feh=-2.0,
+#     phot_system='UBVRIplus',
+#     #v_over_vcrit=0.0 #<-- idk
+# )
+# m0_grid, iso_table = build_isochrone_table(isocmd) #<-- will do gaia bands + teff automatically; max_eep=POST_AGB_EEP removes post-AGB/WD (max_phase=5 does not on artpop)
+# min_m0, max_m0 = m0_grid[0], m0_grid[-1]
+
+# fig, ax = plt.subplots()
+
+# iso_table['mG'] = paf.m_from_M(iso_table['Gaia_G_EDR3'], dist=10*u.kpc)
+# ax.scatter(iso_table['Gaia_BP_EDR3']-iso_table['Gaia_RP_EDR3'],
+#            iso_table['mG'])
+# ax.invert_yaxis()
+
+# gd1=Table.read(repo_path+'/data/bpw25_catalogs/gd1.fits', format='fits')
+
+# ax.scatter(gd1['bp_rp'], gd1['phot_g_mean_mag'])
+
+# use = iso_table['mG']<20000
+# ax.axhline(20)
+# #### now fit a... parabola to this color-temperature relation
+# # the isochrone isn't a function of colour (MS, RGB, HB, AGB all overlap in BP-RP, at slightly
+# # different Teff because of log g), so np.interp on colour-sorted nodes would zigzag between
+# # branches. a least-squares polynomial averages over them instead.
+# # Polynomial.fit rescales colour onto [-1, 1] internally, so the fit is well conditioned.
+# iso_color = iso_table['Gaia_BP_EDR3'] - iso_table['Gaia_RP_EDR3']
+# color_teff_deg = 2
+# color_teff_poly = np.polynomial.Polynomial.fit(iso_color[use], iso_table['log_Teff'][use],
+#                                                deg=color_teff_deg)
+
+# gd1_teffs = color_teff_poly(gd1['bp_rp'])
+
+# color_fit_range = (iso_color[use].min(), iso_color[use].max()) #<-- don't trust it outside this
+# resid = iso_table['log_Teff'][use] - color_teff_poly(iso_color[use])
+# print('log Teff = ', color_teff_poly.convert()) #<-- coefficients in plain BP-RP (low order first)
+# print(f'residual rms {resid.std():.4f} dex, max |r| {np.abs(resid).max():.4f} dex')
+
+# fig, (ax, axr) = plt.subplots(2, 1, sharex=True, figsize=(6, 6),
+#                               gridspec_kw={'height_ratios': [3, 1]})
+# im = ax.scatter(iso_color[use], iso_table['log_Teff'][use], c=iso_table['Gaia_G_EDR3'][use], s=4)
+# cc = np.linspace(*color_fit_range, 300)
+# ax.plot(cc, color_teff_poly(cc), 'k-', lw=1, label='degree %d fit'%color_teff_deg)
+# ax.legend()
+# ax.set_ylabel(r'$\log T_{\rm eff}$')
+# plt.colorbar(im, ax=[ax, axr], label=r'$G$')
+# axr.scatter(iso_color[use], resid, c=iso_table['Gaia_G_EDR3'][use], s=4)
+# axr.axhline(0, color='k', lw=0.8)
+# axr.set_xlabel(r'$BP-RP$')
+# axr.set_ylabel('resid [dex]')
 
 
+# %%
 def Teff_from_gaia_isochrone(track, G, BP_RP, **kwargs):
     """
     log Teff of stars given their (absolute) G, BP-RP, read off the nearest
@@ -467,6 +522,62 @@ def Teff_from_gaia_isochrone(track, G, BP_RP, **kwargs):
     """
     return nearest_isochrone_point(G, BP_RP, track, **kwargs)['log_Teff']
 
+def Teff_from_gaia_color_temp_relation(track, BP_RP, deg=2, G_max=5000.0, return_poly=False):
+    """
+    log Teff of stars from their BP-RP colour alone, via a least-squares
+    polynomial fit of log Teff vs BP-RP to the isochrone track.
+
+    the isochrone isn't a function of colour (MS, RGB, HB and AGB overlap in
+    BP-RP at slightly different Teff, because of log g), so it can't be
+    interpolated in colour; the fit averages over the branches instead. the
+    track points used in the fit are those with absolute G < G_max. the
+    default 5000 means no cut: every point on the track (down to the 0.1 Msun
+    end of the MS) is in the fit. the fit depends only on the colour, so a
+    catalog star's distance doesn't affect its Teff.
+
+    for the artpop [Fe/H] = -2 isochrone, degree 2 gives ~0.006 dex rms (max
+    ~0.017 dex) about the isochrone points with no cut, and ~0.005 dex rms (max
+    ~0.014 dex) with G_max = 4. the difference: at BP-RP > 1.2 the lower MS
+    runs ~0.02-0.03 dex cooler than the giants, and with no cut it pulls the
+    fit toward itself there. G_max = 5.0 would be apparent G < 20 at 10 kpc
+    (DM = 15), about the faint end of the BPW25 catalogs.
+
+    Parameters
+    ----------
+    track : dict from isochrone_cmd_track (needs 'G', 'BP_RP', 'log_Teff';
+        magnitudes absolute).
+    BP_RP : (N,) array-like, colours to evaluate. NaNs pass through.
+    deg : int, polynomial degree.
+    G_max : float or None, fit only track points with absolute G < G_max.
+        None (or the default 5000) fits every point.
+    return_poly : bool, also return the fitted np.polynomial.Polynomial.
+
+    Returns
+    -------
+    log_Teff : (N,) float64. NaN outside the fitted colour range (no
+        extrapolation) and where BP_RP is NaN.
+    poly : np.polynomial.Polynomial, only if return_poly.
+    """
+    c_iso = np.asarray(track['BP_RP'], dtype=np.float64)
+    T_iso = np.asarray(track['log_Teff'], dtype=np.float64)
+    fit = np.isfinite(c_iso) & np.isfinite(T_iso)
+    if G_max is not None:
+        fit &= np.asarray(track['G'], dtype=np.float64) < G_max
+    if fit.sum() <= deg:
+        raise ValueError('only %d track points to fit a degree %d polynomial'%(fit.sum(), deg))
+
+    # Polynomial.fit rescales colour onto [-1, 1] internally, so it's well conditioned
+    poly = np.polynomial.Polynomial.fit(c_iso[fit], T_iso[fit], deg=deg)
+    c_lo, c_hi = c_iso[fit].min(), c_iso[fit].max()
+
+    c = np.asarray(BP_RP, dtype=np.float64)
+    in_range = (c >= c_lo) & (c <= c_hi) #<-- False for NaN too
+    log_Teff = np.full(c.shape, np.nan)
+    log_Teff[in_range] = poly(c[in_range])
+
+    if return_poly:
+        return log_Teff, poly
+    return log_Teff
 
 def trim_obstream_percentile(sc, p=[1,99], 
                             trim_keys=['phi1','d_phi2','v_phi1','v_phi2','v_gsr','distance']):
@@ -564,12 +675,13 @@ def trim_obstream_percentile(sc, p=[1,99],
 
 def assign_photometry_from_catalog(gaia_iso, distances, catalog, track,
                                    N=None, eligible=None, G_key='Gaia_G_EDR3',
-                                   **nearest_kwargs):
+                                   **teff_kwargs):
     """
     Paint real catalog photometry onto the N-body stars by rank in apparent G:
     the brightest N-body star gets the brightest catalog star's G and BP-RP,
-    the second brightest the second, etc. log_Teff is then read off the
-    nearest point on the isochrone (for viamock).
+    the second brightest the second, etc. log_Teff (for viamock) then comes
+    from the catalog BP-RP alone, through the polynomial colour-Teff fit to the
+    isochrone (Teff_from_gaia_color_temp_relation).
 
     Parameters
     ----------
@@ -577,26 +689,31 @@ def assign_photometry_from_catalog(gaia_iso, distances, catalog, track,
         NaN off the isochrone). only `G_key` is used -- it sets the ranking.
     distances : (N_sim,) astropy Quantity, heliocentric distances of the same
         stars (e.g. coords_obs.distance). used both ways: iso G -> apparent
-        for the ranking, catalog apparent G -> absolute for the Teff lookup.
+        for the ranking, catalog apparent G -> absolute for the output 'G'
+        (and 'iso_dist'). log_Teff doesn't depend on them.
     catalog : astropy Table with 'phot_g_mean_mag' and 'bp_rp'
         (e.g. load_gaia_catalog(orbit)). rows with non-finite G or BP-RP
         are skipped.
-    track : dict from isochrone_cmd_track, for the Teff lookup.
+    track : dict from isochrone_cmd_track, for the colour-Teff fit (and 'iso_dist').
     N : int or None. match this many of the brightest stars. None -> all
         usable catalog rows. capped at the number of rankable N-body stars.
     eligible : (N_sim,) bool or None. only these N-body stars can receive
         catalog photometry (e.g. unbound & nonrem & trim, so the catalog isn't
         spent on progenitor stars). None -> every star with a finite apparent G.
-    nearest_kwargs : go to nearest_isochrone_point (sigma_G, sigma_color).
+    teff_kwargs : go to Teff_from_gaia_color_temp_relation (deg, G_max).
 
     Returns
     -------
     phot : dict of (N_sim,) float64 in the original N-body order, NaN where
         unmatched. same keys as final_datasets' photdict -- 'G', 'BP_RP', 'z',
         'log_Teff' (absolute), 'mG', 'mz' (apparent) -- plus
-        'iso_dist' (distance to the isochrone in sigma units; > ~3 means
-        the catalog star is off this isochrone and its Teff is extrapolated)
-        and 'catalog_index' (int, row of `catalog` used, -1 if unmatched).
+        'iso_dist' and 'catalog_index' (int, row of `catalog` used, -1 if
+        unmatched). 'log_Teff' is also NaN for matched stars whose BP-RP is
+        outside the colour range of the fit (e.g. stars bluer than the model
+        HB), which then get NaN Via errors. 'iso_dist' is a diagnostic only:
+        the CMD distance to the nearest isochrone point (nearest_isochrone_point,
+        default metric), in sigma units; > ~3 means the catalog star is off
+        this isochrone. it no longer feeds log_Teff.
     matched : (N_sim,) bool, True where catalog photometry was assigned.
     """
     ### STEP 1: apparent G of the N-body stars from the isochrone
@@ -649,8 +766,11 @@ def assign_photometry_from_catalog(gaia_iso, distances, catalog, track,
     G = paf.M_from_m(mG, dist=distances)
     G = np.asarray(getattr(G, 'value', G), dtype=np.float64)
 
-    ### STEP 5: Teff off the nearest point on the isochrone track
-    nearest = nearest_isochrone_point(G, BP_RP, track, **nearest_kwargs)
+    ### STEP 5: Teff from the colour-Teff polynomial fit to the isochrone
+    # (used to be the nearest point on the track in the CMD, which is still
+    # computed below, but only for the 'iso_dist' diagnostic)
+    log_Teff = Teff_from_gaia_color_temp_relation(track, BP_RP, **teff_kwargs)
+    nearest = nearest_isochrone_point(G, BP_RP, track)
 
     ### STEP 6: already in the original order. z via RTN-099 for DESI.
     z = gaia_g_to_lsst_z(G, BP_RP)
@@ -660,7 +780,7 @@ def assign_photometry_from_catalog(gaia_iso, distances, catalog, track,
         'z': z,
         'mG': mG,
         'mz': gaia_g_to_lsst_z(mG, BP_RP),
-        'log_Teff': nearest['log_Teff'],
+        'log_Teff': log_Teff,
         'iso_dist': nearest['dist'],
         'catalog_index': catalog_index,
     }

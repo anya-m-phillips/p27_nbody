@@ -1056,7 +1056,7 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
                             c=p_cocoon[order], s=5, cmap=cocoon_cmap,
                             # s=0.1, c='k',
                             rasterized=True) 
-                ax.set_ylim(-cut,cut)
+                # ax.set_ylim(-cut,cut)
                 ax.set_xlim(phi1_lims[ii])
 
                 # ax.set_ylim(-3*cut, 3*cut)
