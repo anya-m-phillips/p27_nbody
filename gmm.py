@@ -112,7 +112,26 @@ def measurement_errors(noise_dict, noise, distances, keys):
     return np.column_stack([err_by_key[k] for k in keys])
 
 
-def component_likelihood(x_data, mu, sigma, x_err=None):
+def binary_excess_array(sigma_binary, keys, n_stars, apply_to=None, key='v_gsr'):
+    """
+    build the (N, K) sigma_binary array the likelihood functions take, from one
+    number: sigma_binary in the `key` column (v_gsr by default), 0 everywhere else.
+
+    sigma_binary : the excess dispersion from binary orbital motion [km/s], e.g.
+                   sqrt(var(v with binary motion) - var(v CoM)) over stars with
+                   repeat RVs.
+    keys         : the fit's column order, so the right column gets it.
+    apply_to     : None (every star), or an (N,) bool mask of the stars whose
+                   velocities still include binary motion -- e.g. ~repeat, since
+                   repeat-visit stars already have their CoM velocity. 0 elsewhere.
+    """
+    out = np.zeros((n_stars, len(keys)))
+    rows = np.ones(n_stars, dtype=bool) if apply_to is None else np.asarray(apply_to, dtype=bool)
+    out[rows, keys.index(key)] = sigma_binary
+    return out
+
+
+def component_likelihood(x_data, mu, sigma, x_err=None, sigma_binary=None):
     """
     log likelihood of each star under ONE gaussian component, with independent
     (uncorrelated) phase space dimensions.
@@ -123,6 +142,12 @@ def component_likelihood(x_data, mu, sigma, x_err=None):
     x_err  : None, or (N, K) array of per-star measurement uncertainties (1 sd),
              same units and column order as x_data. 0 in a column = that
              dimension is measured perfectly.
+    sigma_binary : None, or an extra FIXED dispersion from binary orbital motion,
+             added in quadrature exactly like x_err: anything that broadcasts to
+             (N, K), same column order. (K,) applies it to every star, (N, K) per
+             star (e.g. 0 for stars whose CoM velocity is known from repeat visits).
+             build it with binary_excess_array. it is NOT fit -- sigma stays the
+             intrinsic width with both x_err and sigma_binary taken out.
 
     returns : (N,) array of ln p(x_i | mu, sigma)
 
@@ -148,14 +173,20 @@ def component_likelihood(x_data, mu, sigma, x_err=None):
                                                  #    negative sigma gets rejected
                                                  #    instead of getting a nan.
 
-    if x_err is None:
+    if x_err is None and sigma_binary is None:
         scale = sigma #<-- kept separate so the noiseless fits are bit-identical to before
     else:
-        scale = np.sqrt(sigma**2 + x_err**2)
+        var = sigma**2
+        if x_err is not None:
+            var = var + x_err**2
+        if sigma_binary is not None:
+            var = var + np.asarray(sigma_binary, dtype=float)**2
+        scale = np.sqrt(var)
 
     return norm.logpdf(x_data, loc=mu, scale=scale).sum(axis=1)
 
-def gmm_negative_loglikelihood(component_fractions, means, sigmas, data, x_err=None):
+def gmm_negative_loglikelihood(component_fractions, means, sigmas, data, x_err=None,
+                               sigma_binary=None):
     """
     all inputs should be numpy arrays
     component fractions should have length (n_components - 1) -- the last weight
@@ -163,6 +194,8 @@ def gmm_negative_loglikelihood(component_fractions, means, sigmas, data, x_err=N
     means, sigmas should have length n_components x four dimensions
     x_err : None, or (N, K) per-star uncertainties, see component_likelihood.
             sigmas are then the INTRINSIC (error-deconvolved) widths.
+    sigma_binary : None, or a fixed binary-motion dispersion added in quadrature
+            to EVERY component, see component_likelihood.
     """
     ### number of components
     n_components = len(component_fractions)+1 #<-- provide the first n-1 components, last one is so that they sum to 1
@@ -178,7 +211,7 @@ def gmm_negative_loglikelihood(component_fractions, means, sigmas, data, x_err=N
         return np.inf
 
     
-    ln_ps = np.array([component_likelihood(data, means[j], sigmas[j], x_err)
+    ln_ps = np.array([component_likelihood(data, means[j], sigmas[j], x_err, sigma_binary)
                       for j in range(n_components)]) #<-- this is the likelihood over the four dimensions
 
     Qs = np.append(component_fractions, 1 - np.sum(component_fractions))
@@ -440,7 +473,7 @@ def unpack_params(theta, K=4, min_components=2):
     return Qs[:-1], means, sigmas
 
 
-def nll_flat(theta, x_data, min_components=2, x_err=None):
+def nll_flat(theta, x_data, min_components=2, x_err=None, sigma_binary=None):
     """
     the objective actually handed to minimize().
 
@@ -450,6 +483,10 @@ def nll_flat(theta, x_data, min_components=2, x_err=None):
             still mean what they did. with errors:
                 args=(x_data, 2, x_err)   # mixture
                 args=(x_data, 1, x_err)   # single gaussian
+    sigma_binary : None, or a fixed binary-motion dispersion, broadcastable to
+            (N, K) (see component_likelihood / binary_excess_array). last, so:
+                args=(x_data, 1, x_err, sigma_binary)
+            x_err can be None there.
 
     K is read off x_data.shape[1] rather than defaulted, so theta can never be
     unpacked against the wrong number of phase space dimensions.
@@ -471,7 +508,7 @@ def nll_flat(theta, x_data, min_components=2, x_err=None):
     """
     return gmm_negative_loglikelihood(*unpack_params(theta, K=x_data.shape[1],
                                                      min_components=min_components),
-                                      x_data, x_err)
+                                      x_data, x_err, sigma_binary)
 
 
 def sort_components(component_fractions, means, sigmas, sort_dim=-1):
@@ -502,7 +539,8 @@ def sort_components(component_fractions, means, sigmas, sort_dim=-1):
     return Qs[order][:-1], means[order], sigmas[order]
 
 
-def component_responsibilities(x_data, component_fractions, means, sigmas, x_err=None):
+def component_responsibilities(x_data, component_fractions, means, sigmas, x_err=None,
+                               sigma_binary=None):
     """
     the FULL responsibility matrix: posterior probability that star i was drawn
     from component j, for every component.
@@ -513,6 +551,7 @@ def component_responsibilities(x_data, component_fractions, means, sigmas, x_err
             error-broadened gaussian, so a star with a big RV error sitting 5
             km/s off the track isn't automatically called cocoon. with
             x_err=None and a fit that used errors, the memberships are wrong.
+    sigma_binary : likewise, pass the same one the fit used (if any).
 
     everything stays in logs and comes back through a single logsumexp, so this
     never overflows even when the individual ln p are ~ -3000. columns sum to 1
@@ -542,14 +581,16 @@ def component_responsibilities(x_data, component_fractions, means, sigmas, x_err
                          "got %s" % Qs)
 
     # (n_components, N) -- ln Q_j + ln p_j(x_i)
-    ln_w = np.array([np.log(Qs[j]) + component_likelihood(x_data, means[j], sigmas[j], x_err)
+    ln_w = np.array([np.log(Qs[j]) + component_likelihood(x_data, means[j], sigmas[j], x_err,
+                                                          sigma_binary)
                      for j in range(n_components)])
 
     return np.exp(ln_w - logsumexp(ln_w, axis=0)) 
 
 
 def component_membership_probability(x_data, component_fractions, means, sigmas,
-                                     component=0, sort_dim=None, x_err=None):
+                                     component=0, sort_dim=None, x_err=None,
+                                     sigma_binary=None):
     """
     posterior probability that each star belongs to the component(s) you ask for.
     this is the indexable version of membership_probability.
@@ -569,7 +610,7 @@ def component_membership_probability(x_data, component_fractions, means, sigmas,
                narrow -> cocoon meaning, so a mislabelled fit raises instead of
                quietly reporting the wrong population.
 
-    x_err : (N, K) per-star uncertainties, if the fit used them. see
+    x_err, sigma_binary : whatever the fit used, if anything. see
             component_responsibilities.
 
     returns : (N,) array in [0, 1]
@@ -583,7 +624,8 @@ def component_membership_probability(x_data, component_fractions, means, sigmas,
                              "sort_dim=%i (widths %s) -- call sort_components "
                              "first" % (sort_dim, widths))
 
-    R = component_responsibilities(x_data, component_fractions, means, sigmas, x_err)
+    R = component_responsibilities(x_data, component_fractions, means, sigmas, x_err,
+                                   sigma_binary)
 
     if isinstance(component, (int, np.integer)):
         return R[component]
@@ -595,7 +637,7 @@ def component_membership_probability(x_data, component_fractions, means, sigmas,
 
 
 def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=-1,
-                           x_err=None):
+                           x_err=None, sigma_binary=None):
     """
     posterior probability that each star belongs to the THIN STREAM, defined as
     any of the n-1 narrower components -- i.e. everything except the final
@@ -624,7 +666,8 @@ def membership_probability(x_data, component_fractions, means, sigmas, sort_dim=
 
     return component_membership_probability(x_data, fracs, means, sigmas,
                                             component=slice(0, -1),
-                                            sort_dim=sort_dim, x_err=x_err)
+                                            sort_dim=sort_dim, x_err=x_err,
+                                            sigma_binary=sigma_binary)
 
 def bic(lnL0, k, N):
     """
@@ -1152,4 +1195,182 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     # ax.set_yscale('log')
     ax.legend(loc='upper left')
     # ax.set_ylim(bottom=0)
-    # %%
+# %%
+# LASTLY, want to run this not from the command line to start out and just
+# interactively as a cell. 
+# Assume you observe 160 stars (just count binaries as a single star here; use the 100 brightest), 
+# then ask if I randomly select 34 of them and, if it is a binary, replace the binary motions with 
+# the COM motion, what dispersion would you get out?
+#    Those are roughly the numbers for another GD-1 measurement that allegedly accounts for binaries
+#    (34 repeat observations with 160 unique sources)
+#   **in this case I only care about fitting the single component model!!!**
+# if __name__=="__main__": #<-- results.py imports gmm, so keep this out of the import path
+### scratch: GD-1, DESI noise, binaries case (primary RVs), the N_obs brightest
+#   catalog-matched systems. N_repeat of them, chosen at random, get their binary
+#   orbital motion removed (CoM v_gsr). fit ONE gaussian with x_err, print the
+#   intrinsic sigma_phi2 and sigma_v_gsr.
+
+
+
+
+
+
+datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
+N_obs = 160      # unique sources (a binary is one source)
+N_repeat = 34    # sources with repeat RVs -> binary motion removed
+
+n_draws = 200    # random choices of the N_repeat, to see how much the choice matters
+rng_exp = np.random.default_rng(seed=1)
+
+# one diagonal gaussian is separable, so fitting v_phi1/v_phi2 as well wouldn't change these two
+exp_keys = ['phi2', 'v_gsr']
+i_phi2, i_vgsr = exp_keys.index('phi2'), exp_keys.index('v_gsr')
+
+def fit_one_component(x, xe, sb=None):
+    """sb: optional sigma_binary array, broadcastable to x's shape (see binary_excess_array)"""
+    theta0 = pack_params(np.array([]), np.zeros((1, x.shape[1])), x.std(axis=0)[None, :])
+    res = minimize(nll_flat, x0=theta0, args=(x, 1, xe, sb), method='Powell',
+                    options={'maxiter': 100000, 'maxfev': 100000})
+    _, mu, sig = unpack_params(res.x, K=x.shape[1], min_components=1)
+    return mu[0], sig[0]
+
+table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
+exp_table_name = "desi_noise_brightest%i_repeat%i" % (N_obs, N_repeat)
+exp_rows = [] #<-- one dict per rvir, turned into a table at the end
+
+for rvir in [0.75, 1.5, 3, 6]:
+
+    with open(datapath+"gd1_%.2f.pickle"%rvir, 'rb') as handle:
+        dd = pickle.load(handle)
+
+    sc_com, sc_pri = dd['sc_straighter'], dd['sc_straighter_primaries']
+    distances = dd['coords_obs'].distance
+    N_all = len(sc_com['phi1'])
+    is_binary = np.arange(N_all) >= dd['nsingles'] #<-- CoM/luminous ordering is [singles, binaries]
+
+    ### the binaries-case catalog products (primaries trim), as in gmm.py with include_binaries=True
+    cut_p = dd['cut_for_catalog_photometry_primaries']
+    matched_p = np.zeros(N_all, dtype=bool)
+    matched_p[cut_p] = dd['matched_to_catalog_photometry_primaries']
+    mG = dd['catalog_photometry_primaries']['mG']
+    nd = dd['noise_catalog_photometry_primaries']
+
+    ### the N_obs brightest systems in catalog apparent G, chosen AFTER every clip:
+    #   matched_p is inside cut_for_catalog_photometry_primaries (unbound & trim_new_primaries
+    #   & nonrem & |v_gsr| < 30), and the noisy-case pm/RV cuts from the main loop go in here
+    #   too (checked 4 Nov: none of the 160 fail them, so they don't change the sample).
+    good_pm = nd['pm_err_gaia']*(u.microarcsecond/u.yr).to(u.mas/u.yr) < 0.5
+    good_RV = np.isfinite(nd['rverr_desi']) & (nd['rverr_desi'] < 10.)
+    idx = np.flatnonzero(matched_p & good_pm & good_RV)
+    idx = idx[np.argsort(mG[idx])][:N_obs]
+    x_err = measurement_errors(nd, 'desi', distances, exp_keys)[idx]
+    if not np.all(np.isfinite(x_err)):
+        raise ValueError("rvir %.2f: non-finite DESI errors among the %i brightest" % (rvir, N_obs))
+
+    phi2_obs = sc_pri['phi2'][idx] + nd['phi2'][idx]
+    def observed(v_true):
+        return np.column_stack([phi2_obs, v_true + nd['v_gsr_desi'][idx]])
+
+    bin_s = is_binary[idx]
+
+    ### references: true CoM RVs with no noise (truth for these stars); every RV with
+    #   binary motion; every binary corrected.
+    _, sig_true = fit_one_component(np.column_stack([sc_com['phi2'][idx], sc_com['v_gsr'][idx]]), None)
+    _, sig_none = fit_one_component(observed(sc_pri['v_gsr'][idx]), x_err)
+    _, sig_all = fit_one_component(observed(np.where(bin_s, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx])), x_err)
+
+    ### sigma_binary estimators, over the stars in `sel` (the repeats). both velocity sets
+    #   carry the SAME saved DESI noise draw, and singles have identical values in both,
+    #   so dv = v_obs_pri - v_obs_com_all is exactly the binary orbital motion (0 for singles).
+    v_obs_pri = observed(sc_pri['v_gsr'][idx])[:, i_vgsr]
+    v_obs_com_all = observed(np.where(bin_s, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx]))[:, i_vgsr]
+    def estimate_sigma_binary(sel, method='rms_dv'):
+        """
+        method = 'rms_dv' (default): sqrt(mean(dv^2)), the rms orbital-motion offset. always
+                     >= 0, and 0 only if `sel` has no binaries. no cross term.
+                 'var_diff': sqrt(var(v w/ binary motion) - var(v CoM)), clipped at 0. the
+                     difference is var(dv) + 2 cov(v_CoM + noise, dv), and the covariance can
+                     drive it negative when `sel` holds only a few, slow binaries.
+        """
+        if method == 'rms_dv':
+            dv = v_obs_pri[sel] - v_obs_com_all[sel]
+            return np.sqrt(np.mean(dv**2))
+        if method == 'var_diff':
+            return np.sqrt(max(0.0, np.var(v_obs_pri[sel]) - np.var(v_obs_com_all[sel])))
+        raise ValueError("method must be 'rms_dv' or 'var_diff', got %r" % (method,))
+    sb_all160 = estimate_sigma_binary(np.ones(N_obs, dtype=bool)) #<-- reference: if every source had repeats
+
+    ### the experiment: N_repeat random sources; the binaries among them get CoM RVs.
+    #   then (a) fit as before, and (b) estimate sigma_binary from the N_repeat and
+    #   add it in quadrature (v_gsr only) for the stars WITHOUT repeats, whose RVs
+    #   still include binary motion. the repeat stars get 0 (their CoM v is known).
+    sig_vgsr_draws, sig_vgsr_sb_draws, sb_draws, n_bin_fixed = [], [], [], []
+    for _ in range(n_draws):
+        repeat = np.zeros(N_obs, dtype=bool)
+        repeat[rng_exp.choice(N_obs, size=N_repeat, replace=False)] = True
+        fix = repeat & bin_s
+        v_true = np.where(fix, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx])
+        x_obs = observed(v_true)
+
+        _, sig = fit_one_component(x_obs, x_err)
+
+        sigma_binary = estimate_sigma_binary(repeat)
+        sb_arr = binary_excess_array(sigma_binary, exp_keys, N_obs, apply_to=~repeat)
+        _, sig_sb = fit_one_component(x_obs, x_err, sb_arr)
+
+        sig_vgsr_draws.append(sig[i_vgsr])
+        sig_vgsr_sb_draws.append(sig_sb[i_vgsr])
+        sb_draws.append(sigma_binary)
+        n_bin_fixed.append(fix.sum())
+
+    sig_vgsr_draws = np.array(sig_vgsr_draws)
+    sig_vgsr_sb_draws = np.array(sig_vgsr_sb_draws)
+    sb_draws = np.array(sb_draws)
+    p16, p50, p84 = np.percentile(sig_vgsr_draws, [16, 50, 84])
+    p16_sb, p50_sb, p84_sb = np.percentile(sig_vgsr_sb_draws, [16, 50, 84])
+    sb16, sb50, sb84 = np.percentile(sb_draws, [16, 50, 84])
+
+    print("\nGD-1 rvir0 = %.2f pc: %i brightest (mG %.1f-%.1f), %i binaries (f_bin %.2f), median DESI rverr %.2f km/s"
+            % (rvir, N_obs, mG[idx].min(), mG[idx].max(), bin_s.sum(), bin_s.mean(), np.median(x_err[:, i_vgsr])))
+    print("  sigma_phi2 = %.3f deg  (noiseless CoM: %.3f)" % (sig_none[i_phi2], sig_true[i_phi2]))
+    print("  sigma_v_gsr [km/s]:")
+    print("    noiseless, CoM (truth)          %.2f" % sig_true[i_vgsr])
+    print("    DESI, no binaries corrected     %.2f" % sig_none[i_vgsr])
+    print("    DESI, %i random corrected       %.2f  [16-84: %.2f-%.2f] over %i draws (%.1f binaries fixed on avg)"
+            % (N_repeat, p50, p16, p84, n_draws, np.mean(n_bin_fixed)))
+    print("    DESI, all binaries corrected    %.2f" % sig_all[i_vgsr])
+    print("  sigma_binary from the %i repeats  %.2f  [16-84: %.2f-%.2f]  (%i/%i draws = 0; from all %i: %.2f)"
+            % (N_repeat, sb50, sb16, sb84, np.sum(sb_draws==0), n_draws, N_obs, sb_all160))
+    print("    DESI, %i corrected + sigma_binary on the rest  %.2f  [16-84: %.2f-%.2f]"
+            % (N_repeat, p50_sb, p16_sb, p84_sb))
+
+    ### single-component sigmas are INTRINSIC (deconvolved with x_err), except S_true (noiseless).
+    #   S_* columns are 2-vectors in exp_keys order: (phi2 [deg], v_gsr [km/s]).
+    exp_rows.append({
+        'sim': 'gd1', 'orbit': 'gd1', 'Rvir0': rvir,
+        'N_obs': N_obs, 'N_repeat': N_repeat, 'n_draws': n_draws,
+        'f_bin': bin_s.mean(),                       # binary fraction among the N_obs
+        'n_bin_fixed_mean': np.mean(n_bin_fixed),    # binaries landing in the repeat sample, on average
+        'S_true': sig_true,                          # noiseless, CoM RVs
+        'S_none': sig_none,                          # DESI, no binaries corrected
+        'S_all': sig_all,                            # DESI, every binary corrected
+        'S_phi2': sig_none[i_phi2],                  # same in every DESI case (only v_gsr changes)
+        'S_vgsr_repeat': p50,                        # DESI, N_repeat random corrected: median over draws
+        'S_vgsr_repeat_p16': p16,
+        'S_vgsr_repeat_p84': p84,
+        'sigma_binary': sb50,                        # sqrt(var(v w/ binary motion) - var(v CoM)) over the N_repeat: median over draws
+        'sigma_binary_p16': sb16,
+        'sigma_binary_p84': sb84,
+        'sigma_binary_allN': sb_all160,              # same estimator over all N_obs (reference)
+        'S_vgsr_repeat_sb': p50_sb,                  # as S_vgsr_repeat, + sigma_binary in quadrature for the non-repeat stars
+        'S_vgsr_repeat_sb_p16': p16_sb,
+        'S_vgsr_repeat_sb_p84': p84_sb,
+    })
+
+t_exp = Table(rows=exp_rows)
+t_exp.meta['KEYS'] = ','.join(exp_keys) #<-- order of the S_true/S_none/S_all columns
+t_exp.meta['SBMETHOD'] = estimate_sigma_binary.__defaults__[0] #<-- whichever estimator the default was set to
+t_exp.write(table_path+exp_table_name+".fits", overwrite=True)
+print("wrote", table_path+exp_table_name+".fits")
+
+# %%

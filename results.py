@@ -69,13 +69,17 @@ import gmm
 import noise as n
 print("done")
 # %%
-
 print("preliminary stuff/making table 1")
 
 datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
+# %%
+# hmm opening the tables to see if the parameters are crazy...
+#   showing that the variances of the ts/cocoon in proper motion are not resolved basically. 
+# t = Table.read(repo_path+"/data/gmm_tables/via_noise_binaries.fits", format='fits')
+# t['S_c'][:,1]
 
-
+# %%
 #-----------------------------------------------#
 #   opening all of the data and checking out    #
 #   the observability given distances to all    #
@@ -730,51 +734,78 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
 
-### GD-1 one-component fits on the far right (thin stream) panel, unlabeled for now:
-#   noiseless CMs joined in rvir0 order, then the survey-noise points at rvir0 = 0.75.
-sel = (tt['orbit'] == 'gd1')
-order = np.argsort(tt['Rvir0'][sel])
-rr = np.asarray(tt['Rvir0'][sel])[order]
-xx = np.asarray(tt['S_1comp'][sel][:,0])[order]
-yy = np.asarray(tt['S_1comp'][sel][:,-1])[order]
-# axs_ss[2].plot(xx, yy, color=gd1_color, ls='-', zorder=1, alpha=0.5)
-# axs_ss[2].scatter(xx, yy, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2, alpha=0.5)
-for ii, f in enumerate(files):
-    t_obs = Table.read(table_path+f, format='fits')
-    row = t_obs[t_obs['orbit']=='gd1']   # every rvir0 in the table, not just 0.75
-    row = row[np.argsort(row['Rvir0'])]
-    is_bin = 'binaries' in labels[ii]
-    if is_bin==False:
-        continue
-    axs_ss[2].plot(row['S_1comp'][:,0], row['S_1comp'][:,-1], color='k', ls=':', lw=1,
-                   zorder=3, alpha=0.5)
-    axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker=markers[ii],
-                      s=size_from_rvir(row['Rvir0']) * 3,
-                      color='none' if is_bin else 'k', edgecolor='k' if is_bin else 'w',
-                      lw=1.5, zorder=4, alpha=0.5)
-
-### the denser 2xN sim, DESI noise, with binaries, one component: open 'D' (matches the binaries-only points above)
-# t_dense = Table.read(table_path+"desi_noise_binaries_supplemental.fits", format='fits')
-# row = t_dense[t_dense['sim']=='gd1_2xN_dense']
-# axs_ss[2].scatter(row['S_1comp'][:,0], row['S_1comp'][:,-1], marker='D',
-#                   s=size_from_rvir(row['Rvir0']) * 3,
-#                   color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5,
-#                   label=supp_labels['gd1_2xN_dense']+r'/DESI/binaries, 1 comp')
-
-axs_ss[2].annotate("Single-component fits\nfrom noised data,\nwith binaries",
-                   [0.3, 2.25],
-                   [0.2, 1.0], 
-                   arrowprops={"width":3, "color":gd1_color})
-
-# set_xlim/set_ylim(left=0) in the panel loop above turned autoscaling off, freezing the upper
-# limits before these points existed. turn it back on, then re-pin the lower limits.
-axs_ss[2].autoscale(axis='both')
-axs_ss[2].set_xlim(left=0)
-axs_ss[2].set_ylim(bottom=0)
+### (the single-component fits that used to go on the far right panel are in their own figure, next cell)
 
 axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
-plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
+# plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/jarvis_comparison.pdf", dpi=300, bbox_inches='tight')
+# %%
 
+#   A FINAL FIG THAT JUST HAS THE JARVIS BOX FOR THE THIN STREAM AND THE SINGLE COMPONENT FITS WITH DESI NOISE
+#   (the grey points that used to be on the far right panel above): GD-1, desi_noise_binaries
+#   table, S_1comp = one gaussian fit to the DESI-selected stars (the 679 brightest), with binary
+#   orbital motion in the RVs. joined in rvir0 order, marker size = rvir0.
+show_CoM = False #<-- also draw desi_noise_CoM's S_1comp (same selection idea, CoM RVs, i.e. no binary motion)
+
+t_1c = Table.read(table_path+"desi_noise_binaries.fits", format='fits')
+t_1c = t_1c[t_1c['orbit']=='gd1']
+t_1c = t_1c[np.argsort(t_1c['Rvir0'])]
+
+fig, ax = plt.subplots(figsize=[8,7])
+
+# jarvis+26 published thin stream, and this model fit to their data (as in the panel above)
+ax.add_patch(Rectangle((jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_svgsr_ts-jarvis_svgsr_ts_err),
+                       2*jarvis_sphi2_ts_err, 2*jarvis_svgsr_ts_err,
+                       color='k', alpha=0.1, lw=0, zorder=0, label='GD-1 thin stream from Jarvis+26'))
+# ax.plot(t_jarvis_fit['S_ts'][0], t_jarvis_fit['S_ts'][-1], marker='x', ls='--', color='k', markersize=10,
+#         lw=1, zorder=6, label='This model fit to Jarvis+26 data')
+
+# DESI-like noise, with binaries, one component: open grey circles, as they were on the panel above
+ax.plot(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], color='k', ls=':', lw=1, zorder=3, alpha=0.5)
+ax.scatter(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], marker='o',
+           s=size_from_rvir(t_1c['Rvir0']) * 2,
+           color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5,
+           label='DESI-like noise, with binaries;\nsingle component')
+
+# the repeat-RV experiment (last cell of gmm.py): DESI noise, the 160 brightest systems, 34 of them
+#   at random with binary motion removed, + sigma_binary (estimated from those 34) in quadrature for
+#   the other 126; one gaussian. y = median over the random choices of the 34, error bar = 16-84%.
+t_rep = Table.read(table_path+"desi_noise_brightest160_repeat34.fits", format='fits')
+t_rep = t_rep[np.argsort(t_rep['Rvir0'])]
+ax.errorbar(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'],
+            yerr=[t_rep['S_vgsr_repeat_sb'] - t_rep['S_vgsr_repeat_sb_p16'],
+                  t_rep['S_vgsr_repeat_sb_p84'] - t_rep['S_vgsr_repeat_sb']],
+            fmt='none', ecolor=gd1_color, elinewidth=1.5, capsize=3, zorder=3)
+ax.plot(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'], color=gd1_color, ls='-', lw=1, zorder=3)
+ax.scatter(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'], marker='o',
+           s=size_from_rvir(t_rep['Rvir0']) * 2,
+           color=gd1_color, edgecolor='k', lw=1.5, zorder=4,
+           label="Analogous measurement to Nibauer+26")#'DESI-like noise, %i brightest,\n%i repeats + $\\sigma_{\\rm binary}$;\nsingle component'
+                #  % (t_rep['N_obs'][0], t_rep['N_repeat'][0]))
+
+if show_CoM:
+    t_1c_com = Table.read(table_path+"desi_noise_CoM.fits", format='fits')
+    t_1c_com = t_1c_com[t_1c_com['orbit']=='gd1']
+    t_1c_com = t_1c_com[np.argsort(t_1c_com['Rvir0'])]
+    ax.plot(t_1c_com['S_1comp'][:,0], t_1c_com['S_1comp'][:,-1], color='k', ls=':', lw=1, zorder=3, alpha=0.5)
+    ax.scatter(t_1c_com['S_1comp'][:,0], t_1c_com['S_1comp'][:,-1], marker='o',
+               s=size_from_rvir(t_1c_com['Rvir0']) * 2,
+               color='k', edgecolor='w', lw=1.5, zorder=4, alpha=0.5,
+               label='DESI-like noise, CMs;\nsingle component')
+
+# marker-size key
+for r in [0.75, 1.5, 3., 6.]:
+    ax.scatter([None], [None], marker='o', s=size_from_rvir(r) * 2, color='grey', label=r'$R_{\rm vir,0}=%g$ pc'%r)
+
+# ax.set_title('GD-1, DESI-like noise, %i brightest; single component, with binaries' % n_obs, fontsize=14)
+ax.set_xlabel(r'$\sigma_{\phi_2}~[\degree]$')
+ax.set_ylabel(r'$\sigma_{v_{\rm GSR}}~[\rm km~s^{-1}]$')
+ax.set_xlim(0, 1.15*max(np.max(t_1c['S_1comp'][:,0]), np.max(t_rep['S_phi2']),
+                        jarvis_sphi2_ts+jarvis_sphi2_ts_err))
+ax.set_ylim(bottom=0)
+ax.legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11, labelspacing=1.2)
+
+plt.savefig("plots/jarvis_comparison_single_component.pdf", dpi=300, bbox_inches='tight')
 
 # %%
 
