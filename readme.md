@@ -6,6 +6,7 @@ Exploring an N-body grid of mock streams to probe effects of progenitor dynamics
 
 # working preferences
 - **make code changes with the Edit/Write tools, not by running python/sed/shell commands that rewrite files**, so the changes show up in the editor diff view for the user to inspect and approve. (user preference, 19 Oct)
+- **panel aspect ratios: either very square or very not square, never in between.** square is the default (set in `scripts/vedant.mplstyle`). go clearly non-square only when the content calls for it, e.g. a panel showing a long stream could be ~8x3. size `figsize` so each panel lands on one or the other. (user preference, 4 Nov)
 
 
 # workflow

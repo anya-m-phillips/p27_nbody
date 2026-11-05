@@ -663,19 +663,25 @@ sel = (tt['orbit'] == 'gd1')
 order = np.argsort(tt['Rvir0'][sel])
 rr = np.asarray(tt['Rvir0'][sel])[order]
 ff = np.asarray(tt['f_cocoon'][sel])[order]
-axf.plot(rr, ff, color=gd1_color, zorder=1)
-axf.scatter(rr, ff, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2)
+axf.plot(x_axis_values(rr), ff, color=gd1_color, zorder=1)
+axf.scatter(x_axis_values(rr), ff, s=size_from_rvir(rr), marker='o', color=gd1_color, zorder=2)
 for ii, f in enumerate(files):
     t_obs = Table.read(table_path+f, format='fits')
     row = t_obs[(t_obs['Rvir0']==0.75) & (t_obs['orbit']=='gd1')]
-    axf.scatter(row['Rvir0'], row['f_cocoon'], marker=markers[ii],
+    axf.scatter(x_axis_values(row['Rvir0']), row['f_cocoon'], marker=markers[ii],
                 color='none' if 'binaries' in labels[ii] else 'k',
                 edgecolor='k' if 'binaries' in labels[ii] else 'w', lw=1.5,
                 s=size_from_rvir(row['Rvir0']) * 3, zorder=4)
-axf.set_xlabel(r'$R_{\rm vir, 0}~[\rm pc]$')
+axf.set_xlabel(x_label) #<-- same x-axis as the summary figure (follows x_is_density)
 axf.set_ylabel(r'$f_{\rm cocoon}$')
-axf.set_xticks([.75, 1.5, 3., 6.])
-axf.minorticks_off()
+if x_is_density:
+    axf.set_xscale('log')
+    axf.set_xticks(density_fracs)
+    axf.set_xticklabels(['1']+[r'$2^{%d}$'%round(np.log2(d)) for d in density_fracs[1:]])
+    axf.invert_xaxis() # densest (rho/rho_0 = 1) on the left, as the smallest Rvir0 is
+else:
+    axf.set_xticks([.75, 1.5, 3., 6.])
+axf.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back on
 axf.set_ylim(bottom=0)
 # axf.set_title('GD-1')
 
@@ -739,48 +745,51 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
 axs_ss[2].legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11)
 # plt.savefig("plots/jarvis_comparison_with_singlecomp_fits.pdf", dpi=300, bbox_inches='tight')
 plt.savefig("plots/jarvis_comparison.pdf", dpi=300, bbox_inches='tight')
+
 # %%
 
 #   A FINAL FIG THAT JUST HAS THE JARVIS BOX FOR THE THIN STREAM AND THE SINGLE COMPONENT FITS WITH DESI NOISE
 #   (the grey points that used to be on the far right panel above): GD-1, desi_noise_binaries
 #   table, S_1comp = one gaussian fit to the DESI-selected stars (the 679 brightest), with binary
 #   orbital motion in the RVs. joined in rvir0 order, marker size = rvir0.
-show_CoM = False #<-- also draw desi_noise_CoM's S_1comp (same selection idea, CoM RVs, i.e. no binary motion)
+show_CoM = True #<-- also draw desi_noise_CoM's S_1comp (same selection idea, CoM RVs, i.e. no binary motion)
+add_errbars = False
 
 t_1c = Table.read(table_path+"desi_noise_binaries.fits", format='fits')
 t_1c = t_1c[t_1c['orbit']=='gd1']
 t_1c = t_1c[np.argsort(t_1c['Rvir0'])]
 
-fig, ax = plt.subplots(figsize=[8,7])
+fig, ax = plt.subplots()
 
 # jarvis+26 published thin stream, and this model fit to their data (as in the panel above)
 ax.add_patch(Rectangle((jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_svgsr_ts-jarvis_svgsr_ts_err),
                        2*jarvis_sphi2_ts_err, 2*jarvis_svgsr_ts_err,
-                       color='k', alpha=0.1, lw=0, zorder=0, label='GD-1 thin stream from Jarvis+26'))
+                       color='k', alpha=0.1, lw=0, zorder=0, label='GD-1 thin stream\nfrom Jarvis+26'))
 # ax.plot(t_jarvis_fit['S_ts'][0], t_jarvis_fit['S_ts'][-1], marker='x', ls='--', color='k', markersize=10,
 #         lw=1, zorder=6, label='This model fit to Jarvis+26 data')
 
 # DESI-like noise, with binaries, one component: open grey circles, as they were on the panel above
 ax.plot(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], color='k', ls=':', lw=1, zorder=3, alpha=0.5)
 ax.scatter(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], marker='o',
-           s=size_from_rvir(t_1c['Rvir0']) * 2,
-           color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5,
-           label='DESI-like noise, with binaries;\nsingle component')
+           s=size_from_rvir(t_1c['Rvir0']),
+           color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5)#,
+        #    label='DESI-like noise, with binaries;\nsingle component')
 
 # the repeat-RV experiment (last cell of gmm.py): DESI noise, the 160 brightest systems, 34 of them
 #   at random with binary motion removed, + sigma_binary (estimated from those 34) in quadrature for
 #   the other 126; one gaussian. y = median over the random choices of the 34, error bar = 16-84%.
 t_rep = Table.read(table_path+"desi_noise_brightest160_repeat34.fits", format='fits')
 t_rep = t_rep[np.argsort(t_rep['Rvir0'])]
-ax.errorbar(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'],
-            yerr=[t_rep['S_vgsr_repeat_sb'] - t_rep['S_vgsr_repeat_sb_p16'],
-                  t_rep['S_vgsr_repeat_sb_p84'] - t_rep['S_vgsr_repeat_sb']],
-            fmt='none', ecolor=gd1_color, elinewidth=1.5, capsize=3, zorder=3)
+if add_errbars==True:
+    ax.errorbar(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'],
+                yerr=[t_rep['S_vgsr_repeat_sb'] - t_rep['S_vgsr_repeat_sb_p16'],
+                t_rep['S_vgsr_repeat_sb_p84'] - t_rep['S_vgsr_repeat_sb']],
+                fmt='none', ecolor=gd1_color, elinewidth=1.5, capsize=3, zorder=3)
 ax.plot(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'], color=gd1_color, ls='-', lw=1, zorder=3)
 ax.scatter(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'], marker='o',
-           s=size_from_rvir(t_rep['Rvir0']) * 2,
-           color=gd1_color, edgecolor='k', lw=1.5, zorder=4,
-           label="Analogous measurement to Nibauer+26")#'DESI-like noise, %i brightest,\n%i repeats + $\\sigma_{\\rm binary}$;\nsingle component'
+           s=size_from_rvir(t_rep['Rvir0']),
+           color=gd1_color, edgecolor='k', lw=1.5, zorder=4)#,
+        #    label="Analogous measurement to Nibauer+26")#'DESI-like noise, %i brightest,\n%i repeats + $\\sigma_{\\rm binary}$;\nsingle component'
                 #  % (t_rep['N_obs'][0], t_rep['N_repeat'][0]))
 
 if show_CoM:
@@ -789,25 +798,64 @@ if show_CoM:
     t_1c_com = t_1c_com[np.argsort(t_1c_com['Rvir0'])]
     ax.plot(t_1c_com['S_1comp'][:,0], t_1c_com['S_1comp'][:,-1], color='k', ls=':', lw=1, zorder=3, alpha=0.5)
     ax.scatter(t_1c_com['S_1comp'][:,0], t_1c_com['S_1comp'][:,-1], marker='o',
-               s=size_from_rvir(t_1c_com['Rvir0']) * 2,
-               color='k', edgecolor='w', lw=1.5, zorder=4, alpha=0.5,
-               label='DESI-like noise, CMs;\nsingle component')
+               s=size_from_rvir(t_1c_com['Rvir0']),
+               color='k', edgecolor='w', lw=1.5, zorder=4, alpha=0.5)#,
+            #    label='DESI-like noise, CMs;\nsingle component')
+
+# annotations: text at the left edge of the panel, arrow to the leftmost (smallest sigma_phi2) point of each series.
+#   text_dy = vertical nudge of the text relative to that point [km/s], to move labels off each other / the data.
+def annotate_leftmost(xs, ys, text, text_dy=0.0, text_x=0.3, color='k'):
+    xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+    k = np.nanargmin(xs)
+    ax.annotate(text, xy=(xs[k], ys[k]), xycoords='data',
+                xytext=(text_x, ys[k]+text_dy), textcoords=('axes fraction', 'data'),
+                ha='right', va='center', fontsize=13, zorder=7,
+                arrowprops=dict(arrowstyle='->', color=color,
+                                 lw=1, shrinkA=2, shrinkB=6))
+
+annotate_leftmost(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1],
+                  'including all\nbinary orbits', text_dy=-0.4, text_x=0.3, color='0.5')
+annotate_leftmost(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'],
+                  'analogous binary\naccounting\nto Nibauer+26', 
+                  text_dy=0.4,
+                  color=gd1_color)
+if show_CoM:
+    annotate_leftmost(t_1c_com['S_1comp'][:,0], 
+                      t_1c_com['S_1comp'][:,-1],
+                      'binary CMs', 
+                      text_dy=0.3)
 
 # marker-size key
-for r in [0.75, 1.5, 3., 6.]:
-    ax.scatter([None], [None], marker='o', s=size_from_rvir(r) * 2, color='grey', label=r'$R_{\rm vir,0}=%g$ pc'%r)
+# for r in [0.75, 1.5, 3., 6.]:
+#     ax.scatter([None], [None], 
+#                marker='o', 
+#                s=size_from_rvir(r), 
+#                color='grey', 
+#                label=r'$R_{\rm vir,0}=%g$ pc'%r
+#                )
 
 # ax.set_title('GD-1, DESI-like noise, %i brightest; single component, with binaries' % n_obs, fontsize=14)
 ax.set_xlabel(r'$\sigma_{\phi_2}~[\degree]$')
 ax.set_ylabel(r'$\sigma_{v_{\rm GSR}}~[\rm km~s^{-1}]$')
-ax.set_xlim(0, 1.15*max(np.max(t_1c['S_1comp'][:,0]), np.max(t_rep['S_phi2']),
-                        jarvis_sphi2_ts+jarvis_sphi2_ts_err))
+ax.set_xlim(left=0)#, 2*max(np.max(t_1c['S_1comp'][:,0]), np.max(t_rep['S_phi2']),
+                        # jarvis_sphi2_ts+jarvis_sphi2_ts_err))
 ax.set_ylim(bottom=0)
-ax.legend(loc='upper left', bbox_to_anchor=[1.02, 1], fontsize=11, labelspacing=1.2)
+# ax.legend(loc='lower left',
+#           bbox_to_anchor=[0.45, 0.75],#[1.02, 1],
+#            fontsize=11,
+#            labelspacing=1.2)
+# (legend replaced by an annotation on the jarvis box, arrow to its bottom right corner)
+ax.annotate('GD-1 thin stream\nfrom Jarvis+26',
+            xy=(jarvis_sphi2_ts+jarvis_sphi2_ts_err, jarvis_svgsr_ts-jarvis_svgsr_ts_err), xycoords='data',
+            xytext=(30, -30), textcoords='offset points', #<-- text position relative to the corner [points]
+            ha='left', va='top', fontsize=13, zorder=7,
+            arrowprops=dict(arrowstyle='->', color='0.7', lw=1, shrinkA=2, shrinkB=0))
 
-plt.savefig("plots/jarvis_comparison_single_component.pdf", dpi=300, bbox_inches='tight')
-
-# %%
+fname = "plots/jarvis_comparison_single_component"
+if add_errbars==True:
+    fname+="_with_errs"
+plt.savefig(fname+".pdf", 
+            dpi=300, bbox_inches='tight')
 
 # %%
 #-----------------------------------------------------#
