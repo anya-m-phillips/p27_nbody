@@ -985,13 +985,41 @@ for rvir in rvir0s:
     #             markersize=5, marker='o', markeredgecolor='k', ls='', capsize=3,
     #            label=orbit)#+r"; $f_{\rm bin, bound}=%.2f$"%fbin_bound)
 
-ax.errorbar(rvir0s, fbins_c, yerr=[fbls_c, fbus_c], label='cocoon', capsize=3, marker='o', 
-            markeredgecolor='k')
-ax.errorbar(rvir0s, fbins_ts, yerr=[fbls_ts, fbus_ts], label='thin stream', capsize=3, marker='o', 
-            markeredgecolor='k')
-ax.set_xlabel(r'$R_{\rm vir,0}~[\rm pc]$')
+xx_fbin = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
+cocoon_fbin_color = "#EE9998"
+ax.errorbar(xx_fbin, fbins_c, yerr=[fbls_c, fbus_c], label='cocoon', capsize=3, marker='o',
+            color=cocoon_fbin_color, ls='-',
+            markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
+ax.errorbar(xx_fbin, fbins_ts, yerr=[fbls_ts, fbus_ts], label='thin stream', capsize=3, marker='o',
+            color=gd1_color, ls='-', markeredgecolor='k')
+ax.set_xlabel(x_label)
+if x_is_density:
+    ax.set_xscale('log')
+    ax.set_xticks(density_fracs)
+    ax.set_xticklabels(['1']+[r'$2^{%d}$'%round(np.log2(d)) for d in density_fracs[1:]])
+    ax.invert_xaxis() # densest (rho/rho_0 = 1) on the left, as the smallest Rvir0 is
+else:
+    ax.set_xticks([.75, 1.5, 3., 6.])
+ax.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back on
+
+### pink labels with arrows (solid for the thin stream, dashed for the cocoon, like the curves).
+### both point at the midpoint of the segment between the middle two points (indices 1 and 2) of each curve;
+### cocoon label above-left of the arrow tip, thin stream label below-right. each is coloured like its curve.
+i_lo, i_hi = 1, 2
+# on the log density axis the segment is straight in log x, so its midpoint is at the geometric mean in x
+x_mid = np.sqrt(xx_fbin[i_lo]*xx_fbin[i_hi]) if x_is_density else 0.5*(xx_fbin[i_lo]+xx_fbin[i_hi])
+y_mid_c = 0.5*(fbins_c[i_lo]+fbins_c[i_hi])
+y_mid_ts = 0.5*(fbins_ts[i_lo]+fbins_ts[i_hi])
+# (label, arrow tip y, arrow linestyle, text offset from the tip [points], ha, va, color -- same as its curve)
+for text, y_mid, ls, offset, ha, va, annot_color in [('cocoon', y_mid_c, '-', (-50, 70), 'right', 'bottom', cocoon_fbin_color),
+                                                     ('thin stream', y_mid_ts, '-', (50, -35), 'left', 'top', gd1_color)]:
+    ax.annotate(text, xy=(x_mid, y_mid), xycoords='data',
+                xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
+                ha=ha, va=va, color=annot_color, fontsize=20,
+                arrowprops=dict(arrowstyle='->', color=annot_color, lw=1.5, ls=ls, shrinkA=2, shrinkB=6))
 ax.set_ylabel(r'$f_{\rm bin}$')
-ax.set_title(orbit)
+# ax.set_title(orbit)
+ax.set_ylim(bottom=0, top=0.29)
 # ax.legend(loc='lower right')
 l = [0,0.4]
 # ax.set_xlim(l)
@@ -1000,8 +1028,14 @@ l = [0,0.4]
 # ax.set_xlabel(r'$f_{\rm bin, ts}$')
 # ax.set_ylabel(r'$f_{\rm bin, c}$')
 # ax.set_title(r'$R_{\rm vir, 0}=%.2f$'%rvir)
+fbin0 = 0.21606940165396465 # from initial condition generation output. 
+ax.axhline(fbin0, c='k', ls=':', lw=1)
+ax.text(1, fbin0+0.001, r"$f_{\rm bin, 0}$", ha='left', va='bottom', fontsize=18)
 
-# plt.savefig("plots/binary_fractions.pdf", dpi=300, bbox_inches='tight')
+
+plt.savefig("plots/gd1_binary_fractions.pdf", dpi=300, bbox_inches='tight')
+# %%
+#### ANOTHER SIMILAR ONE THAT NOW IS LIKE AVERAGE MAG OR MASS
 # %%
 # --------------------------------------------------------#
 #       plots to demonstrate the need for matching       #
