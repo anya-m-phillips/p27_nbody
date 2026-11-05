@@ -1196,181 +1196,182 @@ if __name__=="__main__": #<-- uncomment + tab when i want to run something that 
     ax.legend(loc='upper left')
     # ax.set_ylim(bottom=0)
 # %%
-# LASTLY, want to run this not from the command line to start out and just
-# interactively as a cell. 
-# Assume you observe 160 stars (just count binaries as a single star here; use the 100 brightest), 
-# then ask if I randomly select 34 of them and, if it is a binary, replace the binary motions with 
-# the COM motion, what dispersion would you get out?
-#    Those are roughly the numbers for another GD-1 measurement that allegedly accounts for binaries
-#    (34 repeat observations with 160 unique sources)
-#   **in this case I only care about fitting the single component model!!!**
-# if __name__=="__main__": #<-- results.py imports gmm, so keep this out of the import path
-### scratch: GD-1, DESI noise, binaries case (primary RVs), the N_obs brightest
-#   catalog-matched systems. N_repeat of them, chosen at random, get their binary
-#   orbital motion removed (CoM v_gsr). fit ONE gaussian with x_err, print the
-#   intrinsic sigma_phi2 and sigma_v_gsr.
+    # LASTLY, want to run this not from the command line to start out and just
+    # interactively as a cell. 
+    # Assume you observe 160 stars (just count binaries as a single star here; use the 100 brightest), 
+    # then ask if I randomly select 34 of them and, if it is a binary, replace the binary motions with 
+    # the COM motion, what dispersion would you get out?
+    #    Those are roughly the numbers for another GD-1 measurement that allegedly accounts for binaries
+    #    (34 repeat observations with 160 unique sources)
+    #   **in this case I only care about fitting the single component model!!!**
+if __name__=="__main__": #<-- results.py imports gmm, so keep this out of the import path
+    ### scratch: GD-1, DESI noise, binaries case (primary RVs), the N_obs brightest
+    #   catalog-matched systems. N_repeat of them, chosen at random, get their binary
+    #   orbital motion removed (CoM v_gsr). fit ONE gaussian with x_err, print the
+    #   intrinsic sigma_phi2 and sigma_v_gsr.
 
 
 
 
+    datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
+    N_obs = 160      # unique sources (a binary is one source)
+    N_repeat = 34    # sources with repeat RVs -> binary motion removed
 
+    n_draws = 200    # random choices of the N_repeat, to see how much the choice matters
+    rng_exp = np.random.default_rng(seed=1)
 
-datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
-N_obs = 160      # unique sources (a binary is one source)
-N_repeat = 34    # sources with repeat RVs -> binary motion removed
+    # one diagonal gaussian is separable, so fitting v_phi1/v_phi2 as well wouldn't change these two
+    exp_keys = ['phi2', 'v_gsr']
+    i_phi2, i_vgsr = exp_keys.index('phi2'), exp_keys.index('v_gsr')
 
-n_draws = 200    # random choices of the N_repeat, to see how much the choice matters
-rng_exp = np.random.default_rng(seed=1)
-
-# one diagonal gaussian is separable, so fitting v_phi1/v_phi2 as well wouldn't change these two
-exp_keys = ['phi2', 'v_gsr']
-i_phi2, i_vgsr = exp_keys.index('phi2'), exp_keys.index('v_gsr')
-
-def fit_one_component(x, xe, sb=None):
-    """sb: optional sigma_binary array, broadcastable to x's shape (see binary_excess_array)"""
-    theta0 = pack_params(np.array([]), np.zeros((1, x.shape[1])), x.std(axis=0)[None, :])
-    res = minimize(nll_flat, x0=theta0, args=(x, 1, xe, sb), method='Powell',
-                    options={'maxiter': 100000, 'maxfev': 100000})
-    _, mu, sig = unpack_params(res.x, K=x.shape[1], min_components=1)
-    return mu[0], sig[0]
-
-table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
-exp_table_name = "desi_noise_brightest%i_repeat%i" % (N_obs, N_repeat)
-exp_rows = [] #<-- one dict per rvir, turned into a table at the end
-
-for rvir in [0.75, 1.5, 3, 6]:
-
-    with open(datapath+"gd1_%.2f.pickle"%rvir, 'rb') as handle:
-        dd = pickle.load(handle)
-
-    sc_com, sc_pri = dd['sc_straighter'], dd['sc_straighter_primaries']
-    distances = dd['coords_obs'].distance
-    N_all = len(sc_com['phi1'])
-    is_binary = np.arange(N_all) >= dd['nsingles'] #<-- CoM/luminous ordering is [singles, binaries]
-
-    ### the binaries-case catalog products (primaries trim), as in gmm.py with include_binaries=True
-    cut_p = dd['cut_for_catalog_photometry_primaries']
-    matched_p = np.zeros(N_all, dtype=bool)
-    matched_p[cut_p] = dd['matched_to_catalog_photometry_primaries']
-    mG = dd['catalog_photometry_primaries']['mG']
-    nd = dd['noise_catalog_photometry_primaries']
-
-    ### the N_obs brightest systems in catalog apparent G, chosen AFTER every clip:
-    #   matched_p is inside cut_for_catalog_photometry_primaries (unbound & trim_new_primaries
-    #   & nonrem & |v_gsr| < 30), and the noisy-case pm/RV cuts from the main loop go in here
-    #   too (checked 4 Nov: none of the 160 fail them, so they don't change the sample).
-    good_pm = nd['pm_err_gaia']*(u.microarcsecond/u.yr).to(u.mas/u.yr) < 0.5
-    good_RV = np.isfinite(nd['rverr_desi']) & (nd['rverr_desi'] < 10.)
-    idx = np.flatnonzero(matched_p & good_pm & good_RV)
-    idx = idx[np.argsort(mG[idx])][:N_obs]
-    x_err = measurement_errors(nd, 'desi', distances, exp_keys)[idx]
-    if not np.all(np.isfinite(x_err)):
-        raise ValueError("rvir %.2f: non-finite DESI errors among the %i brightest" % (rvir, N_obs))
-
-    phi2_obs = sc_pri['phi2'][idx] + nd['phi2'][idx]
-    def observed(v_true):
-        return np.column_stack([phi2_obs, v_true + nd['v_gsr_desi'][idx]])
-
-    bin_s = is_binary[idx]
-
-    ### references: true CoM RVs with no noise (truth for these stars); every RV with
-    #   binary motion; every binary corrected.
-    _, sig_true = fit_one_component(np.column_stack([sc_com['phi2'][idx], sc_com['v_gsr'][idx]]), None)
-    _, sig_none = fit_one_component(observed(sc_pri['v_gsr'][idx]), x_err)
-    _, sig_all = fit_one_component(observed(np.where(bin_s, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx])), x_err)
-
-    ### sigma_binary estimators, over the stars in `sel` (the repeats). both velocity sets
-    #   carry the SAME saved DESI noise draw, and singles have identical values in both,
-    #   so dv = v_obs_pri - v_obs_com_all is exactly the binary orbital motion (0 for singles).
-    v_obs_pri = observed(sc_pri['v_gsr'][idx])[:, i_vgsr]
-    v_obs_com_all = observed(np.where(bin_s, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx]))[:, i_vgsr]
-    def estimate_sigma_binary(sel, method='rms_dv'):
+    def fit_one_component(x, xe, sb=None):
         """
-        method = 'rms_dv' (default): sqrt(mean(dv^2)), the rms orbital-motion offset. always
-                     >= 0, and 0 only if `sel` has no binaries. no cross term.
-                 'var_diff': sqrt(var(v w/ binary motion) - var(v CoM)), clipped at 0. the
-                     difference is var(dv) + 2 cov(v_CoM + noise, dv), and the covariance can
-                     drive it negative when `sel` holds only a few, slow binaries.
+        sb: optional sigma_binary array, 
+        broadcastable to x's shape (see binary_excess_array)
         """
-        if method == 'rms_dv':
-            dv = v_obs_pri[sel] - v_obs_com_all[sel]
-            return np.sqrt(np.mean(dv**2))
-        if method == 'var_diff':
-            return np.sqrt(max(0.0, np.var(v_obs_pri[sel]) - np.var(v_obs_com_all[sel])))
-        raise ValueError("method must be 'rms_dv' or 'var_diff', got %r" % (method,))
-    sb_all160 = estimate_sigma_binary(np.ones(N_obs, dtype=bool)) #<-- reference: if every source had repeats
+        theta0 = pack_params(np.array([]), np.zeros((1, x.shape[1])), x.std(axis=0)[None, :])
+        res = minimize(nll_flat, x0=theta0, args=(x, 1, xe, sb), method='Powell',
+                        options={'maxiter': 100000, 'maxfev': 100000})
+        _, mu, sig = unpack_params(res.x, K=x.shape[1], min_components=1)
+        return mu[0], sig[0]
 
-    ### the experiment: N_repeat random sources; the binaries among them get CoM RVs.
-    #   then (a) fit as before, and (b) estimate sigma_binary from the N_repeat and
-    #   add it in quadrature (v_gsr only) for the stars WITHOUT repeats, whose RVs
-    #   still include binary motion. the repeat stars get 0 (their CoM v is known).
-    sig_vgsr_draws, sig_vgsr_sb_draws, sb_draws, n_bin_fixed = [], [], [], []
-    for _ in range(n_draws):
-        repeat = np.zeros(N_obs, dtype=bool)
-        repeat[rng_exp.choice(N_obs, size=N_repeat, replace=False)] = True
-        fix = repeat & bin_s
-        v_true = np.where(fix, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx])
-        x_obs = observed(v_true)
+    table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
+    exp_table_name = "desi_noise_brightest%i_repeat%i" % (N_obs, N_repeat)
+    exp_rows = [] #<-- one dict per rvir, turned into a table at the end
 
-        _, sig = fit_one_component(x_obs, x_err)
+    for rvir in [0.75, 1.5, 3, 6]:
 
-        sigma_binary = estimate_sigma_binary(repeat)
-        sb_arr = binary_excess_array(sigma_binary, exp_keys, N_obs, apply_to=~repeat)
-        _, sig_sb = fit_one_component(x_obs, x_err, sb_arr)
+        with open(datapath+"gd1_%.2f.pickle"%rvir, 'rb') as handle:
+            dd = pickle.load(handle)
 
-        sig_vgsr_draws.append(sig[i_vgsr])
-        sig_vgsr_sb_draws.append(sig_sb[i_vgsr])
-        sb_draws.append(sigma_binary)
-        n_bin_fixed.append(fix.sum())
+        sc_com, sc_pri = dd['sc_straighter'], dd['sc_straighter_primaries']
+        distances = dd['coords_obs'].distance
+        N_all = len(sc_com['phi1'])
+        is_binary = np.arange(N_all) >= dd['nsingles'] #<-- CoM/luminous ordering is [singles, binaries]
 
-    sig_vgsr_draws = np.array(sig_vgsr_draws)
-    sig_vgsr_sb_draws = np.array(sig_vgsr_sb_draws)
-    sb_draws = np.array(sb_draws)
-    p16, p50, p84 = np.percentile(sig_vgsr_draws, [16, 50, 84])
-    p16_sb, p50_sb, p84_sb = np.percentile(sig_vgsr_sb_draws, [16, 50, 84])
-    sb16, sb50, sb84 = np.percentile(sb_draws, [16, 50, 84])
+        ### the binaries-case catalog products (primaries trim), as in gmm.py with include_binaries=True
+        cut_p = dd['cut_for_catalog_photometry_primaries']
+        matched_p = np.zeros(N_all, dtype=bool)
+        matched_p[cut_p] = dd['matched_to_catalog_photometry_primaries']
+        mG = dd['catalog_photometry_primaries']['mG']
+        nd = dd['noise_catalog_photometry_primaries']
 
-    print("\nGD-1 rvir0 = %.2f pc: %i brightest (mG %.1f-%.1f), %i binaries (f_bin %.2f), median DESI rverr %.2f km/s"
-            % (rvir, N_obs, mG[idx].min(), mG[idx].max(), bin_s.sum(), bin_s.mean(), np.median(x_err[:, i_vgsr])))
-    print("  sigma_phi2 = %.3f deg  (noiseless CoM: %.3f)" % (sig_none[i_phi2], sig_true[i_phi2]))
-    print("  sigma_v_gsr [km/s]:")
-    print("    noiseless, CoM (truth)          %.2f" % sig_true[i_vgsr])
-    print("    DESI, no binaries corrected     %.2f" % sig_none[i_vgsr])
-    print("    DESI, %i random corrected       %.2f  [16-84: %.2f-%.2f] over %i draws (%.1f binaries fixed on avg)"
-            % (N_repeat, p50, p16, p84, n_draws, np.mean(n_bin_fixed)))
-    print("    DESI, all binaries corrected    %.2f" % sig_all[i_vgsr])
-    print("  sigma_binary from the %i repeats  %.2f  [16-84: %.2f-%.2f]  (%i/%i draws = 0; from all %i: %.2f)"
-            % (N_repeat, sb50, sb16, sb84, np.sum(sb_draws==0), n_draws, N_obs, sb_all160))
-    print("    DESI, %i corrected + sigma_binary on the rest  %.2f  [16-84: %.2f-%.2f]"
-            % (N_repeat, p50_sb, p16_sb, p84_sb))
+        ### the N_obs brightest systems in catalog apparent G, chosen AFTER every clip:
+        #   matched_p is inside cut_for_catalog_photometry_primaries (unbound & trim_new_primaries
+        #   & nonrem & |v_gsr| < 30), and the noisy-case pm/RV cuts from the main loop go in here
+        #   too (checked 4 Nov: none of the 160 fail them, so they don't change the sample).
+        good_pm = nd['pm_err_gaia']*(u.microarcsecond/u.yr).to(u.mas/u.yr) < 0.5
+        good_RV = np.isfinite(nd['rverr_desi']) & (nd['rverr_desi'] < 10.)
+        idx = np.flatnonzero(matched_p & good_pm & good_RV)
+        idx = idx[np.argsort(mG[idx])][:N_obs]
+        x_err = measurement_errors(nd, 'desi', distances, exp_keys)[idx]
+        if not np.all(np.isfinite(x_err)):
+            raise ValueError("rvir %.2f: non-finite DESI errors among the %i brightest" % (rvir, N_obs))
 
-    ### single-component sigmas are INTRINSIC (deconvolved with x_err), except S_true (noiseless).
-    #   S_* columns are 2-vectors in exp_keys order: (phi2 [deg], v_gsr [km/s]).
-    exp_rows.append({
-        'sim': 'gd1', 'orbit': 'gd1', 'Rvir0': rvir,
-        'N_obs': N_obs, 'N_repeat': N_repeat, 'n_draws': n_draws,
-        'f_bin': bin_s.mean(),                       # binary fraction among the N_obs
-        'n_bin_fixed_mean': np.mean(n_bin_fixed),    # binaries landing in the repeat sample, on average
-        'S_true': sig_true,                          # noiseless, CoM RVs
-        'S_none': sig_none,                          # DESI, no binaries corrected
-        'S_all': sig_all,                            # DESI, every binary corrected
-        'S_phi2': sig_none[i_phi2],                  # same in every DESI case (only v_gsr changes)
-        'S_vgsr_repeat': p50,                        # DESI, N_repeat random corrected: median over draws
-        'S_vgsr_repeat_p16': p16,
-        'S_vgsr_repeat_p84': p84,
-        'sigma_binary': sb50,                        # sqrt(var(v w/ binary motion) - var(v CoM)) over the N_repeat: median over draws
-        'sigma_binary_p16': sb16,
-        'sigma_binary_p84': sb84,
-        'sigma_binary_allN': sb_all160,              # same estimator over all N_obs (reference)
-        'S_vgsr_repeat_sb': p50_sb,                  # as S_vgsr_repeat, + sigma_binary in quadrature for the non-repeat stars
-        'S_vgsr_repeat_sb_p16': p16_sb,
-        'S_vgsr_repeat_sb_p84': p84_sb,
-    })
+        phi2_obs = sc_pri['phi2'][idx] + nd['phi2'][idx]
+        def observed(v_true):
+            return np.column_stack([phi2_obs, v_true + nd['v_gsr_desi'][idx]])
 
-t_exp = Table(rows=exp_rows)
-t_exp.meta['KEYS'] = ','.join(exp_keys) #<-- order of the S_true/S_none/S_all columns
-t_exp.meta['SBMETHOD'] = estimate_sigma_binary.__defaults__[0] #<-- whichever estimator the default was set to
-t_exp.write(table_path+exp_table_name+".fits", overwrite=True)
-print("wrote", table_path+exp_table_name+".fits")
+        bin_s = is_binary[idx]
 
-# %%
+        ### references: true CoM RVs with no noise (truth for these stars); every RV with
+        #   binary motion; every binary corrected.
+        _, sig_true = fit_one_component(np.column_stack([sc_com['phi2'][idx], sc_com['v_gsr'][idx]]), None)
+        _, sig_none = fit_one_component(observed(sc_pri['v_gsr'][idx]), x_err)
+        _, sig_all = fit_one_component(observed(np.where(bin_s, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx])), x_err)
+
+        ### sigma_binary estimators, over the stars in `sel` (the repeats). both velocity sets
+        #   carry the SAME saved DESI noise draw, and singles have identical values in both,
+        #   so dv = v_obs_pri - v_obs_com_all is exactly the binary orbital motion (0 for singles).
+        v_obs_pri = observed(sc_pri['v_gsr'][idx])[:, i_vgsr]
+        v_obs_com_all = observed(np.where(bin_s, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx]))[:, i_vgsr]
+        def estimate_sigma_binary(sel, method='rms_dv'):
+            """
+            method = 'rms_dv' (default): sqrt(mean(dv^2)), the rms orbital-motion offset. always
+                        >= 0, and 0 only if `sel` has no binaries. no cross term.
+                    'var_diff': sqrt(var(v w/ binary motion) - var(v CoM)), clipped at 0. the
+                        difference is var(dv) + 2 cov(v_CoM + noise, dv), and the covariance can
+                        drive it negative when `sel` holds only a few, slow binaries.
+            """
+            if method == 'rms_dv':
+                dv = v_obs_pri[sel] - v_obs_com_all[sel]
+                return np.sqrt(np.mean(dv**2))
+            if method == 'var_diff':
+                return np.sqrt(max(0.0, np.var(v_obs_pri[sel]) - np.var(v_obs_com_all[sel])))
+            raise ValueError("method must be 'rms_dv' or 'var_diff', got %r" % (method,))
+        sb_all160 = estimate_sigma_binary(np.ones(N_obs, dtype=bool)) #<-- reference: if every source had repeats
+
+        ### the experiment: N_repeat random sources; the binaries among them get CoM RVs.
+        #   then (a) fit as before, and (b) estimate sigma_binary from the N_repeat and
+        #   add it in quadrature (v_gsr only) for the stars WITHOUT repeats, whose RVs
+        #   still include binary motion. the repeat stars get 0 (their CoM v is known).
+        sig_vgsr_draws, sig_vgsr_sb_draws, sb_draws, n_bin_fixed = [], [], [], []
+        for _ in range(n_draws):
+            repeat = np.zeros(N_obs, dtype=bool)
+            repeat[rng_exp.choice(N_obs, size=N_repeat, replace=False)] = True
+            fix = repeat & bin_s
+            v_true = np.where(fix, sc_com['v_gsr'][idx], sc_pri['v_gsr'][idx])
+            x_obs = observed(v_true)
+
+            _, sig = fit_one_component(x_obs, x_err)
+
+            sigma_binary = estimate_sigma_binary(repeat)
+            sb_arr = binary_excess_array(sigma_binary, exp_keys, N_obs, apply_to=~repeat)
+            _, sig_sb = fit_one_component(x_obs, x_err, sb_arr)
+
+            sig_vgsr_draws.append(sig[i_vgsr])
+            sig_vgsr_sb_draws.append(sig_sb[i_vgsr])
+            sb_draws.append(sigma_binary)
+            n_bin_fixed.append(fix.sum())
+
+        sig_vgsr_draws = np.array(sig_vgsr_draws)
+        sig_vgsr_sb_draws = np.array(sig_vgsr_sb_draws)
+        sb_draws = np.array(sb_draws)
+        p16, p50, p84 = np.percentile(sig_vgsr_draws, [16, 50, 84])
+        p16_sb, p50_sb, p84_sb = np.percentile(sig_vgsr_sb_draws, [16, 50, 84])
+        sb16, sb50, sb84 = np.percentile(sb_draws, [16, 50, 84])
+
+        print("\nGD-1 rvir0 = %.2f pc: %i brightest (mG %.1f-%.1f), %i binaries (f_bin %.2f), median DESI rverr %.2f km/s"
+                % (rvir, N_obs, mG[idx].min(), mG[idx].max(), bin_s.sum(), bin_s.mean(), np.median(x_err[:, i_vgsr])))
+        print("  sigma_phi2 = %.3f deg  (noiseless CoM: %.3f)" % (sig_none[i_phi2], sig_true[i_phi2]))
+        print("  sigma_v_gsr [km/s]:")
+        print("    noiseless, CoM (truth)          %.2f" % sig_true[i_vgsr])
+        print("    DESI, no binaries corrected     %.2f" % sig_none[i_vgsr])
+        print("    DESI, %i random corrected       %.2f  [16-84: %.2f-%.2f] over %i draws (%.1f binaries fixed on avg)"
+                % (N_repeat, p50, p16, p84, n_draws, np.mean(n_bin_fixed)))
+        print("    DESI, all binaries corrected    %.2f" % sig_all[i_vgsr])
+        print("  sigma_binary from the %i repeats  %.2f  [16-84: %.2f-%.2f]  (%i/%i draws = 0; from all %i: %.2f)"
+                % (N_repeat, sb50, sb16, sb84, np.sum(sb_draws==0), n_draws, N_obs, sb_all160))
+        print("    DESI, %i corrected + sigma_binary on the rest  %.2f  [16-84: %.2f-%.2f]"
+                % (N_repeat, p50_sb, p16_sb, p84_sb))
+
+        ### single-component sigmas are INTRINSIC (deconvolved with x_err), except S_true (noiseless).
+        #   S_* columns are 2-vectors in exp_keys order: (phi2 [deg], v_gsr [km/s]).
+        exp_rows.append({
+            'sim': 'gd1', 'orbit': 'gd1', 'Rvir0': rvir,
+            'N_obs': N_obs, 'N_repeat': N_repeat, 'n_draws': n_draws,
+            'f_bin': bin_s.mean(),                       # binary fraction among the N_obs
+            'n_bin_fixed_mean': np.mean(n_bin_fixed),    # binaries landing in the repeat sample, on average
+            'S_true': sig_true,                          # noiseless, CoM RVs
+            'S_none': sig_none,                          # DESI, no binaries corrected
+            'S_all': sig_all,                            # DESI, every binary corrected
+            'S_phi2': sig_none[i_phi2],                  # same in every DESI case (only v_gsr changes)
+            'S_vgsr_repeat': p50,                        # DESI, N_repeat random corrected: median over draws
+            'S_vgsr_repeat_p16': p16,
+            'S_vgsr_repeat_p84': p84,
+            'sigma_binary': sb50,                        # sqrt(var(v w/ binary motion) - var(v CoM)) over the N_repeat: median over draws
+            'sigma_binary_p16': sb16,
+            'sigma_binary_p84': sb84,
+            'sigma_binary_allN': sb_all160,              # same estimator over all N_obs (reference)
+            'S_vgsr_repeat_sb': p50_sb,                  # as S_vgsr_repeat, + sigma_binary in quadrature for the non-repeat stars
+            'S_vgsr_repeat_sb_p16': p16_sb,
+            'S_vgsr_repeat_sb_p84': p84_sb,
+        })
+
+    t_exp = Table(rows=exp_rows)
+    t_exp.meta['KEYS'] = ','.join(exp_keys) #<-- order of the S_true/S_none/S_all columns
+    t_exp.meta['SBMETHOD'] = estimate_sigma_binary.__defaults__[0] #<-- whichever estimator the default was set to
+    t_exp.write(table_path+exp_table_name+".fits", overwrite=True)
+    print("wrote", table_path+exp_table_name+".fits")
+
+    # %%
