@@ -1035,7 +1035,241 @@ ax.text(1, fbin0+0.001, r"$f_{\rm bin, 0}$", ha='left', va='bottom', fontsize=18
 
 plt.savefig("plots/gd1_binary_fractions.pdf", dpi=300, bbox_inches='tight')
 # %%
-#### ANOTHER SIMILAR ONE THAT NOW IS LIKE AVERAGE MAG OR MASS
+#-----------------------------------------------------#
+#   mean Gaia G of the catalog-matched stars in the   #
+#   thin stream vs cocoon                             #
+#-----------------------------------------------------#
+### same membership as the binary fraction cell above (the `case` fit, p_cocoon > 0.5 = cocoon), but only the stars
+### that were given catalog photometry, i.e. the stars a Gaia-like survey would see. G is the apparent catalog G.
+### error bars are the standard error of the mean. needs gd1_color, cocoon_fbin_color, x_axis_values, x_label, density_fracs.
+case = "noiseless_CoM"
+tt = Table.read(table_path+case+".fits", format="fits")
+sfx = '_primaries' if 'binaries' in case else '' #<-- as in gmm.py: coords, trim and catalog products all follow the case
+
+rvir0s = [0.75, 1.5, 3.0, 6.0]
+orbit = 'gd1'
+keys = ['phi2','v_phi1','v_phi2','v_gsr']
+
+mG_mean_ts, mG_err_ts, mG_n_ts = [], [], []
+mG_mean_c, mG_err_c, mG_n_c = [], [], []
+
+for rvir in rvir0s:
+    row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+    means_fit = np.array([row['M_ts'][0], row['M_c'][0]])
+    sigmas_fit = np.array([row['S_ts'][0], row['S_c'][0]])
+    fracs_fit = np.array([1-row['f_cocoon'][0], row['f_cocoon'][0]])
+
+    filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
+
+    sc_straighter = data_dict['sc_straighter'+sfx]
+    use = data_dict['unbound'] & data_dict['trim_new'+sfx] #<-- the stars the (noiseless) fit was made on
+
+    x_data = np.column_stack([sc_straighter[k][use] for k in keys])
+    pcs = np.full(len(use), fill_value=np.nan)
+    pcs[use] = 1 - gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0)
+
+    mG = data_dict['catalog_photometry'+sfx]['mG'] #<-- apparent G; NaN where no catalog row was assigned
+    matched = np.isfinite(mG)
+    assert np.all(np.isfinite(pcs[matched])), "some catalog-matched stars are outside the fitted sample"
+
+    for sel, means, errs, ns in [(matched & (pcs<0.5), mG_mean_ts, mG_err_ts, mG_n_ts),
+                                 (matched & (pcs>0.5), mG_mean_c, mG_err_c, mG_n_c)]:
+        means.append(np.mean(mG[sel]))
+        errs.append(np.std(mG[sel], ddof=1)/np.sqrt(sel.sum()))
+        ns.append(sel.sum())
+    print(orbit, rvir, "\tthin stream: <G> = %.2f +- %.2f (N = %d)"%(mG_mean_ts[-1], mG_err_ts[-1], mG_n_ts[-1]),
+          "\tcocoon: <G> = %.2f +- %.2f (N = %d)"%(mG_mean_c[-1], mG_err_c[-1], mG_n_c[-1]))
+
+fig, ax = plt.subplots()
+xx_mG = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
+ax.errorbar(xx_mG, mG_mean_c, yerr=mG_err_c, label='cocoon', capsize=5, marker='o',
+            color=cocoon_fbin_color, ls='-',
+            markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
+ax.errorbar(xx_mG, mG_mean_ts, yerr=mG_err_ts, label='thin stream', capsize=3, marker='o',
+            color=gd1_color, ls='-', markeredgecolor='k')
+ax.set_xlabel(x_label)
+if x_is_density:
+    ax.set_xscale('log')
+    ax.set_xticks(density_fracs)
+    ax.set_xticklabels(['1']+[r'$2^{%d}$'%round(np.log2(d)) for d in density_fracs[1:]])
+    ax.invert_xaxis() # densest (rho/rho_0 = 1) on the left, as the smallest Rvir0 is
+else:
+    ax.set_xticks([.75, 1.5, 3., 6.])
+ax.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back on
+ax.invert_yaxis() #<-- magnitudes: brighter is up
+
+### labels with arrows, as in the binary fraction cell: each points at the midpoint of the segment between the
+### middle two points of its curve, cocoon label above-left of the tip, thin stream label below-right.
+i_lo, i_hi = 1, 2
+x_mid = np.sqrt(xx_mG[i_lo]*xx_mG[i_hi]) if x_is_density else 0.5*(xx_mG[i_lo]+xx_mG[i_hi])
+y_mid_c = 0.5*(mG_mean_c[i_lo]+mG_mean_c[i_hi])
+y_mid_ts = 0.5*(mG_mean_ts[i_lo]+mG_mean_ts[i_hi])
+# (label, arrow tip y, arrow linestyle, text offset from the tip [points], ha, va, color -- same as its curve)
+for text, y_mid, ls, offset, ha, va, annot_color in [('cocoon', y_mid_c, '-', (50, 70), 'right', 'bottom', cocoon_fbin_color),
+                                                     ('thin stream', y_mid_ts, '-', (25, -70), 'left', 'top', gd1_color)]:
+    ax.annotate(text, xy=(x_mid, y_mid), xycoords='data',
+                xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
+                ha=ha, va=va, color=annot_color, fontsize=20,
+                arrowprops=dict(arrowstyle='->', color=annot_color, lw=1.5, ls=ls, shrinkA=2, shrinkB=6))
+ax.set_ylabel(r'$\langle G \rangle$')
+
+plt.savefig("plots/gd1_mean_G.pdf", dpi=300, bbox_inches='tight')
+# %%
+#-----------------------------------------------------#
+#   log mean system mass in the thin stream vs cocoon #
+#-----------------------------------------------------#
+### same membership as the two cells above. "system" mass = data_dict['CoM']['mass']: one row per system, and a
+### binary's row is the combined (present-day) mass of both components (checked: == p1 + p2 from the companions dict).
+### toggle which stars go into the mean:
+###   'matched' -> only the catalog-matched stars, as in the <G> plot above (remnants already excluded by the catalog cut)
+###   'fitted'  -> every star the fit was made on (unbound & trim_new), remnants included
+### error bars: standard error of the mean, propagated to log10.
+mass_sample = 'fitted' # 'matched' or 'fitted'
+assert mass_sample in ['matched', 'fitted'], mass_sample
+
+case = "noiseless_CoM"
+tt = Table.read(table_path+case+".fits", format="fits")
+sfx = '_primaries' if 'binaries' in case else ''
+
+rvir0s = [0.75, 1.5, 3.0, 6.0]
+orbit = 'gd1'
+keys = ['phi2','v_phi1','v_phi2','v_gsr']
+
+logM_ts, logM_err_ts = [], []
+logM_c, logM_err_c = [], []
+
+for rvir in rvir0s:
+    row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+    means_fit = np.array([row['M_ts'][0], row['M_c'][0]])
+    sigmas_fit = np.array([row['S_ts'][0], row['S_c'][0]])
+    fracs_fit = np.array([1-row['f_cocoon'][0], row['f_cocoon'][0]])
+
+    filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
+
+    sc_straighter = data_dict['sc_straighter'+sfx]
+    use = data_dict['unbound'] & data_dict['trim_new'+sfx]
+
+    x_data = np.column_stack([sc_straighter[k][use] for k in keys])
+    pcs = np.full(len(use), fill_value=np.nan)
+    pcs[use] = 1 - gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0)
+
+    system_mass = data_dict['CoM']['mass'].to(u.Msun).value
+    if mass_sample == 'matched':
+        base = np.isfinite(data_dict['catalog_photometry'+sfx]['mG'])
+    else:
+        base = use
+
+    for sel, logs, errs in [(base & (pcs<0.5), logM_ts, logM_err_ts),
+                            (base & (pcs>0.5), logM_c, logM_err_c)]:
+        m = system_mass[sel]
+        mean_m = np.mean(m)
+        sem_m = np.std(m, ddof=1)/np.sqrt(len(m))
+        logs.append(np.log10(mean_m))
+        errs.append(sem_m/(mean_m*np.log(10)))
+    print(orbit, rvir, mass_sample, "\tthin stream: log<M> = %.3f +- %.3f"%(logM_ts[-1], logM_err_ts[-1]),
+          "\tcocoon: log<M> = %.3f +- %.3f"%(logM_c[-1], logM_err_c[-1]))
+
+fig, ax = plt.subplots()
+xx_M = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
+ax.errorbar(xx_M, logM_c, yerr=logM_err_c, label='cocoon', capsize=5, marker='o',
+            color=cocoon_fbin_color, ls='-',
+            markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
+ax.errorbar(xx_M, logM_ts, yerr=logM_err_ts, label='thin stream', capsize=3, marker='o',
+            color=gd1_color, ls='-', markeredgecolor='k')
+ax.set_xlabel(x_label)
+if x_is_density:
+    ax.set_xscale('log')
+    ax.set_xticks(density_fracs)
+    ax.set_xticklabels(['1']+[r'$2^{%d}$'%round(np.log2(d)) for d in density_fracs[1:]])
+    ax.invert_xaxis() # densest (rho/rho_0 = 1) on the left, as the smallest Rvir0 is
+else:
+    ax.set_xticks([.75, 1.5, 3., 6.])
+ax.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back on
+
+### labels with arrows, as in the cells above
+i_lo, i_hi = 1, 2
+x_mid = np.sqrt(xx_M[i_lo]*xx_M[i_hi]) if x_is_density else 0.5*(xx_M[i_lo]+xx_M[i_hi])
+y_mid_c = 0.5*(logM_c[i_lo]+logM_c[i_hi])
+y_mid_ts = 0.5*(logM_ts[i_lo]+logM_ts[i_hi])
+# (label, arrow tip y, arrow linestyle, text offset from the tip [points], ha, va, color -- same as its curve)
+for text, y_mid, ls, offset, ha, va, annot_color in [('cocoon', y_mid_c, '-', (-30, -70.), 'center', 'top', cocoon_fbin_color),
+                                                     ('thin stream', y_mid_ts, '-', (-30., 70), 'center', 'top', gd1_color)]:
+    ax.annotate(text, xy=(x_mid, y_mid), xycoords='data',
+                xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
+                ha=ha, va=va, color=annot_color, fontsize=20,
+                arrowprops=dict(arrowstyle='->', color=annot_color, lw=1.5, ls=ls, shrinkA=2, shrinkB=6))
+ax.set_ylabel(r'$\log_{10}\,\langle M_{\rm sys}\rangle~[M_\odot]$')
+
+plt.savefig("plots/gd1_mean_system_mass_"+mass_sample+".pdf", dpi=300, bbox_inches='tight')
+# %%
+# now actually ONE MORE, which is all three of the above panels together in subplots.
+# i would like msys on the left, fbin in the center, and mean mag on the right.
+#-----------------------------------------------------#
+#   the three panels above in one figure:             #
+#   log <M_sys> | f_bin | <G>                         #
+#-----------------------------------------------------#
+### reuses the numbers computed in the three cells above (run those first): logM_* (follows mass_sample),
+### fbins_* / fbls_* / fbus_*, mG_mean_* / mG_err_*. every per-panel choice (capsizes, label offsets/alignment,
+### ylim, f_bin,0 line, inverted G axis) is copied from its own cell.
+fig, axs_3 = plt.subplots(1, 3, figsize=[24,7]) #<-- same layout as the other 1x3 figure, so the panels stay ~square
+plt.subplots_adjust(wspace=0.25)
+xx_3 = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
+
+# (axis, cocoon y, cocoon yerr, thin y, thin yerr, cocoon capsize, ylabel,
+#  [(label, arrow tip y, text offset [points], ha, va, color), ...])
+# arrow tips: midpoint of the segment between the middle two points (indices 1 and 2) of each curve
+i_lo, i_hi = 1, 2
+def seg_mid(y):
+    return 0.5*(y[i_lo]+y[i_hi])
+panels_3 = [
+    (axs_3[0], logM_c, logM_err_c, logM_ts, logM_err_ts, 5, r'$\log_{10}\,\langle M_{\rm sys}\rangle~[M_\odot]$',
+     [('cocoon', seg_mid(logM_c), (-30, -70.), 'center', 'top', cocoon_fbin_color),
+      ('thin stream', seg_mid(logM_ts), (-30., 70), 'center', 'top', gd1_color)]),
+    (axs_3[1], fbins_c, [fbls_c, fbus_c], fbins_ts, [fbls_ts, fbus_ts], 3, r'$f_{\rm bin}$',
+     [('cocoon', seg_mid(fbins_c), (-50, 70), 'right', 'bottom', cocoon_fbin_color),
+      ('thin stream', seg_mid(fbins_ts), (50, -35), 'left', 'top', gd1_color)]),
+    (axs_3[2], mG_mean_c, mG_err_c, mG_mean_ts, mG_err_ts, 5, r'$\langle G \rangle$',
+     [('cocoon', seg_mid(mG_mean_c), (50, 70), 'right', 'bottom', cocoon_fbin_color),
+      ('thin stream', seg_mid(mG_mean_ts), (25, -70), 'left', 'top', gd1_color)]),
+]
+
+# on the log density axis the segment is straight in log x, so its midpoint is at the geometric mean in x
+x_mid = np.sqrt(xx_3[i_lo]*xx_3[i_hi]) if x_is_density else 0.5*(xx_3[i_lo]+xx_3[i_hi])
+
+for ax, y_c, yerr_c, y_ts, yerr_ts, capsize_c, ylabel, annots in panels_3:
+    ax.errorbar(xx_3, y_c, yerr=yerr_c, label='cocoon', capsize=capsize_c, marker='o',
+                color=cocoon_fbin_color, ls='-',
+                markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
+    ax.errorbar(xx_3, y_ts, yerr=yerr_ts, label='thin stream', capsize=3, marker='o',
+                color=gd1_color, ls='-', markeredgecolor='k')
+    ax.set_xlabel(x_label)
+    if x_is_density:
+        ax.set_xscale('log')
+        ax.set_xticks(density_fracs)
+        ax.set_xticklabels(['1']+[r'$2^{%d}$'%round(np.log2(d)) for d in density_fracs[1:]])
+        ax.invert_xaxis() # densest (rho/rho_0 = 1) on the left, as the smallest Rvir0 is
+    else:
+        ax.set_xticks([.75, 1.5, 3., 6.])
+    ax.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back on
+    for text, y_mid, offset, ha, va, annot_color in annots:
+        ax.annotate(text, xy=(x_mid, y_mid), xycoords='data',
+                    xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
+                    ha=ha, va=va, color=annot_color, fontsize=20,
+                    arrowprops=dict(arrowstyle='->', color=annot_color, lw=1.5, ls='-', shrinkA=2, shrinkB=6))
+    ax.set_ylabel(ylabel)
+
+# panel-specific extras
+axs_3[1].set_ylim(bottom=0, top=0.29)
+axs_3[1].axhline(fbin0, c='k', ls=':', lw=1)
+axs_3[1].text(1, fbin0+0.001, r"$f_{\rm bin, 0}$", ha='left', va='bottom', fontsize=18)
+axs_3[2].invert_yaxis() #<-- magnitudes: brighter is up
+
+plt.savefig("plots/gd1_combined_msys_fbin_meanG_"+mass_sample+".pdf", dpi=300, bbox_inches='tight')
+
 # %%
 # --------------------------------------------------------#
 #       plots to demonstrate the need for matching       #
