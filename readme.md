@@ -356,12 +356,14 @@ four cells after the Jarvis single-component comparison, GD-1 only, all vs rho_p
 |---|---|---|---|---|
 | f_bin | binary fraction (binaries = rows `[nsingles:]`) | every fitted star | `paf.Prob_of_frac` + `paf.percentile` | `plots/gd1_binary_fractions.pdf`; dotted line at `fbin0 = 0.216` (from IC generation), ylim 0-0.29 |
 | <G> | mean apparent catalog G (`catalog_photometry{sfx}['mG']`) | catalog-matched only (`isfinite(mG)`) | standard error of the mean | `plots/gd1_mean_G.pdf`; y inverted (bright up) |
-| <M_sys> | log10 mean system mass, `data_dict['CoM']['mass']` | toggle `mass_sample`: `'matched'` (as <G>) or `'fitted'` (every fitted star, remnants included) | SEM propagated to log10, sigma_log = SEM / (<M> ln 10) | `plots/gd1_mean_system_mass_<mass_sample>.pdf` |
-| combined | the three above as 1x3, <M_sys> / f_bin / <G> (figsize 24x7, wspace 0.25) | reuses the arrays from the three cells (run them first) | as above | `plots/gd1_msys_fbin_meanG_<mass_sample>.pdf` |
+| <M_sys> | system mass, `data_dict['CoM']['mass']`; toggle `mass_stat`: `'mean_log'` (default since 6 Nov) = <log10 M_sys>, the same treatment as <G>; `'log_mean'` = log10 <M_sys> | toggle `mass_sample`: `'matched'` (as <G>) or `'fitted'` (every fitted star, remnants included) | `'mean_log'`: SEM of log10 M_sys. `'log_mean'`: SEM in M propagated to log10, sigma_log = SEM / (<M> ln 10) | `plots/gd1_mean_system_mass_<mass_sample>[_meanlog].pdf` (`_meanlog` for `'mean_log'`) |
+| combined | the three above as 1x3, <M_sys> / f_bin / <G> (figsize 24x7, wspace 0.25) | reuses the arrays from the three cells (run them first) | as above | `plots/gd1_combined_msys_fbin_meanG_<mass_sample>_<mass_stat>.pdf` (the older `..._<mass_sample>.pdf` files are `log_mean`) |
 
 - **system mass:** `data_dict['CoM']['mass']` is one row per system, and a binary's row is the combined present-day mass: checked on gd1 0.75 that it equals p1 + p2 from the `companions` dict exactly. present-day, not ZAMS.
-- the log10 error bar is first-order, fine for `'matched'` (fractional SEM 1-6%), less so for the `'fitted'` cocoon (up to ~28%, so the true interval is asymmetric, e.g. +0.11/-0.14 vs ±0.12 dex), whose masses are also skewed (probably a few heavy remnants; not checked). asymmetric bars or a bootstrap would fix it if that version is shown.
+- `'mean_log'` is the log of the geometric mean: a typical system, not pulled up much by a few heavy ones. `'log_mean'` is dominated by the heavy tail (the mass budget). the <M_sys> numbers in the table below are `'log_mean'`.
+- (`'log_mean'` only) the log10 error bar is first-order, fine for `'matched'` (fractional SEM 1-6%), less so for the `'fitted'` cocoon (up to ~28%, so the true interval is asymmetric, e.g. +0.11/-0.14 vs ±0.12 dex), whose masses are also skewed (probably a few heavy remnants; not checked). asymmetric bars or a bootstrap would fix it if that version is shown.
 - the catalog photometry assigns the catalog's G values by rank, so the mean G over all matched stars is the same in every sim (all 1578 rows used); the <G> panel only shows how they split between the components.
+- (tried 6 Nov: medians with 5-95% intervals instead. looked bad, reverted.)
 
 the numbers (GD-1, `noiseless_CoM`; f_bin is nbin/n, the plotted Prob_of_frac medians are nearly identical; N in brackets):
 

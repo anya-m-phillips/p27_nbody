@@ -858,9 +858,9 @@ plt.savefig(fname+".pdf",
             dpi=300, bbox_inches='tight')
 
 # %%
-#-----------------------------------------------------#
-#   binary fractions in thin stream vs cocoon         # 
-#-----------------------------------------------------#
+# #-----------------------------------------------------#
+# #   binary fractions in thin stream vs cocoon         # 
+# #-----------------------------------------------------#
 case = "noiseless_CoM"
 tt = Table.read(table_path+case+".fits", format="fits")
 # c_labels = ["#CCC9E7", "#2F2F2F"]
@@ -1125,9 +1125,19 @@ plt.savefig("plots/gd1_mean_G.pdf", dpi=300, bbox_inches='tight')
 ### toggle which stars go into the mean:
 ###   'matched' -> only the catalog-matched stars, as in the <G> plot above (remnants already excluded by the catalog cut)
 ###   'fitted'  -> every star the fit was made on (unbound & trim_new), remnants included
-### error bars: standard error of the mean, propagated to log10.
+### and toggle which average is plotted:
+###   'mean_log' -> <log10 M_sys> (log of the geometric mean), error bar = standard error of the mean of log10 M_sys.
+###                 the same treatment as <G> above (G is already a log quantity); a typical system, not pulled up
+###                 much by a few heavy systems/remnants.
+###   'log_mean' -> log10 <M_sys>, error bar = standard error of the mean in M_sys, propagated to log10 to first order
+###                 (sigma_log = SEM / (<M> ln 10)). dominated by the heavy tail; the original version (5 Nov).
 mass_sample = 'fitted' # 'matched' or 'fitted'
 assert mass_sample in ['matched', 'fitted'], mass_sample
+mass_stat = 'log_mean' #'mean_log' # 'mean_log' or 'log_mean'
+assert mass_stat in ['mean_log', 'log_mean'], mass_stat
+logM_ylabel = {'mean_log': r'$\langle\log_{10}\,(M_{\rm sys}/M_\odot)\rangle$',
+               'log_mean': r'$\log_{10}\,\langle M_{\rm sys}\rangle~[M_\odot]$'}[mass_stat] #<-- reused by the combined figure
+mass_stat_tag = '' if mass_stat == 'log_mean' else '_meanlog' #<-- filename suffix; log_mean keeps the original filenames
 
 case = "noiseless_CoM"
 tt = Table.read(table_path+case+".fits", format="fits")
@@ -1166,12 +1176,17 @@ for rvir in rvir0s:
     for sel, logs, errs in [(base & (pcs<0.5), logM_ts, logM_err_ts),
                             (base & (pcs>0.5), logM_c, logM_err_c)]:
         m = system_mass[sel]
-        mean_m = np.mean(m)
-        sem_m = np.std(m, ddof=1)/np.sqrt(len(m))
-        logs.append(np.log10(mean_m))
-        errs.append(sem_m/(mean_m*np.log(10)))
-    print(orbit, rvir, mass_sample, "\tthin stream: log<M> = %.3f +- %.3f"%(logM_ts[-1], logM_err_ts[-1]),
-          "\tcocoon: log<M> = %.3f +- %.3f"%(logM_c[-1], logM_err_c[-1]))
+        if mass_stat == 'mean_log':
+            logm = np.log10(m)
+            logs.append(np.mean(logm))
+            errs.append(np.std(logm, ddof=1)/np.sqrt(len(logm)))
+        else:
+            mean_m = np.mean(m)
+            sem_m = np.std(m, ddof=1)/np.sqrt(len(m))
+            logs.append(np.log10(mean_m))
+            errs.append(sem_m/(mean_m*np.log(10)))
+    print(orbit, rvir, mass_sample, mass_stat, "\tthin stream: %.3f +- %.3f"%(logM_ts[-1], logM_err_ts[-1]),
+          "\tcocoon: %.3f +- %.3f"%(logM_c[-1], logM_err_c[-1]))
 
 fig, ax = plt.subplots()
 xx_M = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
@@ -1202,9 +1217,9 @@ for text, y_mid, ls, offset, ha, va, annot_color in [('cocoon', y_mid_c, '-', (-
                 xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
                 ha=ha, va=va, color=annot_color, fontsize=20,
                 arrowprops=dict(arrowstyle='->', color=annot_color, lw=1.5, ls=ls, shrinkA=2, shrinkB=6))
-ax.set_ylabel(r'$\log_{10}\,\langle M_{\rm sys}\rangle~[M_\odot]$')
+ax.set_ylabel(logM_ylabel)
 
-plt.savefig("plots/gd1_mean_system_mass_"+mass_sample+".pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/gd1_mean_system_mass_"+mass_sample+mass_stat_tag+".pdf", dpi=300, bbox_inches='tight')
 # %%
 # now actually ONE MORE, which is all three of the above panels together in subplots.
 # i would like msys on the left, fbin in the center, and mean mag on the right.
@@ -1212,7 +1227,7 @@ plt.savefig("plots/gd1_mean_system_mass_"+mass_sample+".pdf", dpi=300, bbox_inch
 #   the three panels above in one figure:             #
 #   log <M_sys> | f_bin | <G>                         #
 #-----------------------------------------------------#
-### reuses the numbers computed in the three cells above (run those first): logM_* (follows mass_sample),
+### reuses the numbers computed in the three cells above (run those first): logM_* (follows mass_sample and mass_stat),
 ### fbins_* / fbls_* / fbus_*, mG_mean_* / mG_err_*. every per-panel choice (capsizes, label offsets/alignment,
 ### ylim, f_bin,0 line, inverted G axis) is copied from its own cell.
 fig, axs_3 = plt.subplots(1, 3, figsize=[24,7]) #<-- same layout as the other 1x3 figure, so the panels stay ~square
@@ -1226,7 +1241,7 @@ i_lo, i_hi = 1, 2
 def seg_mid(y):
     return 0.5*(y[i_lo]+y[i_hi])
 panels_3 = [
-    (axs_3[0], logM_c, logM_err_c, logM_ts, logM_err_ts, 5, r'$\log_{10}\,\langle M_{\rm sys}\rangle~[M_\odot]$',
+    (axs_3[0], logM_c, logM_err_c, logM_ts, logM_err_ts, 5, logM_ylabel,
      [('cocoon', seg_mid(logM_c), (-30, -70.), 'center', 'top', cocoon_fbin_color),
       ('thin stream', seg_mid(logM_ts), (-30., 70), 'center', 'top', gd1_color)]),
     (axs_3[1], fbins_c, [fbls_c, fbus_c], fbins_ts, [fbls_ts, fbus_ts], 3, r'$f_{\rm bin}$',
@@ -1268,7 +1283,7 @@ axs_3[1].axhline(fbin0, c='k', ls=':', lw=1)
 axs_3[1].text(1, fbin0+0.001, r"$f_{\rm bin, 0}$", ha='left', va='bottom', fontsize=18)
 axs_3[2].invert_yaxis() #<-- magnitudes: brighter is up
 
-plt.savefig("plots/gd1_combined_msys_fbin_meanG_"+mass_sample+".pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/gd1_combined_msys_fbin_meanG_"+mass_sample+"_"+mass_stat+".pdf", dpi=300, bbox_inches='tight') #<-- e.g. ..._fitted_mean_log.pdf
 
 # %%
 # --------------------------------------------------------#
