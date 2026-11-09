@@ -1133,7 +1133,7 @@ plt.savefig("plots/gd1_mean_G.pdf", dpi=300, bbox_inches='tight')
 ###                 (sigma_log = SEM / (<M> ln 10)). dominated by the heavy tail; the original version (5 Nov).
 mass_sample = 'fitted' # 'matched' or 'fitted'
 assert mass_sample in ['matched', 'fitted'], mass_sample
-mass_stat = 'log_mean' #'mean_log' # 'mean_log' or 'log_mean'
+mass_stat = 'mean_log' #'mean_log' # 'mean_log' or 'log_mean'
 assert mass_stat in ['mean_log', 'log_mean'], mass_stat
 logM_ylabel = {'mean_log': r'$\langle\log_{10}\,(M_{\rm sys}/M_\odot)\rangle$',
                'log_mean': r'$\log_{10}\,\langle M_{\rm sys}\rangle~[M_\odot]$'}[mass_stat] #<-- reused by the combined figure
