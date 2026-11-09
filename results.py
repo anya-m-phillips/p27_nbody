@@ -75,7 +75,7 @@ datapath = '/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/'
 table_path = "/n/home02/amphillips/p27_nbody/data/gmm_tables/"
 # %%
 # hmm opening the tables to see if the parameters are crazy...
-#   showing that the variances of the ts/cocoon in proper motion are not resolved basically. 
+#   showing that the variances of the thin/wide components in proper motion are not resolved basically. 
 # t = Table.read(repo_path+"/data/gmm_tables/via_noise_binaries.fits", format='fits')
 # t['S_c'][:,1]
 
@@ -216,7 +216,7 @@ for ii, orbit in enumerate(tqdm(orbits)): #<--- this i can do later i think.
         alive = data_dict['alive']
         acceptable_G = data_dict['acceptable_G']
         cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-        good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy cocoon inflation due to bad gaia pms.
+        good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr. avoid crazy wide-component inflation due to bad gaia pms.
 
         if noise=='desi':
             N_jarvis = 679 #<-- length of jarvis catalog. 
@@ -448,7 +448,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
                     ls=':', zorder=0)
 
 
-    ### cocoon ! ! !
+    ### wide component ! ! !
     phi2_dispersions_this_orbit = tt['S_c'][:,0][selection]*width_factor #<-- TODO: translate back to angle from distance. 
     phi2_dispersions_this_orbit2 = tt2['S_c'][:,0][selection2]*width_factor
 
@@ -463,7 +463,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
         axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
     # axs[0,2].set_yscale('log')
 
-    ### thin ! ! !
+    ### thin component ! ! !
     phi2_dispersions_this_orbit = tt['S_ts'][:,0][selection]*width_factor #<-- TODO: translate back to angle from distance. 
     vgsr_dispersions_this_orbit = tt['S_ts'][:,-1][selection]
 
@@ -496,21 +496,21 @@ if varied_orbits:
 # (the 'gd1' version's legend is made after the supplemental sims are added, below)
 
 
-axs[0,0].set_ylabel(r'$f_{\rm cocoon}$')
+axs[0,0].set_ylabel(r'$f_{\rm wide}$')
 x_label = r'$\rho_{\rm prog}/\rho_0$' if x_is_density else r'$R_{\rm vir, 0}~[\rm pc]$'
 axs[0,0].set_xlabel(x_label)
 # axs[0,0].set_ylim(0.0, 0.2)
 
 
 if width_used=="angle":
-    axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}~[\degree]$')
+    axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm wide}~[\degree]$')
     axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}~[\degree]$')
 if width_used=="physical":
-    axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm cocoon}\times D_{\rm med} ~[\rm kpc]$')
+    axs[0,1].set_ylabel(r'$\sigma_{\phi_2, \rm wide}\times D_{\rm med} ~[\rm kpc]$')
     axs[1,1].set_ylabel(r'$\sigma_{\phi_2, \rm thin}\times D_{\rm med} ~[\rm kpc]$')
 
 
-axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, cocoon}}~[\rm km~s^{-1}]$')
+axs[0,2].set_ylabel(r'$\sigma_{v_{\rm GSR, wide}}~[\rm km~s^{-1}]$')
 axs[1,2].set_ylabel(r'$\sigma_{v_{\rm GSR, thin}}~[\rm km~s^{-1}]$')
 
 if not varied_orbits:
@@ -627,7 +627,7 @@ print("boom saved")
 
 # %%
 #-------------------------------------------------------#
-# DISPERSION VS WIDTH FOR THIN STREAM AND COCOON, INCLUDING MOCK OBSERVATIONS
+# DISPERSION VS WIDTH FOR THIN AND WIDE COMPONENTS, INCLUDING MOCK OBSERVATIONS
 from matplotlib.patches import Rectangle
 
 def size_from_rvir(r):
@@ -649,13 +649,13 @@ labels=[
 
 # (table column, panel title, jarvis published (x, xerr, y, yerr))
 components = [
-    ('S_c',  'cocoon', (jarvis_sphi2_c,  jarvis_sphi2_c_err,  jarvis_svgsr_c,  jarvis_svgsr_c_err)),
-    ('S_ts', 'thin stream', (jarvis_sphi2_ts, jarvis_sphi2_ts_err, jarvis_svgsr_ts, jarvis_svgsr_ts_err)),
+    ('S_c',  'wide component', (jarvis_sphi2_c,  jarvis_sphi2_c_err,  jarvis_svgsr_c,  jarvis_svgsr_c_err)),
+    ('S_ts', 'thin component',(jarvis_sphi2_ts, jarvis_sphi2_ts_err, jarvis_svgsr_ts, jarvis_svgsr_ts_err)),
 ]
 fig, axs_ss = plt.subplots(1, 3, figsize=[24,7])
 plt.subplots_adjust(wspace=0.25)
 
-# left panel: f_cocoon vs rvir0, GD-1 only (CMs), plus the mock-observed points
+# left panel: f_wide vs rvir0, GD-1 only (CMs), plus the mock-observed points
 axf = axs_ss[0]
 axf.axhspan(jarvis_fcocoon-jarvis_fcocoon_err, jarvis_fcocoon+jarvis_fcocoon_err, color='k', alpha=0.1)
 axf.axhline(t_jarvis_fit['f_cocoon'], **jarvis_fit_style)
@@ -673,7 +673,7 @@ for ii, f in enumerate(files):
                 edgecolor='k' if 'binaries' in labels[ii] else 'w', lw=1.5,
                 s=size_from_rvir(row['Rvir0']) * 3, zorder=4)
 axf.set_xlabel(x_label) #<-- same x-axis as the summary figure (follows x_is_density)
-axf.set_ylabel(r'$f_{\rm cocoon}$')
+axf.set_ylabel(r'$f_{\rm wide}$')
 if x_is_density:
     axf.set_xscale('log')
     axf.set_xticks(density_fracs)
@@ -732,7 +732,7 @@ for ax, (scol, ctitle, (jx, jxe, jy, jye)) in zip(axs_ss[1:], components):
     for r in [0.75, 1.5, 3., 6.]:
         ax.scatter([None], [None], s=size_from_rvir(r), color='grey', label=r'$R_{\rm vir,0}=%g$ pc'%r)
 
-    short = 'cocoon' if scol == 'S_c' else 'thin'
+    short = 'wide' if scol == 'S_c' else 'thin'
     ax.set_xlabel(r'$\sigma_{\phi_2, \rm %s}~[\degree]$'%short)
     ax.set_ylabel(r'$\sigma_{v_{\rm GSR}, \rm %s}~[\rm km~s^{-1}]$'%short)
     # ax.set_title(ctitle)
@@ -859,7 +859,7 @@ plt.savefig(fname+".pdf",
 
 # %%
 # #-----------------------------------------------------#
-# #   binary fractions in thin stream vs cocoon         # 
+# #   binary fractions in thin vs wide component        #
 # #-----------------------------------------------------#
 case = "noiseless_CoM"
 tt = Table.read(table_path+case+".fits", format="fits")
@@ -920,7 +920,7 @@ for rvir in rvir0s:
 
     unbound, trim_new = data_dict['unbound'], data_dict[tn]
 
-    #### put things into thin stream vs cocoon: 
+    #### put things into thin vs wide component:
     keys = ['phi2','v_phi1','v_phi2','v_gsr']
     use = unbound & trim_new
     bound = ~unbound
@@ -960,8 +960,8 @@ for rvir in rvir0s:
     print(orbit)
     fbin_ts = nbin_ts / n_ts
     fbin_c = nbin_c / n_c
-    print("\tthin stream binary fraction: ", nbin_ts / n_ts)
-    print("\tcocoon binary fraction: ", nbin_c / n_c)
+    print("\tthin component binary fraction: ", nbin_ts / n_ts)
+    print("\twide component binary fraction: ", nbin_c / n_c)
     print("\tbound fbin", fbin_bound)
 
 
@@ -987,10 +987,10 @@ for rvir in rvir0s:
 
 xx_fbin = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
 cocoon_fbin_color = "#EE9998"
-ax.errorbar(xx_fbin, fbins_c, yerr=[fbls_c, fbus_c], label='cocoon', capsize=3, marker='o',
+ax.errorbar(xx_fbin, fbins_c, yerr=[fbls_c, fbus_c], label='wide component', capsize=3, marker='o',
             color=cocoon_fbin_color, ls='-',
             markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
-ax.errorbar(xx_fbin, fbins_ts, yerr=[fbls_ts, fbus_ts], label='thin stream', capsize=3, marker='o',
+ax.errorbar(xx_fbin, fbins_ts, yerr=[fbls_ts, fbus_ts], label='thin component', capsize=3, marker='o',
             color=gd1_color, ls='-', markeredgecolor='k')
 ax.set_xlabel(x_label)
 if x_is_density:
@@ -1002,17 +1002,17 @@ else:
     ax.set_xticks([.75, 1.5, 3., 6.])
 ax.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back on
 
-### pink labels with arrows (solid for the thin stream, dashed for the cocoon, like the curves).
+### pink labels with arrows (solid for the thin component, dashed for the wide component, like the curves).
 ### both point at the midpoint of the segment between the middle two points (indices 1 and 2) of each curve;
-### cocoon label above-left of the arrow tip, thin stream label below-right. each is coloured like its curve.
+### wide label above-left of the arrow tip, thin label below-right. each is coloured like its curve.
 i_lo, i_hi = 1, 2
 # on the log density axis the segment is straight in log x, so its midpoint is at the geometric mean in x
 x_mid = np.sqrt(xx_fbin[i_lo]*xx_fbin[i_hi]) if x_is_density else 0.5*(xx_fbin[i_lo]+xx_fbin[i_hi])
 y_mid_c = 0.5*(fbins_c[i_lo]+fbins_c[i_hi])
 y_mid_ts = 0.5*(fbins_ts[i_lo]+fbins_ts[i_hi])
 # (label, arrow tip y, arrow linestyle, text offset from the tip [points], ha, va, color -- same as its curve)
-for text, y_mid, ls, offset, ha, va, annot_color in [('cocoon', y_mid_c, '-', (-50, 70), 'right', 'bottom', cocoon_fbin_color),
-                                                     ('thin stream', y_mid_ts, '-', (50, -35), 'left', 'top', gd1_color)]:
+for text, y_mid, ls, offset, ha, va, annot_color in [('wide component', y_mid_c, '-', (-50, 70), 'right', 'bottom', cocoon_fbin_color),
+                                                     ('thin component', y_mid_ts, '-', (50, -35), 'left', 'top', gd1_color)]:
     ax.annotate(text, xy=(x_mid, y_mid), xycoords='data',
                 xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
                 ha=ha, va=va, color=annot_color, fontsize=20,
@@ -1037,9 +1037,9 @@ plt.savefig("plots/gd1_binary_fractions.pdf", dpi=300, bbox_inches='tight')
 # %%
 #-----------------------------------------------------#
 #   mean Gaia G of the catalog-matched stars in the   #
-#   thin stream vs cocoon                             #
+#   thin vs wide component                            #
 #-----------------------------------------------------#
-### same membership as the binary fraction cell above (the `case` fit, p_cocoon > 0.5 = cocoon), but only the stars
+### same membership as the binary fraction cell above (the `case` fit, p_cocoon > 0.5 = wide component), but only the stars
 ### that were given catalog photometry, i.e. the stars a Gaia-like survey would see. G is the apparent catalog G.
 ### error bars are the standard error of the mean. needs gd1_color, cocoon_fbin_color, x_axis_values, x_label, density_fracs.
 case = "noiseless_CoM"
@@ -1079,15 +1079,15 @@ for rvir in rvir0s:
         means.append(np.mean(mG[sel]))
         errs.append(np.std(mG[sel], ddof=1)/np.sqrt(sel.sum()))
         ns.append(sel.sum())
-    print(orbit, rvir, "\tthin stream: <G> = %.2f +- %.2f (N = %d)"%(mG_mean_ts[-1], mG_err_ts[-1], mG_n_ts[-1]),
-          "\tcocoon: <G> = %.2f +- %.2f (N = %d)"%(mG_mean_c[-1], mG_err_c[-1], mG_n_c[-1]))
+    print(orbit, rvir, "\tthin component: <G> = %.2f +- %.2f (N = %d)"%(mG_mean_ts[-1], mG_err_ts[-1], mG_n_ts[-1]),
+          "\twide component: <G> = %.2f +- %.2f (N = %d)"%(mG_mean_c[-1], mG_err_c[-1], mG_n_c[-1]))
 
 fig, ax = plt.subplots()
 xx_mG = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
-ax.errorbar(xx_mG, mG_mean_c, yerr=mG_err_c, label='cocoon', capsize=5, marker='o',
+ax.errorbar(xx_mG, mG_mean_c, yerr=mG_err_c, label='wide component', capsize=5, marker='o',
             color=cocoon_fbin_color, ls='-',
             markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
-ax.errorbar(xx_mG, mG_mean_ts, yerr=mG_err_ts, label='thin stream', capsize=3, marker='o',
+ax.errorbar(xx_mG, mG_mean_ts, yerr=mG_err_ts, label='thin component', capsize=3, marker='o',
             color=gd1_color, ls='-', markeredgecolor='k')
 ax.set_xlabel(x_label)
 if x_is_density:
@@ -1101,14 +1101,14 @@ ax.minorticks_off() #<-- after set_xscale, which turns the log minor ticks back 
 ax.invert_yaxis() #<-- magnitudes: brighter is up
 
 ### labels with arrows, as in the binary fraction cell: each points at the midpoint of the segment between the
-### middle two points of its curve, cocoon label above-left of the tip, thin stream label below-right.
+### middle two points of its curve, wide label above-left of the tip, thin label below-right.
 i_lo, i_hi = 1, 2
 x_mid = np.sqrt(xx_mG[i_lo]*xx_mG[i_hi]) if x_is_density else 0.5*(xx_mG[i_lo]+xx_mG[i_hi])
 y_mid_c = 0.5*(mG_mean_c[i_lo]+mG_mean_c[i_hi])
 y_mid_ts = 0.5*(mG_mean_ts[i_lo]+mG_mean_ts[i_hi])
 # (label, arrow tip y, arrow linestyle, text offset from the tip [points], ha, va, color -- same as its curve)
-for text, y_mid, ls, offset, ha, va, annot_color in [('cocoon', y_mid_c, '-', (50, 70), 'right', 'bottom', cocoon_fbin_color),
-                                                     ('thin stream', y_mid_ts, '-', (25, -70), 'left', 'top', gd1_color)]:
+for text, y_mid, ls, offset, ha, va, annot_color in [('wide component', y_mid_c, '-', (50, 70), 'right', 'bottom', cocoon_fbin_color),
+                                                     ('thin component', y_mid_ts, '-', (25, -70), 'left', 'top', gd1_color)]:
     ax.annotate(text, xy=(x_mid, y_mid), xycoords='data',
                 xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
                 ha=ha, va=va, color=annot_color, fontsize=20,
@@ -1118,7 +1118,7 @@ ax.set_ylabel(r'$\langle G \rangle$')
 plt.savefig("plots/gd1_mean_G.pdf", dpi=300, bbox_inches='tight')
 # %%
 #-----------------------------------------------------#
-#   log mean system mass in the thin stream vs cocoon #
+#   log mean system mass in thin vs wide component    #
 #-----------------------------------------------------#
 ### same membership as the two cells above. "system" mass = data_dict['CoM']['mass']: one row per system, and a
 ### binary's row is the combined (present-day) mass of both components (checked: == p1 + p2 from the companions dict).
@@ -1185,15 +1185,15 @@ for rvir in rvir0s:
             sem_m = np.std(m, ddof=1)/np.sqrt(len(m))
             logs.append(np.log10(mean_m))
             errs.append(sem_m/(mean_m*np.log(10)))
-    print(orbit, rvir, mass_sample, mass_stat, "\tthin stream: %.3f +- %.3f"%(logM_ts[-1], logM_err_ts[-1]),
-          "\tcocoon: %.3f +- %.3f"%(logM_c[-1], logM_err_c[-1]))
+    print(orbit, rvir, mass_sample, mass_stat, "\tthin component: %.3f +- %.3f"%(logM_ts[-1], logM_err_ts[-1]),
+          "\twide component:%.3f +- %.3f"%(logM_c[-1], logM_err_c[-1]))
 
 fig, ax = plt.subplots()
 xx_M = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
-ax.errorbar(xx_M, logM_c, yerr=logM_err_c, label='cocoon', capsize=5, marker='o',
+ax.errorbar(xx_M, logM_c, yerr=logM_err_c, label='wide component', capsize=5, marker='o',
             color=cocoon_fbin_color, ls='-',
             markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
-ax.errorbar(xx_M, logM_ts, yerr=logM_err_ts, label='thin stream', capsize=3, marker='o',
+ax.errorbar(xx_M, logM_ts, yerr=logM_err_ts, label='thin component', capsize=3, marker='o',
             color=gd1_color, ls='-', markeredgecolor='k')
 ax.set_xlabel(x_label)
 if x_is_density:
@@ -1211,8 +1211,8 @@ x_mid = np.sqrt(xx_M[i_lo]*xx_M[i_hi]) if x_is_density else 0.5*(xx_M[i_lo]+xx_M
 y_mid_c = 0.5*(logM_c[i_lo]+logM_c[i_hi])
 y_mid_ts = 0.5*(logM_ts[i_lo]+logM_ts[i_hi])
 # (label, arrow tip y, arrow linestyle, text offset from the tip [points], ha, va, color -- same as its curve)
-for text, y_mid, ls, offset, ha, va, annot_color in [('cocoon', y_mid_c, '-', (-30, -70.), 'center', 'top', cocoon_fbin_color),
-                                                     ('thin stream', y_mid_ts, '-', (-30., 70), 'center', 'top', gd1_color)]:
+for text, y_mid, ls, offset, ha, va, annot_color in [('wide component', y_mid_c, '-', (-30, -70.), 'center', 'top', cocoon_fbin_color),
+                                                     ('thin component', y_mid_ts, '-', (-30., 70), 'center', 'top', gd1_color)]:
     ax.annotate(text, xy=(x_mid, y_mid), xycoords='data',
                 xytext=offset, textcoords='offset points', #<-- text position relative to the arrow tip [points]
                 ha=ha, va=va, color=annot_color, fontsize=20,
@@ -1234,7 +1234,7 @@ fig, axs_3 = plt.subplots(1, 3, figsize=[24,7]) #<-- same layout as the other 1x
 plt.subplots_adjust(wspace=0.25)
 xx_3 = x_axis_values(rvir0s) #<-- same x-axis as the summary figure (follows x_is_density)
 
-# (axis, cocoon y, cocoon yerr, thin y, thin yerr, cocoon capsize, ylabel,
+# (axis, wide y, wide yerr, thin y, thin yerr, wide capsize, ylabel,
 #  [(label, arrow tip y, text offset [points], ha, va, color), ...])
 # arrow tips: midpoint of the segment between the middle two points (indices 1 and 2) of each curve
 i_lo, i_hi = 1, 2
@@ -1242,24 +1242,24 @@ def seg_mid(y):
     return 0.5*(y[i_lo]+y[i_hi])
 panels_3 = [
     (axs_3[0], logM_c, logM_err_c, logM_ts, logM_err_ts, 5, logM_ylabel,
-     [('cocoon', seg_mid(logM_c), (-30, -70.), 'center', 'top', cocoon_fbin_color),
-      ('thin stream', seg_mid(logM_ts), (-30., 70), 'center', 'top', gd1_color)]),
+     [('wide component', seg_mid(logM_c), (-30, -70.), 'center', 'top', cocoon_fbin_color),
+      ('thin component', seg_mid(logM_ts), (-30., 70), 'center', 'top', gd1_color)]),
     (axs_3[1], fbins_c, [fbls_c, fbus_c], fbins_ts, [fbls_ts, fbus_ts], 3, r'$f_{\rm bin}$',
-     [('cocoon', seg_mid(fbins_c), (-50, 70), 'right', 'bottom', cocoon_fbin_color),
-      ('thin stream', seg_mid(fbins_ts), (50, -35), 'left', 'top', gd1_color)]),
+     [('wide component', seg_mid(fbins_c), (-40, 70), 'right', 'bottom', cocoon_fbin_color),
+      ('thin component', seg_mid(fbins_ts), (40, -45), 'left', 'top', gd1_color)]),
     (axs_3[2], mG_mean_c, mG_err_c, mG_mean_ts, mG_err_ts, 5, r'$\langle G \rangle$',
-     [('cocoon', seg_mid(mG_mean_c), (50, 70), 'right', 'bottom', cocoon_fbin_color),
-      ('thin stream', seg_mid(mG_mean_ts), (25, -70), 'left', 'top', gd1_color)]),
+     [('wide component', seg_mid(mG_mean_c), (30, 70), 'left', 'bottom', cocoon_fbin_color),
+      ('thin component', seg_mid(mG_mean_ts), (25, -80), 'left', 'top', gd1_color)]),
 ]
 
 # on the log density axis the segment is straight in log x, so its midpoint is at the geometric mean in x
 x_mid = np.sqrt(xx_3[i_lo]*xx_3[i_hi]) if x_is_density else 0.5*(xx_3[i_lo]+xx_3[i_hi])
 
 for ax, y_c, yerr_c, y_ts, yerr_ts, capsize_c, ylabel, annots in panels_3:
-    ax.errorbar(xx_3, y_c, yerr=yerr_c, label='cocoon', capsize=capsize_c, marker='o',
+    ax.errorbar(xx_3, y_c, yerr=yerr_c, label='wide component', capsize=capsize_c, marker='o',
                 color=cocoon_fbin_color, ls='-',
                 markerfacecolor=mcolors.to_rgba(cocoon_fbin_color, 0.7), markeredgecolor=mcolors.to_rgba('k', 0.7))
-    ax.errorbar(xx_3, y_ts, yerr=yerr_ts, label='thin stream', capsize=3, marker='o',
+    ax.errorbar(xx_3, y_ts, yerr=yerr_ts, label='thin component', capsize=3, marker='o',
                 color=gd1_color, ls='-', markeredgecolor='k')
     ax.set_xlabel(x_label)
     if x_is_density:
@@ -1524,7 +1524,7 @@ ylims = np.zeros(len(keys)) #<-- per row, the widest of the columns
 for ii, rvir_index in enumerate(rvir_indices):
     rvir = rvirs[rvir_index]
     phi1, ydict, p_cocoon, row = demo_data(orbit, rvir, tt, noise=noise, include_binaries=include_binaries)
-    order = np.argsort(p_cocoon) # plot cocoon on top.
+    order = np.argsort(p_cocoon) # plot wide component on top.
     cocoon_selection = p_cocoon>0.5
 
     for jj, key in enumerate(keys):
@@ -1534,7 +1534,7 @@ for ii, rvir_index in enumerate(rvir_indices):
                    c=p_cocoon[order], cmap=cocoon_cmap, norm=norm_pc,
                    rasterized=True, **point_kw)
 
-        # 3 sigma of the cocoon stars (or of everything, if there's no cocoon)
+        # 3 sigma of the wide component stars (or of everything, if there's no wide component)
         ysel = y[cocoon_selection] if cocoon_selection.sum()>1 else y
         ylims[jj] = max(ylims[jj], 3*np.std(ysel))
 
@@ -1543,7 +1543,7 @@ for ii, rvir_index in enumerate(rvir_indices):
 
     if noise is not None:
         axs[0, ii].set_title(
-            r'$f_{\rm c}=%.2f, \sigma_{\phi_2, c} = %.2f~\degree, \sigma_{v_{\rm GSR}, c} = %.2f~\mathrm{km~s^{-1}} $'%(row['f_cocoon'][0], row['S_c'][:,0][0], row['S_c'][:,-1][0]))
+            r'$f_{\rm w}=%.2f, \sigma_{\phi_2, w} = %.2f~\degree, \sigma_{v_{\rm GSR}, w} = %.2f~\mathrm{km~s^{-1}} $'%(row['f_cocoon'][0], row['S_c'][:,0][0], row['S_c'][:,-1][0]))
 
 
     axs[-1, ii].set_xlabel(r'$\phi_1~[\degree]$')
@@ -1554,7 +1554,7 @@ for jj in range(len(keys)):
 axs[0, 0].set_xlim(orbit_lim_map[orbit]) #<-- sharex, so this sets every panel
 
 cb = fig.colorbar(ScalarMappable(norm=norm_pc, cmap=cocoon_cmap), cax=cax)
-cb.set_label(r'$p_{\rm cocoon}$', fontsize=15)
+cb.set_label(r'$p_{\rm wide}$', fontsize=15)
 
 # keep the old filename for the noiseless CoM panels; every other case gets its own file
 plot_name = "demo_cocoon_separation_rvir0" if case_name=='noiseless_CoM' else "demo_cocoon_separation_"+case_name
@@ -1619,7 +1619,7 @@ for ii, case in enumerate(cases):
                                                 include_binaries=include_binaries,
                                                 return_mask=True)
     print(case)
-    order = np.argsort(p_cocoon) # plot cocoon on top.
+    order = np.argsort(p_cocoon) # plot wide component on top.
     cocoon_selection = p_cocoon>0.5
 
     isbinary_use = isbinary[use]
@@ -1649,9 +1649,9 @@ fbins = np.array(fbins)
 
 tdict = {
     "Noise case":labels,
-    r"$f_{\rm cocoon}$":np.round(f_cocoons, 2),
+    r"$f_{\rm wide}$":np.round(f_cocoons, 2),
     r"$\sigma_{v_{\rm GSR}, t}$":np.round(sigvr_ts,2),
-    r"$\sigma_{v_{\rm GSR}, c}$":np.round(sigvr_cs,2),
+    r"$\sigma_{v_{\rm GSR}, w}$":np.round(sigvr_cs,2),
     r"$f_{\rm bin}$":np.round(fbins, 2),
     r"$N_{\rm sys}$":Nsys
 }
@@ -1661,3 +1661,5 @@ t = Table(tdict)
 
 # t.write("table2", format='ascii.latex', overwrite=True)
 
+
+# %%
