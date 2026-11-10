@@ -322,7 +322,7 @@ x_is_density = True
 ### 'orbits' -> every orbit in the main grid, system CMs only (no binary orbits, no supplemental sims); only the orbits legend
 ### 'gd1'    -> the GD-1 orbit only, CMs + with binary orbits, plus the supplemental GD-1 sims; no orbits legend
 order_by = 'orbphase' # 'orbphase' or 'peri'
-summary_version = 'orbits' #'orbits' or 'gd1
+summary_version = 'gd1' #'orbits' or 'gd1
 
 
 
@@ -1488,12 +1488,12 @@ noise = None #<-- None, 'via', 'via10hr', 'desi'
 include_binaries = False
 case_name = case_label(noise, include_binaries) #<-- e.g. desi_noise_CoM; can't disagree with the flags any more
 tt = Table.read(table_path+case_name+".fits", format="fits")
-c_labels = ["#CCC9E7", "#2F2F2F"]
+c_labels = ["#E84856", "#F6D4BA"]
 # c_labels = ['orange','white','midnightblue']
-# cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
+cocoon_cmap = LinearSegmentedColormap.from_list('cocoon_cmap', c_labels)
 # cocoon_cmap = cm.get_sub_cmap(cm.bubblegum, 0.4,1.).reversed()
-cocoon_cmap = cm.get_sub_cmap(cm.horizon, 0.2,0.8).reversed()
-
+# cocoon_cmap = cm.get_sub_cmap(cm.sapphire, 0.2,0.8)#.reversed()
+# horizn
 
 
 orbit = 'gd1'
@@ -1508,7 +1508,7 @@ key_labels = [
 ]
 
 # the noisy samples are ~1e2-1e3 stars, the noiseless ones ~1e4: bigger, outlined points for "observed" data
-point_kw = dict(s=5) if noise is None else dict(s=50, edgecolor='k', lw=.5)
+point_kw = dict(s=10) if noise is None else dict(s=50, edgecolor='k', lw=.25)
 
 ncols = len(rvir_indices)
 fig = plt.figure(figsize=[5*ncols+1, 8])
@@ -1532,6 +1532,7 @@ for ii, rvir_index in enumerate(rvir_indices):
         ax = axs[jj, ii]
         ax.scatter(phi1[order], y[order],
                    c=p_cocoon[order], cmap=cocoon_cmap, norm=norm_pc,
+                   edgecolor='k', lw=0.25,
                    rasterized=True, **point_kw)
 
         # 3 sigma of the wide component stars (or of everything, if there's no wide component)
