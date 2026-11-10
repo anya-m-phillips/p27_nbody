@@ -1561,7 +1561,7 @@ cb.set_label(r'$p_{\rm wide}$', fontsize=15)
 plot_name = "demo_cocoon_separation_rvir0" if case_name=='noiseless_CoM' else "demo_cocoon_separation_"+case_name
 if orbit!='gd1':
     plot_name += "_"+orbit
-# plt.savefig("plots/"+plot_name+".pdf", dpi=300, bbox_inches='tight')
+plt.savefig("plots/"+plot_name+".pdf", dpi=300, bbox_inches='tight')
 
 # %%
 #--------------------------------------------------------#
