@@ -754,6 +754,8 @@ plt.savefig("plots/jarvis_comparison.pdf", dpi=300, bbox_inches='tight')
 #   orbital motion in the RVs. joined in rvir0 order, marker size = rvir0.
 show_CoM = True #<-- also draw desi_noise_CoM's S_1comp (same selection idea, CoM RVs, i.e. no binary motion)
 add_errbars = False
+show_noiseless_thin = True #<-- also draw the THIN component (S_ts) of the noiseless two-component fit, for comparison
+noiseless_thin_case = "noiseless_CoM" #<-- or "noiseless_binaries" (thin sigma_vgsr ~0.05 km/s higher)
 
 t_1c = Table.read(table_path+"desi_noise_binaries.fits", format='fits')
 t_1c = t_1c[t_1c['orbit']=='gd1']
@@ -802,14 +804,33 @@ if show_CoM:
                color='k', edgecolor='w', lw=1.5, zorder=4, alpha=0.5)#,
             #    label='DESI-like noise, CMs;\nsingle component')
 
+# noiseless, every unbound star (trim_new & unbound), two-component fit: just the thin component.
+#   i.e. what's left once the mixture model has taken the strong ejections out into the wide component.
+if show_noiseless_thin:
+    t_ts = Table.read(table_path+noiseless_thin_case+".fits", format='fits')
+    t_ts = t_ts[t_ts['orbit']=='gd1']
+    t_ts = t_ts[np.argsort(t_ts['Rvir0'])]
+    ts_is_bin = 'binaries' in noiseless_thin_case
+    ax.plot(t_ts['S_ts'][:,0], t_ts['S_ts'][:,-1], color=gd1_color, ls='--', lw=1, zorder=3)
+    ax.scatter(t_ts['S_ts'][:,0], t_ts['S_ts'][:,-1], marker='o',
+               s=size_from_rvir(t_ts['Rvir0']),
+               color='none', edgecolor=gd1_color, lw=1.5, zorder=4)
+
 # annotations: text at the left edge of the panel, arrow to the leftmost (smallest sigma_phi2) point of each series.
 #   text_dy = vertical nudge of the text relative to that point [km/s], to move labels off each other / the data.
-def annotate_leftmost(xs, ys, text, text_dy=0.0, text_x=0.3, color='k'):
+#   rank = which point to point at, counting up in sigma_phi2 (0 = leftmost = most diffuse progenitor, 1 = second, ...).
+#   offset_pts = (dx, dy) [points]: if given, put the text at that offset from the point instead (left-aligned,
+#   so (+dx, -dy) = below and to the right), and ignore text_x / text_dy.
+def annotate_leftmost(xs, ys, text, text_dy=0.0, text_x=0.3, color='k', rank=0, offset_pts=None):
     xs, ys = np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
-    k = np.nanargmin(xs)
+    k = np.argsort(xs)[rank]
+    if offset_pts is None:
+        xytext, textcoords, ha = (text_x, ys[k]+text_dy), ('axes fraction', 'data'), 'right'
+    else:
+        xytext, textcoords, ha = offset_pts, 'offset points', 'left'
     ax.annotate(text, xy=(xs[k], ys[k]), xycoords='data',
-                xytext=(text_x, ys[k]+text_dy), textcoords=('axes fraction', 'data'),
-                ha='right', va='center', fontsize=13, zorder=7,
+                xytext=xytext, textcoords=textcoords,
+                ha=ha, va='center', fontsize=13, zorder=7,
                 arrowprops=dict(arrowstyle='->', color=color,
                                  lw=1, shrinkA=2, shrinkB=6))
 
@@ -822,8 +843,12 @@ annotate_leftmost(t_rep['S_phi2'], t_rep['S_vgsr_repeat_sb'],
 if show_CoM:
     annotate_leftmost(t_1c_com['S_1comp'][:,0], 
                       t_1c_com['S_1comp'][:,-1],
-                      'binary CMs', 
-                      text_dy=0.3)
+                      'binary CMs',
+                      rank=1, offset_pts=(25, -30)) #<-- second most diffuse point; text below + right of it
+if show_noiseless_thin:
+    annotate_leftmost(t_ts['S_ts'][:,0], t_ts['S_ts'][:,-1],
+                      'thin component only' + (' (binaries)' if ts_is_bin else ''),
+                      text_dy=0.25, text_x=0.36, color=gd1_color) #<-- text_x was 0.3 (the default)
 
 # marker-size key
 # for r in [0.75, 1.5, 3., 6.]:
@@ -856,6 +881,163 @@ if add_errbars==True:
     fname+="_with_errs"
 plt.savefig(fname+".pdf", 
             dpi=300, bbox_inches='tight')
+# %%
+#### helpers: rebuild exactly what gmm.py fit, for any case, and evaluate a
+#   saved mixture model on it. used by the v_gsr histogram, the demo panels and figure 1 below.
+fit_keys = ['phi2','v_phi1','v_phi2','v_gsr'] #<-- gmm.py's keys; also the order of the M_*/S_* columns
+
+def case_label(noise=None, include_binaries=False, constrain_widths=False):
+    '''the gmm.py case_name for a set of flags, e.g. desi_noise_CoM'''
+    cd0 = 'noiseless' if noise is None else noise+"_noise"
+    cd1 = 'binaries' if include_binaries else 'CoM'
+    cd2 = '_constrained' if constrain_widths else ''
+    return cd0+"_"+cd1+cd2
+
+
+def gmm_selection(data_dict, noise=None, include_binaries=False):
+    '''
+    the stars that went into the gmm.py fit for one case.
+
+    returns use, sc_straighter, noise_dict:
+      use           -- full-length bool mask (CoM/luminous ordering)
+      sc_straighter -- the straightened coord dict that case fits
+      noise_dict    -- the saved catalog-photometry noise draw, with v_gsr,
+                       v_phi1, v_phi2 filled in for this survey (None if noiseless)
+    '''
+    sfx = '_primaries' if include_binaries else '' #<-- coords, trim, and catalog products all follow it
+    sc_straighter = data_dict['sc_straighter'+sfx]
+    unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
+
+    if noise is None:
+        use = unbound & data_dict['trim_new'+sfx]
+        return use, sc_straighter, None
+
+    #### catalog-based photometry + noise, same selection as gmm.py
+    phot = data_dict['catalog_photometry'+sfx]
+    cut = data_dict['cut_for_catalog_photometry'+sfx]
+    matched_full = np.full(len(cut), fill_value=False)
+    matched_full[cut] = data_dict['matched_to_catalog_photometry'+sfx]
+
+    noise_dict = dict(data_dict['noise_catalog_photometry'+sfx]) #<-- copy, so the survey keys don't leak back into data_dict
+    noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
+    rverr = noise_dict['rverr_'+noise]
+
+    distances = data_dict['coords_obs'].distance
+    noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+    noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
+
+    cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
+    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr
+
+    if noise in ['via', 'via10hr']:
+        good_RV = rverr<5.0 #km/s
+    if noise=='desi':
+        N_jarvis = 679 #<-- length of jarvis catalog.
+        top_N_jarvis = np.zeros(len(phot['mG']), dtype=bool)
+        top_N_jarvis[np.argsort(phot['mG'])[:N_jarvis]] = True #<-- nans sort to the end
+        good_RV = top_N_jarvis & (rverr<10.) #km/s
+
+    use = cut & matched_full & good_pm & good_RV & nonrem
+    return use, sc_straighter, noise_dict
+
+
+def observed(key, sc_straighter, noise_dict, use):
+    '''one coordinate for the `use` stars, with the saved noise draw added if there is one'''
+    y = sc_straighter[key][use]
+    if noise_dict is not None:
+        y = y + noise_dict[key][use]
+    return y
+
+
+def observed_errors(data_dict, noise_dict, noise, use):
+    '''(N, K) per-star errors for the `use` stars, exactly as gmm.py passes them to the fit (None if noiseless)'''
+    if noise_dict is None:
+        return None
+    return gmm.measurement_errors(noise_dict, noise, data_dict['coords_obs'].distance, fit_keys)[use]
+
+
+def p_cocoon_from_table(x_data, row, x_err=None):
+    '''
+    p_cocoon per star under the mixture model saved in one row of a gmm table.
+    the table's sigmas are INTRINSIC widths for noisy cases, so pass the same
+    x_err the fit used (observed_errors) or the memberships come out wrong.
+    '''
+    means_fit = np.array([row['M_ts'][0], row['M_c'][0]])
+    sigmas_fit = np.array([row['S_ts'][0], row['S_c'][0]])
+    fracs_fit = np.array([1-row['f_cocoon'][0], row['f_cocoon'][0]])
+    p_thin = gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0, x_err=x_err)
+    return 1-p_thin
+
+
+def demo_data(orbit, rvir, tt, noise=None, include_binaries=False, return_mask=False):
+    '''
+    rebuild the data vector for one simulation exactly as gmm.py does, and
+    evaluate the saved mixture model on it.
+
+    returns phi1, ydict, p_cocoon, row -- phi1 and every ydict entry are
+    already cut down to the stars that went into the fit (`use`), and
+    ydict holds the plotted keys with the saved noise draw added.
+    '''
+    row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
+
+    filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
+    with open(filename, 'rb') as handle:
+        data_dict = pickle.load(handle)
+
+    use, sc_straighter, noise_dict = gmm_selection(data_dict, noise=noise, include_binaries=include_binaries)
+
+    #### the fit is in transverse velocities; the plot shows proper motions
+    x_data = np.column_stack([observed(k, sc_straighter, noise_dict, use) for k in fit_keys])
+    x_err = observed_errors(data_dict, noise_dict, noise, use)
+    p_cocoon = p_cocoon_from_table(x_data, row, x_err)
+
+    ydict = {k: observed(k, sc_straighter, noise_dict, use) for k in ['phi2','pm_phi1','pm_phi2','v_gsr']}
+    if return_mask==False:
+        return sc_straighter['phi1'][use], ydict, p_cocoon, row
+    else:
+        return sc_straighter['phi1'][use], ydict, p_cocoon, row, use
+
+# %%
+# just a histogram of radial velocities including and not including binary motions.
+### just open some straightened stream data from a data_dict.
+#   GD-1, rvir0 = 3 pc (second most diffuse). each histogram uses gmm.py's selection for that case (gmm_selection):
+#   CMs = sc_straighter['v_gsr']; with binary orbital motion = sc_straighter_primaries['v_gsr'] (the luminous
+#   component's RV), each with its own trim / catalog products. v_gsr is the residual about the straightened track.
+#   hist_noise = None: every unbound star in the trim (the noiseless fit). 'desi' (or 'via'): only the stars that
+#   get "observed" -- catalog-matched, Gaia pm_err < 0.5 mas/yr, and for desi the 679 brightest with RV errors.
+hist_noise = 'desi' #<-- None, 'desi', 'via', 'via10hr'
+hist_add_noise = False #<-- True: also add the saved noise draw to v_gsr (only does anything if hist_noise is set)
+hist_orbit, hist_rvir = 'gd1', 3.0
+with open(datapath+"%s_%.2f.pickle"%(hist_orbit, hist_rvir), 'rb') as handle:
+    dd_hist = pickle.load(handle)
+
+use_cm, sc_cm, nd_cm = gmm_selection(dd_hist, noise=hist_noise, include_binaries=False)
+use_bin, sc_bin, nd_bin = gmm_selection(dd_hist, noise=hist_noise, include_binaries=True)
+v_cm = observed('v_gsr', sc_cm, nd_cm if hist_add_noise else None, use_cm)
+v_bin = observed('v_gsr', sc_bin, nd_bin if hist_add_noise else None, use_bin)
+print("selection:", hist_noise, "; noise added:", hist_add_noise and hist_noise is not None)
+print("N (CMs, with binaries) =", len(v_cm), len(v_bin))
+print("std [km/s] (CMs, with binaries) = %.2f, %.2f" % (np.std(v_cm), np.std(v_bin)))
+
+# vlim = np.nanmax(np.abs(np.concatenate([v_cm, v_bin])))
+vlim=20
+vbins = np.linspace(-vlim, vlim, 40) #<-- same bins for both
+
+fig, ax = plt.subplots()
+ax.hist(v_bin, bins=vbins, histtype='step', lw=2, color='0.5', label='with binary orbital motion',
+        density=True)
+ax.hist(v_cm, bins=vbins, histtype='step', lw=2, color=gd1_color, label='binary CMs',
+        density=True)
+ax.set_yscale('log') #<-- the binary orbital motion is in the tails
+ax.set_xlabel(r'$v_{\rm GSR}~[\rm km~s^{-1}]$')
+ax.set_ylabel('pdf')
+ax.legend(loc='upper right', fontsize=11)
+# ax.text(0.05, 0.95, r'GD-1, $R_{\rm vir,0}=%g$ pc' % hist_rvir
+#         + ('' if hist_noise is None else '\n%s-observed' % hist_noise.upper()
+#            + (', with noise' if hist_add_noise else '')),
+#         ha='left', va='top', transform=ax.transAxes)
+# plt.savefig("plots/gd1_vgsr_hist_binaries_vs_CMs.pdf", dpi=300, bbox_inches='tight')
+
 
 # %%
 # #-----------------------------------------------------#
@@ -1359,120 +1541,8 @@ ax.set_ylabel(r'$\sigma_v~[\rm km~s^{-1}]$')
 #
 
 
-#### helpers: rebuild exactly what gmm.py fit, for any case, and evaluate a
-#   saved mixture model on it. used by the demo panels and figure 1 below.
-fit_keys = ['phi2','v_phi1','v_phi2','v_gsr'] #<-- gmm.py's keys; also the order of the M_*/S_* columns
-
-def case_label(noise=None, include_binaries=False, constrain_widths=False):
-    '''the gmm.py case_name for a set of flags, e.g. desi_noise_CoM'''
-    cd0 = 'noiseless' if noise is None else noise+"_noise"
-    cd1 = 'binaries' if include_binaries else 'CoM'
-    cd2 = '_constrained' if constrain_widths else ''
-    return cd0+"_"+cd1+cd2
-
-
-def gmm_selection(data_dict, noise=None, include_binaries=False):
-    '''
-    the stars that went into the gmm.py fit for one case.
-
-    returns use, sc_straighter, noise_dict:
-      use           -- full-length bool mask (CoM/luminous ordering)
-      sc_straighter -- the straightened coord dict that case fits
-      noise_dict    -- the saved catalog-photometry noise draw, with v_gsr,
-                       v_phi1, v_phi2 filled in for this survey (None if noiseless)
-    '''
-    sfx = '_primaries' if include_binaries else '' #<-- coords, trim, and catalog products all follow it
-    sc_straighter = data_dict['sc_straighter'+sfx]
-    unbound, nonrem = data_dict['unbound'], data_dict['nonrem']
-
-    if noise is None:
-        use = unbound & data_dict['trim_new'+sfx]
-        return use, sc_straighter, None
-
-    #### catalog-based photometry + noise, same selection as gmm.py
-    phot = data_dict['catalog_photometry'+sfx]
-    cut = data_dict['cut_for_catalog_photometry'+sfx]
-    matched_full = np.full(len(cut), fill_value=False)
-    matched_full[cut] = data_dict['matched_to_catalog_photometry'+sfx]
-
-    noise_dict = dict(data_dict['noise_catalog_photometry'+sfx]) #<-- copy, so the survey keys don't leak back into data_dict
-    noise_dict['v_gsr'] = noise_dict['v_gsr_'+noise] #<-- ie tack on 'via' or 'desi to get the right key here
-    rverr = noise_dict['rverr_'+noise]
-
-    distances = data_dict['coords_obs'].distance
-    noise_dict['v_phi1'] = distances.to(u.km).value * (noise_dict['pm_phi1']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-    noise_dict['v_phi2'] = distances.to(u.km).value * (noise_dict['pm_phi2']*u.mas/u.yr).to(u.radian/u.s).value # km/s
-
-    cf = (u.microarcsecond/u.yr).to(u.mas/u.yr)
-    good_pm = noise_dict['pm_err_gaia']*cf < 0.5 #<-- mas/yr
-
-    if noise in ['via', 'via10hr']:
-        good_RV = rverr<5.0 #km/s
-    if noise=='desi':
-        N_jarvis = 679 #<-- length of jarvis catalog.
-        top_N_jarvis = np.zeros(len(phot['mG']), dtype=bool)
-        top_N_jarvis[np.argsort(phot['mG'])[:N_jarvis]] = True #<-- nans sort to the end
-        good_RV = top_N_jarvis & (rverr<10.) #km/s
-
-    use = cut & matched_full & good_pm & good_RV & nonrem
-    return use, sc_straighter, noise_dict
-
-
-def observed(key, sc_straighter, noise_dict, use):
-    '''one coordinate for the `use` stars, with the saved noise draw added if there is one'''
-    y = sc_straighter[key][use]
-    if noise_dict is not None:
-        y = y + noise_dict[key][use]
-    return y
-
-
-def observed_errors(data_dict, noise_dict, noise, use):
-    '''(N, K) per-star errors for the `use` stars, exactly as gmm.py passes them to the fit (None if noiseless)'''
-    if noise_dict is None:
-        return None
-    return gmm.measurement_errors(noise_dict, noise, data_dict['coords_obs'].distance, fit_keys)[use]
-
-
-def p_cocoon_from_table(x_data, row, x_err=None):
-    '''
-    p_cocoon per star under the mixture model saved in one row of a gmm table.
-    the table's sigmas are INTRINSIC widths for noisy cases, so pass the same
-    x_err the fit used (observed_errors) or the memberships come out wrong.
-    '''
-    means_fit = np.array([row['M_ts'][0], row['M_c'][0]])
-    sigmas_fit = np.array([row['S_ts'][0], row['S_c'][0]])
-    fracs_fit = np.array([1-row['f_cocoon'][0], row['f_cocoon'][0]])
-    p_thin = gmm.component_membership_probability(x_data, fracs_fit[:-1], means_fit, sigmas_fit, component=0, x_err=x_err)
-    return 1-p_thin
-
-
-def demo_data(orbit, rvir, tt, noise=None, include_binaries=False, return_mask=False):
-    '''
-    rebuild the data vector for one simulation exactly as gmm.py does, and
-    evaluate the saved mixture model on it.
-
-    returns phi1, ydict, p_cocoon, row -- phi1 and every ydict entry are
-    already cut down to the stars that went into the fit (`use`), and
-    ydict holds the plotted keys with the saved noise draw added.
-    '''
-    row = tt[(tt['orbit']==orbit) & (tt['Rvir0']==rvir)]
-
-    filename = datapath+"%s_%.2f.pickle"%(orbit, rvir)
-    with open(filename, 'rb') as handle:
-        data_dict = pickle.load(handle)
-
-    use, sc_straighter, noise_dict = gmm_selection(data_dict, noise=noise, include_binaries=include_binaries)
-
-    #### the fit is in transverse velocities; the plot shows proper motions
-    x_data = np.column_stack([observed(k, sc_straighter, noise_dict, use) for k in fit_keys])
-    x_err = observed_errors(data_dict, noise_dict, noise, use)
-    p_cocoon = p_cocoon_from_table(x_data, row, x_err)
-
-    ydict = {k: observed(k, sc_straighter, noise_dict, use) for k in ['phi2','pm_phi1','pm_phi2','v_gsr']}
-    if return_mask==False:
-        return sc_straighter['phi1'][use], ydict, p_cocoon, row
-    else:
-        return sc_straighter['phi1'][use], ydict, p_cocoon, row, use
+#### (the gmm.py-selection helpers -- fit_keys, case_label, gmm_selection, observed, observed_errors,
+#   p_cocoon_from_table, demo_data -- moved up, to just before the v_gsr histogram cell, which uses them)
 # %%
 #
 #--------------------------------------------------------#
