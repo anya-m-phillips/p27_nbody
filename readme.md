@@ -27,9 +27,10 @@ noise.py             (imported as noise)     -- isochrone photometry + survey er
                         |
                      gmm.py      -> data/gmm_tables/<case>.fits   (+ sanity plots on scratch)
                         |
-                        +---> single_component_comparisons_mockobs.py -> data/gmm_tables/desi_noise_nominal_repeatfracscan.fits,
-                        |         plots/gd1_desi_nominal_repeatfracscan.pdf, plots/jarvis_comparison_single_component.pdf
-                        |         (pickles + desi_noise_* / noiseless_CoM tables; repeat-RV / sigma_binary experiment)
+                        +---> single_component_comparisons_mockobs.py -> data/gmm_tables/desi_noise_nominal_multiepoch_scan.fits,
+                        |         plots/gd1_desi_nominal_multiepoch_scan.pdf, plots/jarvis_comparison_single_component.pdf
+                        |         (pickles + desi_noise_* / noiseless_CoM tables; two-epoch RVs, sigma_binary fit.
+                        |          needs the petar binaries: from the pickle, or the present-day data.<k>.binary on holystore)
                         |
                      results.py  -> plots/summary_*.pdf etc.
                         |
@@ -38,11 +39,70 @@ noise.py             (imported as noise)     -- isochrone photometry + survey er
 particle_spray.py (.slurm) -> data/particle_sprays/*.h5   (gitignored; from the petar ICs + data.tidal, run before motivation.py)
 ```
 
-`inspect_new_sims.py` and `noise.py` are function libraries (their `__main__` blocks are exploratory leftovers); `final_datasets.py` and `gmm.py` are the programs that produce the data products. `gmm.py` and `results.py` only read the pickles, so nothing downstream of `final_datasets.py` needs the raw simulation data.
+`inspect_new_sims.py` and `noise.py` are function libraries (their `__main__` blocks are exploratory leftovers); `final_datasets.py` and `gmm.py` are the programs that produce the data products. `gmm.py` and `results.py` only read the pickles, so nothing downstream of `final_datasets.py` needs the raw simulation data (except `single_component_comparisons_mockobs.py` with current pickles, which don't carry the petar binaries yet; see the data_dict section).
 
 the **supplemental simulations** in `simspect.supplemental_sims` (currently `gd1_2xbinaries` and `gd1_2xN_dense`; see their own section) go through the same pipeline: `python final_datasets.py --which supplemental`, then `python gmm.py --noise None --include-binaries {False,True} --supplemental True`.
 
 the **real Jarvis+26 GD-1 data** goes through the end of the pipeline too, so the sims can be compared to a fit made with the same model (see its own section): `python final_datasets.py --which jarvis`, then `python gmm.py --jarvis-data True`.
+
+
+# what's in a data_dict (the pickles)
+`final_datasets.py` writes one per sim to `/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/<orbit>_<rvir:.2f>.pickle` (`<sim>[_copy<k>]_<rvir>` for the supplemental sims). load with `pickle.load` inside `petar_env` (the `SkyCoord` needs astropy/gala, and `singles`/`binaries` need petar). the real-data `jarvis26.pickle` is different, only three keys: see "the real Jarvis+26 GD-1 data".
+
+it's the dict `paf.intrinsic_stream_data_v3` returns, plus what `final_datasets.build_data_dict` adds. listed from `gd1_0.75.pickle` (nsingles = 11299, nbinaries = 1768). **lengths:**
+- **N** = nsingles + nbinaries (13067 here): one row per *system*, ordered `[singles, binaries]`. every key marked N is in this same untrimmed order, so they combine with plain `&`, and row `nsingles + j` is binary `j`.
+- **N2** = nsingles + 2 nbinaries (14835): `[singles, binary p1, binary p2]`.
+- floats are bare (no astropy units) unless a unit is given in brackets as a Quantity.
+
+**top level, from `intrinsic_stream_data_v3`:**
+
+| key | what | length |
+|---|---|---|
+| `init_displacement` | t = 0 phase-space position of the progenitor (kpc, km/s) | 6 |
+| `nsingles`, `nbinaries` | ints | |
+| `IDs` | petar ids, `[singles, p1, p2]`. only lines up with `companions`; for `CoM`/`luminous` binary j's p1 id is `IDs[nsingles + j]` | N2 |
+| `pot` | external potential, `[singles, p1, p2]` [pc^2/Myr^2] | N2 |
+| `singles` | the raw petar `Particle` object from `data.<k>.single` (core frame, petar units: pc, pc/Myr, Msun; `.mass`, `.pos`, `.vel`, `.id`, `.star.*`, ...) | nsingles |
+| `binaries` | the raw petar `Binary` object from `data.<k>.binary` (`.semi` [pc], `.ecc`, `.mass` (total), `.pos`/`.vel` (CoM, core frame), `.p1`/`.p2` (each a `Particle`), ...), rows in binary order | nbinaries |
+| `CoM`, `luminous`, `companions` | one subdict per binary treatment, below | |
+
+⚠️ **no pickle on disk has `singles` / `binaries` yet** (they were all written before these keys existed): they appear once `final_datasets.py` is rerun, and nothing else in the pickle changes. (code that needs them, like `single_component_comparisons_mockobs.load_present_day_binaries`, falls back to reading the snapshot.)
+
+**the binary-treatment subdicts** (`CoM`: binaries as their centre of mass; `luminous`: as the brighter component; `companions`: both components, so N2):
+
+| key | what | `CoM` / `luminous` | `companions` |
+|---|---|---|---|
+| `coords` | intrinsic `StreamFrame` coords (see that section): `phi1`, `phi2` [deg], `pm_phi1`, `pm_phi2` [mas/yr], `r` [kpc, galactocentric], `vr` [km/s, relative to the progenitor] | N | N2 |
+| `pos`, `vel` | galactocentric, Quantity [pc], [km/s], shape (·, 3) | N | N2 |
+| `mass` | present-day mass, Quantity [Msun]. for `CoM` a binary's row is p1 + p2 | N | N2 |
+| `in_rtid` | within `N_rtid_boundary` x rtid of the core (2 rtid in `final_datasets.py`) | N | ⚠️ N (wrong length, see the bugs list) |
+| `inMW`, `trim` | intrinsic-frame masks; `trim` has length `inMW.sum()`, use as `x[inMW][trim]`. not used by the pipeline | N, `inMW.sum()` | N2, `inMW.sum()` |
+| `phi2_straight`, `r_straight`, `vr_straight`, `pm_phi1_straight`, `pm_phi2_straight` | intrinsic-frame residuals about the progenitor orbit | N | N2 |
+| `type`, `L` [Lsun], `R` [Rsun], `m0_zams`, `m0_effective` | BSE type, luminosity, radius; birth mass and BSE's effective initial mass (see the `star.mass0` section). **`luminous` and `companions` only** | N | N2 |
+
+**added by `final_datasets.py`** (all N unless noted; `[_primaries]` = the key exists twice, without the suffix for the CoM trim/coords and with it for the primaries ones, used by `binaries` cases):
+
+| key | what |
+|---|---|
+| `coords_obs` | CoM `SkyCoord` in the observed great-circle frame (e.g. `GD1Koposov10`), reflex-corrected: `.phi1`, `.phi2`, `.pm_phi1_cosphi2`, `.pm_phi2`, `.distance`, `.radial_velocity` |
+| `sc_straighter`, `sc_straighter_primaries` | straightened observed-frame coord dicts: `phi1`, `phi2` [deg], `pm_phi1`, `pm_phi2` [mas/yr], `v_gsr` [km/s], `distance` [kpc], `d_phi2` [kpc], `v_phi1`, `v_phi2` [km/s]; all but `phi1` residuals about the track. `_primaries` = the luminous component's phi2 / v_gsr / distance (so the RVs include binary orbital motion) with CoM PMs |
+| `unbound` | `~CoM['in_rtid']` (outside 2 rtid) |
+| `nonrem` | `luminous['type'] < 10` |
+| `alive` | `m0_zams` on the isochrone's initial-mass range |
+| `acceptable_G` | 5 < isochrone mG < 30 (viamock's range) |
+| `inMW_na` | all-True placeholder |
+| `trim_new`, `trim_new_primaries` | 1-99 percentile trim in every observed dimension, on `sc_straighter` / `sc_straighter_primaries` |
+| `phot` | isochrone photometry: `G`, `BP_RP`, `z` (absolute), `mG`, `mz` (apparent), `log_Teff` |
+| `noise` | isochrone-based noise: sampled `phi1`, `phi2` [deg], `pm_phi1`, `pm_phi2` [mas/yr], `v_gsr_via`, `v_gsr_via10hr`, `v_gsr_desi` [km/s]; 1 sd errors `rverr_via`, `rverr_via10hr`, `rverr_desi` [km/s], `pm_err_gaia` [**µas/yr**] |
+| `ontrack_velocity[_primaries]` | \|`sc_straighter[_primaries]['v_gsr']`\| < 30 km/s (true velocities, Jarvis+26-like) |
+| `cut_for_catalog_photometry[_primaries]` | `unbound & trim_new[_primaries] & nonrem & ontrack_velocity[_primaries]`: the pool eligible for catalog photometry |
+| `catalog_photometry[_primaries]` | same keys as `phot` plus `iso_dist` and `catalog_index`; NaN outside the matched stars |
+| `matched_to_catalog_photometry[_primaries]` | True where a catalog row was assigned. ⚠️ length **`cut.sum()`**, not N (6273 / 6251 here) |
+| `noise_catalog_photometry[_primaries]` | same keys and units as `noise`, recomputed from `catalog_photometry[_primaries]`; NaN where unmatched |
+
+- `matched_to_catalog_photometry` is indexed within `cut_for_catalog_photometry`. `gmm.py` expands it with `matched_full = zeros(N); matched_full[cut] = matched`, and `np.isfinite(catalog_photometry['mG'])` gives the same full-length mask.
+- `catalog_photometry['catalog_index']` comes out **float64** (the placeholder dict is `np.full(..., nan)`): -1 for unmatched stars inside `cut`, NaN outside `cut`. cast it before using it as an index.
+- what each step does is under `final_datasets.py` and its catalog photometry subsection.
 
 
 # supplemental simulations
@@ -145,7 +205,7 @@ the live ones, collected here. details are in each script's section below.
   ```
   only the noisy tables need refitting: noiseless fits never use photometry or noise, and `jarvis26` has no photometry step. the Via tables are the ones that change (Via errors depend on `log_Teff`). the DESI ones should come out the same (Jarvis `V_ERR`s by rank, no Teff dependence); refit them only so every table comes from the same pickles. there's no `via10hr` table on disk.
 - **binaries selection effect (for the paper):** the noisy `binaries` cocoons are much hotter in v_gsr than the noiseless one, mostly because the bright catalog-matched stars are ~2x as binary-rich, not because of noise. keeping it in the observed cases; still to do: a "noiseless, observed stars" `gmm.py` case, and checking that the sim's binary fraction vs mass is realistic. see "binaries in the observed samples" in the GMM section.
-- **sigma_binary is mis-specified for a heavy-tailed dv:** one gaussian sigma_binary in quadrature on every non-repeat star over-corrects when few of them are binaries and the binary excess is small; on the nominal DESI sample at 0.75 pc and f_repeat = 0.2 the single-component fit collapses to 0. options: a per-star binary term (a mixture: binary with probability f_bin from the repeats, else 0), a heavier-tailed (e.g. student-t) excess, or fitting the dv distribution from the repeats. see `single_component_comparisons_mockobs.py`.
+- **sigma_binary is mis-specified for a heavy-tailed dv:** one gaussian sigma_binary on every star, fit from two-epoch RVs (the current multi-epoch likelihood), drives the stream dispersion to 0 at every rvir0 and f_repeat: a few fast binaries set sigma_binary and it then over-explains everyone else. a per-star mixture (binary with probability f_b, free, else no binary term) recovers sigma_stream to within ~0.1-0.35 km/s in a scratch test; put it in `single_component_comparisons_mockobs.py` (`multiepoch_nll_per_star` is the building block: logaddexp of it with sigma_binary and with 0). alternatives: a heavier-tailed (e.g. student-t) binary term, or a dv distribution from the sim. also: rerun `final_datasets.py` so the pickles carry the petar `binaries`. see `single_component_comparisons_mockobs.py`.
 - **cocoon populations:** the cocoon's systems are more often binaries, more massive and brighter than the thin stream's (consistent with Weatherford+2025's mass-segregation/ejection selection effect). only shown for GD-1 so far: run the f_bin / <G> / <M_sys> cells on the other orbits, and decide whether the `'fitted'` <M_sys> needs asymmetric/bootstrap errors. see "thin stream vs cocoon populations" under `results.py`.
 - **`gmm.py` / model choice:** `gmm.py` fits a single gaussian too and writes `BIC_one` / `BIC_two` columns (see the model choice section). `BIC_one < BIC_two` = one component preferred = a **non-detection of a cocoon**. still to do: make sure every table has the columns, use them in `results.py`, and maybe save the one-component params, `N = len(x_data)` and `result.fun` too. this matters more with catalog photometry, because the noisy fits have N = 46 (c19), 129 (pa5), 144 (jet), 334 (aau), 1578 / 679 (gd1 via / desi), and several of the small-N fits have already come out degenerate (see the GMM results bullet in the bugs list).
 - `gmm.py`: AAU at rvir0 = 6 pc gives a weird result; traced to the 2 rtid tidal boundary, and the decision is to live with it rather than relax the cut.
@@ -170,7 +230,9 @@ the live ones, collected here. details are in each script's section below.
   - `noiseless_{CoM,binaries}[_supplemental]`: noiseless fits (don't depend on photometry or noise draws).
   - `desi_noise_{CoM,binaries}[_supplemental]`, `via_noise_{CoM,binaries}`: catalog photometry, `x_err`, unconstrained. grid ones on seed-0 draws, supplemental on seed 42. only `via_noise_binaries` has been refit on the current (colour-Teff) pickles; see the TODO.
   - `jarvis26`: the fit to the real Jarvis+26 data.
-  - `desi_noise_nominal_repeatfracscan`: from `single_component_comparisons_mockobs.py`.
+  - `desi_noise_nominal_multiepoch_scan_{fit_shared,fit_indep,dv_deconvolved,dv_raw,dvcom_deconvolved,dvcom_raw,dvcom_noiseless,avg,flag_avg,flag_ep0}`: from `single_component_comparisons_mockobs.py`, one per binary treatment (`fit_indep`: only its total width is meaningful; `dvcom_*`: one epoch, dv vs the true CoM v; `dvcom_noiseless`: dv without noise; `avg`: two-epoch means; `flag_*`: RV-variable repeats removed, `flag_ep0` biased low).
+  - `desi_noise_nominal_multiepoch_scan[_indep]`: the same numbers under older column names; superseded, nothing reads them.
+  - `desi_noise_nominal_repeatfracscan`: the previous version of that experiment; no longer read or written.
   - superseded, not read or written by anything: `desi_noise_brightest160_repeat34`, `desi_noise_brightest160_repeatscan`.
 - `data_dicts/`: empty. the pickles actually live on scratch (see logistics).
 - `particle_sprays/`: the gala particle sprays from `particle_spray.py`, `spray_<orbit>_hm_0.75_<copy>.h5` (~30-45 MB each). **in `.gitignore`** because they're large, so they only exist where they were generated -- rerun `sbatch particle_spray.slurm` to rebuild them. `logs/` holds the slurm logs (`out.<array index>`) and has to exist before submitting.
@@ -216,7 +278,7 @@ python particle_spray_vs_nbody.py -i 170         # one frame (~12 s); index = pe
 - `paf.gen_stream` is the older wrapper (int `release_every`, scalar mass, Plummer b = 0.75 pc default); the movie script doesn't use it.
 
 ## `/plots`
-`summary_<case>.pdf` and friends, made by `results.py` (the `savefig` lines there are mostly commented out, so these are only regenerated by hand). `fig1_motiv_*.pdf` is from `motivation.py`. `jarvis_comparison_single_component*.pdf` and `gd1_desi_*repeat*scan.pdf` are from `single_component_comparisons_mockobs.py` (its `savefig`s are commented out too). `orbit_summary.pdf` is from `get_init_displacements.py`. `plots/old/` is from the hand-cut and early-GMM era.
+`summary_<case>.pdf` and friends, made by `results.py` (the `savefig` lines there are mostly commented out, so these are only regenerated by hand). `fig1_motiv_*.pdf` is from `motivation.py`. `jarvis_comparison_single_component*.pdf` and `gd1_desi_nominal_multiepoch_scan.pdf` are from `single_component_comparisons_mockobs.py` (its `savefig`s are commented out too; `gd1_desi_*repeat*scan.pdf` are from its previous version). `orbit_summary.pdf` is from `get_init_displacements.py`. `plots/old/` is from the hand-cut and early-GMM era.
 
 ## `get_init_displacements.py`
 integrates every orbit in `FINAL_ics_nolmc.csv` for peri/apo/e (`plots/orbit_summary.pdf`), then back-integrates the run orbits by age + 100 Myr and writes `data/init_displacements.txt` (pc, km/s) for `petar.init`.
@@ -269,29 +331,7 @@ assembles one data dictionary per simulation and pickles it. imports `paf`, `sim
 - noise realizations are drawn here, once, from one `default_rng(seed=0)` for the grid (the supplemental loop uses 42, one fresh generator per sim; see the seed TODO), and saved, so every `gmm.py` case sees the same draw. order on the generator, per sim: isochrone noise, then CoM-trim catalog noise, then `_primaries` catalog noise (and `survey_noise` itself draws via, via10hr, desi, pm_phi1, pm_phi2, phi1, phi2 in that order). so changing anything upstream changes every realization after it, and the generator carries over between grid sims.
 - **output:** `/n/netscratch/conroy_lab/Lab/amphillips/p27_data_dicts/<orbit>_<rvir:.2f>.pickle` (the grid set was last written 4 Nov 2026). note the filename has no stellar_pop in it, so an `lm` run would overwrite the `hm` pickles. and it's netscratch, so the 90-day purge applies.
 
-what's in each pickle -- the `intrinsic_stream_data_v3` dict (so `CoM`/`luminous`/`companions` subdicts, `nsingles`, `nbinaries`, `IDs`, ...) plus:
-
-| key | what | length |
-|---|---|---|
-| `coords_obs` | CoM `SkyCoord` in the observed frame | N = nsingles + nbinaries |
-| `sc_straighter` | straightened coord dict, CoM | N |
-| `sc_straighter_primaries` | straightened coord dict, primary RV/phi2/distance + CoM PMs | N |
-| `unbound` | `~CMdict['in_rtid']` at 2 rtid | N |
-| `nonrem` | `lumdict['type'] < 10` | N |
-| `alive` | on the isochrone's initial-mass range | N |
-| `acceptable_G` | 5 < mG < 30 (viamock's range) | N |
-| `inMW_na`, `trim_new` | all-True placeholder; the percentile trim on CoM coords (used by `CoM` cases) | N |
-| `trim_new_primaries` | the percentile trim on `sc_primaries`, i.e. with binary orbital motion (used by `binaries` cases) | N |
-| `phot` | isochrone photometry: `G`, `BP_RP`, `z`, `mG`, `mz`, `log_Teff` (absolute unless prefixed `m`) | N |
-| `noise` | isochrone-based noise: sampled `phi1`, `phi2` [deg], `pm_phi1`, `pm_phi2` [mas/yr], `v_gsr_via`, `v_gsr_via10hr`, `v_gsr_desi` [km/s]; errors `rverr_via`, `rverr_via10hr`, `rverr_desi` [km/s], `pm_err_gaia` [**µas/yr**] | N |
-| `ontrack_velocity` | `abs(sc_straighter['v_gsr']) < 30` km/s (Jarvis+26-like, true velocities before noise) | N |
-| `cut_for_catalog_photometry` | `unbound & trim_new & nonrem & ontrack_velocity`, the pool eligible for catalog photometry | N |
-| `catalog_photometry` | same keys as `phot` plus `iso_dist` and `catalog_index`; NaN outside the matched stars | N |
-| `matched_to_catalog_photometry` | True where a catalog row was assigned | ⚠️ **`cut.sum()`**, not N |
-| `noise_catalog_photometry` | same keys and units as `noise`, recomputed from `catalog_photometry`; NaN where unmatched | N |
-| `cut_for_catalog_photometry_primaries`, `catalog_photometry_primaries`, `matched_to_catalog_photometry_primaries`, `noise_catalog_photometry_primaries` | the same four, with `trim_new_primaries` in place of `trim_new` in the cut | as above (`matched_*` is `cut_primaries.sum()`) |
-
-all of these except the `matched_to_catalog_photometry*` keys are in the *same* (untrimmed, pre-`[inMW][trim]`) CoM/luminous ordering, so they combine with plain `&`. `matched_to_catalog_photometry` is indexed within `cut_for_catalog_photometry`. `gmm.py` expands it with `matched_full = zeros(N); matched_full[cut] = matched`, and `np.isfinite(catalog_photometry['mG'])` gives the same full-length mask. `catalog_photometry['catalog_index']` comes out **float64** (the placeholder dict is `np.full(..., nan)`): -1 for unmatched stars inside `cut`, NaN outside `cut`. cast it before using it as an index.
+every key in the pickle (with lengths, units and the ordering gotchas) is in the "what's in a data_dict" section near the top.
 
 ### catalog photometry (the live noisy path)
 per sim, after the isochrone photometry, and **twice**: once with `trim_new` (keys as named) and once with `trim_new_primaries` (keys suffixed `_primaries`). it's a loop over `[(trim_new, ''), (trim_new_primaries, '_primaries')]`. the two pools differ slightly, so the catalog rows go to slightly different N-body stars, but the sample size is `len(catalog)` either way.
@@ -410,26 +450,83 @@ sbatch particle_spray.slurm                                        # all five as
 - the slurm script is the same template as the movie jobs (`petar_env`, conroy/itc_cluster/shared/sapphire, intel), 4G / 3 hr per task, logs to `data/particle_sprays/logs/out.<index>`. runtime without the Plummer hasn't been timed (with it: 3-4 min per stream, Pal 5 > 9 min).
 
 ## `single_component_comparisons_mockobs.py`
-the repeat-RV / sigma_binary experiment (single-gaussian fits to a DESI-like GD-1 sample, with some stars' binary motion removed by "repeat RVs"), plus the single-component Jarvis comparison figure (`plots/jarvis_comparison_single_component[_with_errs].pdf`) that plots it. imports `measurement_errors`, `binary_excess_array`, `pack_params`, `unpack_params`, `nll_flat`, `N_jarvis` from `gmm`. the cells after the experiment only read tables, so they can be re-run on their own once the table exists (run the imports/settings cells first). both `savefig` calls are commented out.
-- the sample: GD-1, DESI noise, binaries case, **the nominal DESI sample**, i.e. exactly `gmm.py`'s `desi` `use` mask with `include_binaries=True` (the `N_jarvis` = 679 brightest in catalog mG, rverr < 10, matched, good PMs, nonrem): 679 stars at every rvir0. one gaussian in (phi2, v_gsr) with `x_err`.
-- **the scan:** repeat fraction `f_repeat` = 0.2, 0.3, ..., 1.0 (`f_repeat_nominal = 0.2` ~ Nibauer+26's 35/160), N_repeat = round(f_repeat x 679). for each of 200 draws, one random permutation is shared by every f_repeat, so the repeat samples are **nested** (each step adds 10% of the stars). the binaries among the repeats get CoM RVs; `sigma_binary` (`'rms_dv'`) from the repeats is added in quadrature for the rest.
-- output: `data/gmm_tables/desi_noise_nominal_repeatfracscan.fits`, one row per (rvir, f_repeat): `N_obs`, `f_repeat`, `N_repeat`, `n_draws`, `f_bin`, `n_bin_fixed_mean`, `S_true` / `S_none` / `S_all` (2-vectors in (phi2, v_gsr) order; noiseless CoM, DESI none corrected, DESI all corrected), `S_phi2`, `S_vgsr_repeat[_p16,_p84]` (repeats only), `sigma_binary[_p16,_p84]`, `sigma_binary_allN`, `S_vgsr_repeat_sb[_p16,_p84]` (repeats + sigma_binary). header keys `KEYS`, `SBMETHOD`, `NESTED`, `SAMPLE`. plot `plots/gd1_desi_nominal_repeatfracscan.pdf` = sigma_v_gsr vs f_repeat, one panel per rvir0. ~7 min.
-- the Jarvis comparison figure draws the `f_repeat_plot` rows of the scan table (currently **0.7**; `f_repeat_nominal` = 0.2 is the Nibauer+26-like value), labelled "analogous binary accounting to Nibauer+26". `gd1_color` is recomputed with `results.py`'s orbital-phase ordering (`#E84855`). the annotation offsets are hand-tuned, so check them when `f_repeat_plot` changes (at 0.2 the 0.75 pc point sits at ~0 and that label overlaps "thin component only").
+the multi-epoch / sigma_binary experiment: single-component fits to a DESI-like GD-1 sample in which a fraction f_repeat of the stars have a second RV epoch, with sigma_binary either **fit** as a free parameter (Nibauer+26-like) or **estimated** from the repeats' epoch-to-epoch dv. plus the single-component Jarvis comparison figure (`plots/jarvis_comparison_single_component[_with_errs].pdf`) that plots it. imports `measurement_errors`, `binary_excess_array`, `pack_params`, `unpack_params`, `nll_flat`, `N_jarvis` from `gmm`; the multi-epoch likelihood lives in this script, not in `gmm.py`. the cells after the experiment only read tables, so they can be re-run on their own once the table exists (run the imports/settings cells first). both `savefig` calls are commented out. the whole script runs in ~1-2 min.
 
-**nominal DESI sample, f_repeat scan** (median sigma_v_gsr [km/s], repeats + sigma_binary, [16-84%] over 200 draws; "all" = every binary corrected, the noise-limited target; median DESI rverr 3.1 km/s):
+**which measurement: settings cell.**
 
-| rvir0 | truth | all | none | f_bin | 0.2 | 0.3 | 0.5 | 0.7 | 0.9 |
-|---|---|---|---|---|---|---|---|---|---|
-| 0.75 | 0.84 | 0.48 | 1.67 | 0.23 | 0.01 [0.00-0.71] | 0.22 [0.00-0.56] | 0.35 [0.00-0.54] | 0.41 [0.01-0.55] | 0.46 [0.38-0.52] |
-| 1.5 | 0.67 | 0.64 | 3.23 | 0.25 | 1.26 [0.44-2.21] | 0.96 [0.52-1.73] | 0.74 [0.55-1.14] | 0.68 [0.56-0.83] | 0.66 [0.59-0.71] |
-| 3 | 0.52 | 0.52 | 2.82 | 0.30 | 1.41 [0.31-2.26] | 0.98 [0.41-2.01] | 0.68 [0.43-1.35] | 0.56 [0.45-0.77] | 0.52 [0.48-0.61] |
-| 6 | 0.39 | 0.51 | 2.95 | 0.32 | 0.46 [0.00-1.55] | 0.46 [0.22-0.92] | 0.50 [0.36-0.67] | 0.51 [0.42-0.61] | 0.51 [0.47-0.55] |
+| setting | options | what |
+|---|---|---|
+| `sb_mode` | `'fit'` (in the file), `'dv'`, `'avg'`, `'flag'` | `'fit'`: sigma_binary a free parameter of the two-epoch likelihood (`fit_multiepoch`), jointly with sigma_stream. `'dv'`: sigma_binary estimated from the repeats' dv (`estimate_sigma_binary_dv`), then one gaussian on epoch 0 with it in quadrature on every star (the "old way"). `'avg'`: no sigma_binary; repeat stars' velocity = the mean of their two epochs (error rverr/sqrt 2, `average_epochs`), non-repeats epoch 0; one gaussian. `'flag'`: no sigma_binary; repeat stars that `paf.get_detections` calls RV variable (chi^2 of the epochs about their mean, p < 0.1, hardcoded there) are removed (`flag_rv_variable`), one gaussian on the rest. `'avg'` and `'flag'` need `multi_epoch = True` |
+| `flag_average` | `True` (in the file), `False` | `'flag'` only: unflagged repeat stars use their two-epoch mean (`True`) or epoch 0 (`False`); non-repeats always epoch 0 (they can't be flagged) |
+| `run_scan` | `True` (in the file), `False` | top of the scan cell: `False` skips the scan and the plot cells just read the current settings' table |
+| `shared_stream` | `True` (in the file), `False` | `'fit'` only: the shared stream term, or every epoch independent (the Nibauer+26 form, degenerate) |
+| `sb_dv_method` | `'deconvolved'` (in the file), `'raw'`, `'noiseless'` | `'dv'` only: which dv estimator. `'noiseless'` only with `multi_epoch = False` (raises otherwise): std of the true binary motion `v_pri - v_com` over the repeats, no noise anywhere |
+| `multi_epoch` | `False` (in the file), `True` | `True`: two mock epochs on Keplerian RV curves; `'dv'` uses dv = epoch 1 - epoch 0 of the repeats. `False`: **one** observed epoch = the sim's instantaneous primary v_gsr + the saved DESI noise draw (`v_pri + v_noise`); `'dv'` uses dv = observed epoch - **true, noiseless CoM v_gsr** of the repeats (`estimate_sigma_binary_com`), as if the repeats had pinned down each CoM velocity exactly. `'fit'` raises with `multi_epoch=False` (nothing to fit sigma_binary from) |
 
-- at f_repeat = 0.2 (136 repeats) the answer still depends a lot on which stars get repeats: the 16-84% range is ~2 km/s wide at 1.5-6 pc. the median is within ~10% of "all" by f_repeat ~0.5-0.7 (1.5, 3 pc), and already at 0.2 for 6 pc.
-- **0.75 pc goes the other way: sigma_binary over-corrects**, and at f_repeat = 0.2 the median fit collapses to 0. its sigma_binary (2.4 km/s, about what the other rvir0 give) is applied to all 543 non-repeat stars, but only ~23% of them are binaries and dv is heavy-tailed, so most stars get far too much extra variance. on top of 3.1 km/s errors that leaves nothing for the intrinsic width. so a single gaussian sigma_binary in quadrature is mis-specified for a heavy-tailed dv, and it fails worst where the true binary excess is smallest (here "none" is only 1.67). it converges from below as f_repeat -> 1.
-- repeats only (no sigma_binary) falls roughly linearly in f_repeat, and stays well above "all" until f_repeat ~0.9.
-- at 0.75 pc "all" (0.48) is well below the noiseless truth (0.84), and at 6 pc a little above (0.51 vs 0.39): the DESI noise draw, not the binary correction. compare to "all" for convergence.
-- (an earlier version with the 160 brightest stars and N_repeat = 35-160 is in the log, 15 Nov.)
+the file currently has `multi_epoch = True`, `sb_mode = 'fit'`, `shared_stream = False`, `sb_dv_method = 'deconvolved'`, `flag_average = True`, `run_scan = True`.
+
+each combination writes its own table, `desi_noise_nominal_multiepoch_scan_<tag>.fits`, with `<tag>` = `fit_shared`, `fit_indep`, `dv_deconvolved`, `dv_raw` (two epochs), `dvcom_deconvolved`, `dvcom_raw`, `dvcom_noiseless` (one epoch, dv vs the CoM), `avg`, `flag_avg`, `flag_ep0` (`scan_tag`). for `'avg'` / `'flag'` the `sigma_binary*` columns are NaN, `S_all` is the two-epoch mean of every star at its CoM v, and there's `N_fit_mean` (stars in the fit); `'flag'` also has `n_flagged_mean`, `n_flagged_bin_mean`, `n_flagged_single_mean` (flagged repeats; true binaries; singles, i.e. false positives) and headers `FLAGTEST`, `FLAGAVG`. the plot cells and the Jarvis figure read the table of the current settings (`scan_name`), and the measurement is in the same columns in every mode, so they work unchanged. all ten tables exist.
+- **the sample:** GD-1, DESI noise, binaries case, **the nominal DESI sample**, i.e. exactly `gmm.py`'s `desi` `use` mask with `include_binaries=True` (the `N_jarvis` = 679 brightest in catalog mG, rverr < 10, matched, good PMs, nonrem): 679 stars at every rvir0. the selection is still the primaries one, made with the sim's instantaneous primary v_gsr (`ontrack_velocity_primaries`, `trim_new_primaries`), even though the mock RVs below replace that binary motion with a synthetic one.
+- **the mock RVs** (`load_mock_sample(rvir, multi_epoch=True, rng=None, dt_mean_yr, dt_sd_yr)`; `multi_epoch=False` returns only the single-snapshot keys): every binary gets a Keplerian RV curve about its **noiseless CoM v_gsr** (`sc_straighter['v_gsr']`), from `paf.get_orbital_params_from_binaries` (petar `semi`, `ecc`, masses; isotropic inclination, uniform periapsis argument and phase) and `paf.get_rvs`. singles sit at their CoM v_gsr. two epochs, t = 0 and Delta t ~ N(1 yr, 2 months) (`dt_mean_yr`, `dt_sd_yr`). each epoch gets a **fresh** DESI noise draw, N(0, `rverr_desi`), not the saved one. returns `t_obs`, `v_epochs_true`, `v_epochs_noise`, `v_epochs_obs` (all (N_obs, 2), days / km/s), `rverr`, `orb_params` (the sample's binaries, `[v0, K, w, phi0, e, P/day]`), plus the old single-snapshot keys.
+  - the petar `Binary` object comes from `load_present_day_binaries(dd, rvir)`: `dd['binaries']` if the pickle has it (none do yet), else the first grid copy whose present-day `data.<age/10>.binary` has the same binaries as the pickle (same count, same p1 ids in order; that's copy 0 for all four GD-1 rvir0). row j of the pickle's binaries is `binaries[j - nsingles]`.
+  - `calc_amplitude` (and so K) is the orbit of the **heavier** star, `a1 = (M_light/M_tot) a`, whatever the luminous component is.
+- **the likelihood** (`multiepoch_nll_per_star`, `nll_multiepoch`, `fit_multiepoch`): star i's epochs are one draw from the stream, shared by its epochs, plus independent binary motion and noise per epoch:
+
+      v_i ~ MVN(mu 1, C_i),   C_i = diag(err_ik^2 + sigma_binary^2) + sigma_stream^2 1 1^T
+
+  evaluated with Sherman-Morrison, any number of epochs. one epoch reduces to N(mu, err^2 + sigma_binary^2 + sigma_stream^2). a star without a second epoch gets `missing_epoch_err` = 1e4 km/s on it (`epoch_arrays(v_epochs, rverr, repeat)` builds the (N, 2) arrays), so it drops out. the within-star scatter constrains sigma_binary, the between-star scatter sigma_stream^2 + sigma_binary^2. sigma_binary is applied to **every** star.
+  - **`shared_stream`** (with `sb_mode = 'fit'`) picks the likelihood. `True` = the shared stream term above. `False` = every epoch independent, prod_k N(v_ik | mu, err_ik^2 + sigma_binary^2 + sigma_stream^2), the form in Nibauer+26 as written. (Nibauer+26 put a half-normal prior with scale 10 km/s on sigma_binary and sample with NUTS; with this likelihood the prior is the only thing that can split the total width.)
+  - **in the independent form sigma_binary and sigma_stream are exactly degenerate**: the likelihood only depends on sigma_binary^2 + sigma_stream^2. checked on the 3 pc sample (f_repeat 0.5): the nll is identical to 1e-6 at every split of the best-fit total (5.67 km/s), from (sigma_stream, sigma_binary) = (0, 5.67) to (5.67, 0). in the scan the split is wherever the optimizer stops, so the `fit_indep` table's `S_vgsr` / `sigma_binary` jump around between f_repeat and draws, while their quadrature sum equals `S_vgsr_nosb` (e.g. 1.5 pc, f_repeat 1: hypot(2.30, 4.05) = 4.66 = `S_vgsr_nosb`). so the `fit_indep` table measures only the total width. the same nll evaluated with the shared term does prefer a split (best of those five at 4.9 / 2.8).
+  - `fit_multiepoch(v, v_err, sigma_binary=None, shared_stream=True)` -> `mu, sigma_stream, sigma_binary, result`. `sigma_binary=None` fits it, a number holds it fixed. theta = [mu, ln sigma_stream(, ln sigma_binary)], ln sigma bounded to [-10, 6]. runs **L-BFGS-B and Nelder-Mead** and keeps the lower nll. **not Powell**: its first line search throws ln sigma_stream onto the lower bound, where the likelihood is flat, and it stays there (nll 8 worse than the truth on synthetic data).
+  - checked: matches `scipy.stats.multivariate_normal` per star; on synthetic data with gaussian binary motion (N = 3000, sigma_stream 0.8, sigma_binary 2.0) it recovers 0.81 / 1.96 with every star repeated and 0.89 / 1.94 at f_repeat = 0.2.
+- `fit_one_component(x, xe, sb=None)`: single-epoch one gaussian via `gmm.nll_flat`, used for phi2, the noiseless truth, and the "old way" below (`sb` = a fixed sigma_binary array from `gmm.binary_excess_array`).
+- **the "old way", sigma_binary estimated, not fit:** `estimate_sigma_binary_dv(v_epochs, rverr, repeat, method)` takes the repeat stars' observed dv = v_1 - v_0 (binaries: two noised RV-curve points; singles: two noise draws). `'deconvolved'` (default) = sqrt((var(dv) - mean(2 rverr^2))/2): noise subtracted, and /2 for a difference of two epochs, so it's the per-epoch binary term alone. `'raw'` = std(dv), which still has sqrt(2) x the noise in it and double counts the errors on top of `x_err`. then one gaussian in (phi2, v_gsr) on **epoch 0 of every star**, with `x_err` and that sigma_binary in quadrature on **every** star (nobody's binary motion is removed). this is `sb_mode = 'dv'`, with `sb_dv_method` picking the estimator. with `multi_epoch = False` it's `estimate_sigma_binary_com(v_obs, v_com, rverr, repeat, method)` instead: dv = the one observed epoch (`v_pri + v_noise`) - the true CoM v; `'deconvolved'` = sqrt(var(dv) - mean(rverr^2)) (one noise term: no factor 2, no /2), `'raw'` = std(dv), `'noiseless'` = std(`v_true - v_com`) with `v_true` = `v_pri`, the epoch without noise (the function's `v_true` kwarg); the fit is then on that observed epoch (with noise) for every star, sigma_binary on every star. also an **oracle**, computed in every mode: the same fit with sigma_binary = the true rms binary motion at epoch 0 over the sample, the best a gaussian-in-quadrature sigma_binary can do.
+- **the scan:** repeat fraction `f_repeat` = 0.2, 0.3, ..., 1.0 (`f_repeat_nominal = 0.2` ~ Nibauer+26's 35/160), N_repeat = round(f_repeat x 679). the RV curves and noise are drawn once per rvir0 (`rng_exp`, seed 1); then for each of `n_draws` (currently 10) draws, one random permutation is shared by every f_repeat, so the repeat samples are **nested** (each step adds 10% of the stars). the draws don't depend on the mode, so the four tables are on identical mock data. each draw makes the `sb_mode` measurement (for `'fit'` also the same fit with sigma_binary = 0).
+- output: `data/gmm_tables/desi_noise_nominal_multiepoch_scan_<tag>.fits`, one row per (rvir, f_repeat): `N_obs`, `f_repeat`, `N_repeat`, `n_draws`, `f_bin`, `n_bin_repeat_mean`, `S_true` / `S_none` / `S_all` (2-vectors in (phi2, v_gsr) order: noiseless CoM; DESI epoch 0 only with binary motion, sigma_binary = 0; DESI at CoM v with sigma_binary = 0, the noise-limited target: both epochs for `'fit'`, epoch 0 for `'dv'`), `S_phi2`, **`S_vgsr[_p16,_p84]`** (the stream sigma_v_gsr of the `sb_mode` measurement) and **`sigma_binary[_p16,_p84]`** (fitted, or estimated from dv), `S_vgsr_nosb[_p16,_p84]` (`'fit'` only, sigma_binary = 0), `sigma_binary_rms` (rms binary motion over every star and epoch), `sigma_binary_rms_diff` (rms(dv_1 - dv_0)/sqrt 2, the part a second epoch sees), `sigma_binary_oracle` / `S_vgsr_sboracle`. header keys `KEYS`, `NESTED`, `SAMPLE`, `DTMEANYR`, `DTSDYR`, `MISSERR`, `SBMODE`, and `LIKELIHD` (`'fit'`) or `SBDVMETH` (`'dv'`). plots: sigma_v_gsr vs f_repeat, one panel per rvir0 (`plots/gd1_desi_nominal_multiepoch_scan_<tag>.pdf`, savefig commented out); sigma_binary vs f_repeat.
+- superseded tables, same numbers under the older column names, nothing reads them: `desi_noise_nominal_multiepoch_scan.fits` (fit_shared + both dv estimators in one table) and `desi_noise_nominal_multiepoch_scan_indep.fits` (fit_indep).
+- the Jarvis comparison figure draws `S_vgsr` from the current settings' table at the `f_repeat_plot` rows (currently **0.7**), labelled "analogous binary accounting to Nibauer+26". `gd1_color` is recomputed with `results.py`'s orbital-phase ordering (`#E84855`). the annotation offsets are hand-tuned for the old repeat-fraction numbers. `fit_shared` and both `dv` tables are ~0 (below), so that series sits on the x axis.
+
+**result (`fit_shared`): with one gaussian sigma_binary on every star, sigma_stream goes to 0** at every rvir0 and every f_repeat (median over draws; at f_repeat ≥ 0.5 the 16-84% range is 0 too, except 0.75 pc). sigma_binary absorbs everything. (km/s; 10 draws.)
+
+| rvir0 | truth | 2 epochs, CoM ("all") | 1 epoch, binaries in | f_bin | rms dv / epoch-to-epoch | sigma_stream at 0.2 / 0.5 / 1.0 | sigma_binary at 0.2 / 0.5 / 1.0 | sigma_stream with sb = 0, at 1.0 |
+|---|---|---|---|---|---|---|---|---|
+| 0.75 | 0.84 | 0.64 | 2.16 | 0.23 | 3.15 / 3.22 | 0.00 / 0.12 / 0.00 | 2.23 / 2.61 / 2.48 | 1.62 |
+| 1.5 | 0.67 | 0.65 | 4.98 | 0.25 | 4.21 / 4.57 | 0.00 / 0.00 / 0.00 | 4.68 / 4.87 / 4.66 | 3.19 |
+| 3 | 0.52 | 0.35 | 4.87 | 0.30 | 4.26 / 5.36 | 0.00 / 0.00 / 0.00 | 4.60 / 4.87 / 4.95 | 2.05 |
+| 6 | 0.39 | 0.48 | 2.90 | 0.32 | 4.01 / 4.32 | 0.00 / 0.00 / 0.00 | 2.99 / 3.35 / 3.34 | 1.80 |
+
+- why: the binary motion is heavy-tailed. 68-77% of the sample are singles with dv = 0, and a few binaries move by tens of km/s between epochs. the likelihood is dominated by those few large epoch differences, so it fits a sigma_binary of 2-5 km/s, and applying that to **every** star already over-explains the between-star scatter, leaving nothing for the stream. the code is fine: the same fit recovers sigma_stream when the binary motion really is gaussian. it's the same mis-specification as the old in-quadrature approach (see the TODO).
+- holding sigma_binary at 0 instead leaves the binaries in the stream width (1.6-3.2 km/s at f_repeat = 1).
+- scratch test, **not in the script**: a per-star mixture (a star is a binary with probability f_b and gets C = diag(err^2 + sigma_b^2) + sigma_stream^2 11^T, else diag(err^2) + sigma_stream^2 11^T; f_b free) gives sigma_stream 0.67-0.90 / 0.87-0.95 / 0.60-0.65 / 0.72-0.77 km/s at 0.75 / 1.5 / 3 / 6 pc for f_repeat 0.2-1.0 (truths 0.84 / 0.67 / 0.52 / 0.39), with f_b ~ 0.02-0.06 and sigma_b ~ 15-21 km/s: it finds the few fast binaries and leaves the rest alone. 5 draws, unconverged scatter not quantified.
+- "all" differs from the noiseless truth (0.35 vs 0.52 at 3 pc, 0.48 vs 0.39 at 6 pc): the noise draw on 679 stars with median rverr 3.1 km/s.
+
+**the old way (`dv_deconvolved`, `dv_raw`: sigma_binary estimated from the repeats' dv, in quadrature on every star, epoch 0) also gives ~0**, and so does the oracle with the exact sigma_binary (km/s; median over 10 draws; f_repeat 0.2 / 0.5 / 1.0):
+
+| rvir0 | truth | oracle sigma_binary -> sigma_v_gsr | `dv_deconvolved` sigma_binary | `dv_deconvolved` S_vgsr | `dv_raw` sigma_binary | `dv_raw` S_vgsr |
+|---|---|---|---|---|---|---|
+| 0.75 | 0.84 | 3.42 -> 0.00 | 3.75 / 3.28 / 3.22 | 0.00 / 0.00 / 0.00 | 8.43 / 7.89 / 7.93 | 0 / 0 / 0 |
+| 1.5 | 0.67 | 4.24 -> 2.62 | 5.55 / 5.53 / 4.80 | 0.00 / 0.00 / 1.33 | 10.4 / 10.1 / 9.4 | 0 / 0 / 0 |
+| 3 | 0.52 | 4.23 -> 2.41 | 3.54 / 5.01 / 5.34 | 3.34 / 0.24 / 0.00 | 8.0 / 9.6 / 10.0 | 0 / 0 / 0 |
+| 6 | 0.39 | 3.87 -> 0.00 | 3.72 / 4.50 / 4.03 | 0.00 / 0.00 / 0.00 | 8.0 / 9.0 / 8.6 | 0 / 0 / 0 |
+
+- the deconvolved estimator gets sigma_binary about right (within ~1 km/s of the oracle at f_repeat ≥ 0.5); the raw one is ~2x too big and always gives 0.
+- **the oracle failing means it isn't the sigma_binary estimate, it's subtracting binaries in quadrature at all.** the stream variance (0.15-0.7 km^2/s^2) is a few % of the binary term (~10-30 km^2/s^2), and the random cross terms in the realised sample are bigger than it: the noise x binary term 2 <e b> alone scatters by ~2 x 3.1 x 4/sqrt(679) ~ 1 km^2/s^2. the gaussian fit also weights stars by 1/(err^2 + ...), so it measures a weighted width, not the variance sigma_binary describes, and the brighter (smaller-error) stars are the more binary-rich ones. which way it misses (0, or 2.4-2.6 km/s) depends on the draw.
+- **one epoch, dv vs the true CoM** (`dvcom_*`, the sim's instantaneous binary motion + the saved noise; f_repeat 0.2 / 0.5 / 1.0): `dvcom_deconvolved` sigma_binary 2.5-3.6 km/s against a true rms of 2.37-3.06, S_vgsr 0 at 0.75 / 3 / 6 pc and 2.03 / 1.44 / 0.65 at 1.5 pc (truth 0.67); the oracle gives 0.00 / 1.64 / 1.53 / 0.00. `dvcom_raw` sigma_binary 5.1-6.0, S_vgsr 0 everywhere. `dvcom_noiseless` (sigma_binary from the true binary motion of the repeats): sigma_binary 2.0-3.2, and at f_repeat = 1 it equals the true rms and S_vgsr equals the oracle exactly (0.00 / 1.64 / 1.54 / 0.00 at 0.75 / 1.5 / 3 / 6 pc, truths 0.84 / 0.67 / 0.52 / 0.39); at f_repeat 0.2 / 0.5, S_vgsr 0.00 / 0.00, 2.17 / 2.01, 1.94 / 1.63, 0.43 / 0.00. so even a perfectly known sigma_binary from the repeats doesn't recover the stream (the oracle point). the deconvolved estimate runs 0.3-0.7 km/s above the true rms at f_repeat = 1 at every rvir0: checked, dv = b + noise exactly, and it's the realised noise variance of the saved draw sitting 0.8-4.4 km^2/s^2 above <rverr^2> (a few rverr near 10 km/s make that sample variance noisy), plus a 2 cov(b, noise) of -0.3 to +1.1. not a construction error. the binary motion here (rms 2.4-3.1) is smaller than on the Keplerian curves (3.2-4.3), because the sample was selected with |v_pri| < 30 km/s.
+- so with DESI errors and this binary population, a sub-km/s stream dispersion only comes out of a method that identifies the individual binaries: the per-star mixture (scratch test above), or flagging stars whose two epochs disagree and fitting the rest (`'flag'`, below).
+
+**averaging the epochs (`avg`) and removing RV-variable stars (`flag_avg`, `flag_ep0`)** (stream sigma_v_gsr, km/s, median over 10 draws, f_repeat 0.2 / 0.5 / 1.0):
+
+| rvir0 | truth | `avg` | `flag_avg` | `flag_ep0` | flagged at f_repeat = 1: binaries / all binaries, singles / all singles |
+|---|---|---|---|---|---|
+| 0.75 | 0.84 | 1.83 / 1.97 / 1.62 | 1.64 / 1.37 / 1.02 | 1.68 / 1.42 / 0.74 | 28 / 156, 44 / 523 |
+| 1.5 | 0.67 | 4.01 / 3.66 / 3.19 | 3.63 / 3.01 / 0.88 | 3.70 / 3.15 / 0.58 | 36 / 167, 55 / 512 |
+| 3 | 0.52 | 4.56 / 3.61 / 2.05 | 4.59 / 3.48 / 1.32 | 4.67 / 3.69 / 1.23 | 49 / 202, 44 / 477 |
+| 6 | 0.39 | 2.62 / 1.97 / 1.80 | 2.54 / 1.65 / 1.09 | 2.58 / 1.66 / 0.61 | 38 / 217, 40 / 462 |
+
+- `avg` is exactly `fit_shared`'s `S_vgsr_nosb` (two-epoch fit, sigma_binary = 0): with equal errors per star, the shared-stream likelihood with no binary term is the same as fitting the epoch mean. averaging over a ~1 yr baseline barely touches the binary motion.
+- `flag` is the only method so far that doesn't go to 0, and at f_repeat = 1 it gets within ~0.2-0.8 km/s of the truth. but it's still well above the truth at f_repeat ≤ 0.5 (every unflagged non-repeat binary is still in the sample), and the test only catches 18-24% of the binaries (DESI errors ~3 km/s, p < 0.1), while removing ~8-11% of the singles (the expected 10% false-positive rate).
+- **`flag_ep0` is biased low; use `flag_avg`.** the flag keeps stars whose two epochs agree, and for a single star the epoch-0 noise is correlated with the epoch difference (n_0 = mean - diff/2), so the kept stars' epoch-0 noise is smaller than rverr says (by ~20% in variance for a cut at p = 0.1) and the fit over-subtracts it. the two-epoch mean is independent of the difference (equal errors), so `flag_avg` has no such bias. `flag_ep0`'s lower numbers at f_repeat = 1 are that bias, not a better measurement.
+- (the previous version of the experiment, perfect CoM correction for the repeats + an estimated sigma_binary in quadrature, is in the log, 15 Nov; its table `desi_noise_nominal_repeatfracscan.fits` is still on disk but nothing reads or writes it.)
 
 ## `claude_binary_selection_experiment.py`
 a one-off diagnostic, not part of the pipeline; only reads a pickle. for one sim it prints (1) the binary fraction and binary orbital-motion spread in v_gsr for the full unbound sample, the via-matched and desi-top-679 samples, and in bins down the brightness ranking of the eligible pool; and (2) noiseless GMM fits on each of those selections, for both binary treatments. written to explain the binaries selection effect -- see "binaries in the observed samples" in the GMM section. run across orbits/rvir to check the effect holds beyond GD-1 rvir0 = 0.75.
@@ -562,7 +659,7 @@ this is the "intrinsic"/God's-eye frame. contrast with `streamframe_coords_obser
 ## `intrinsic_stream_data_v3(path, i, core, apo, init_displacement, use_core=False, binary_treatments=[...], N_rtid_boundary=1.)`
 the main entry point. returns one big nested dict.
 
-top level: `init_displacement`, `nsingles`, `nbinaries`, `IDs`, `pot`, plus one subdict per binary treatment.
+top level: `init_displacement`, `nsingles`, `nbinaries`, `IDs`, `pot`, the raw petar `singles` / `binaries` objects of that snapshot (core frame, petar units), plus one subdict per binary treatment. the full key list is in the "what's in a data_dict" section.
 
 **ordering gotcha:** top-level `IDs` and `pot` are concatenated as `[singles, binary_p1, binary_p2]`, so they always have length `nsingles + 2*nbinaries`. the subdict arrays are concatenated as `[singles, binaries]`, where "binaries" is one row per binary for `CoM`/`luminous` but two for `companions`. so **`IDs` only lines up with the `companions` subdict**; for `CoM`/`luminous` you have to slice `[:nsingles+nbinaries]`.
 
@@ -591,6 +688,15 @@ implementation notes:
 still wrong: **it is the wrong length for the `companions` subdict.** `b_r` comes from `binaries.pos`, one row per binary, so `in_rtid` is always `nsingles + nbinaries` long. that matches `CoM` and `luminous`, but `companions` is `nsingles + 2*nbinaries`, so indexing a companions array with it raises `IndexError`. either build `[in_rtid_s, in_rtid_b, in_rtid_b]` inside the companions branch or don't use `in_rtid` there.
 
 also minor: `load_tidal(path)` is called inside the `binary_treatment` loop, so the tidal file gets read once per treatment.
+
+## mock binary RV curves (the "Mock observations and detection fractions" block)
+- `get_orbital_params_from_binaries(binaries, v_sys_vals, rng=None)` -> `(N_bin, 6)` array `[v0 (km/s), K (km/s), w, phi0, e, P (day)]` from a petar `Binary` object and systemic velocities (km/s, one per binary). isotropic inclination (`draw_inclinations`), `w` uniform in [0, 2 pi), `phi0` uniform in [0, 1). ~1 s per 2000 binaries (`calc_amplitude` loops over binaries). `get_orbital_params(paths, times, n)` is the older version that loads a snapshot itself and puts the binaries in the intrinsic frame.
+- `calc_amplitude(binary, inclination)`: K of the **heavier** star (`a1 = (M_light/M_tot) a`), not necessarily the luminous one.
+- `radial_velocity(t, params)`: Keplerian RV, `M = 2 pi (t/P - phi0)`, i.e. `phi0` is the phase as a fraction of the orbit. `t` and `P` in the same units (days).
+- `get_rvs(params_all, obstimes_all, verbose, add_noise, noise_level, rng)`: loops `radial_velocity` over binaries; `obstimes_all` is (N_bin, n_epochs). `add_noise` only takes one scalar `noise_level`.
+- `solve_kepler`: Newton from E = M; converges to < 2e-10 for every binary in the gd1 0.75 pc snapshot (e up to 0.998).
+- `get_obstimes(N, rng)`: three epochs (0, +30-90 d, +3-5 yr). not used by the two-epoch experiment, which draws its own.
+- `get_detections`: chi^2 binary detection; its `bool_arr='detet'` branch is spelled that way.
 
 ## masks: `inMW` and `trim` (intrinsic frame)
 from `trim_coords_percentile(coords, low=1, high=99, apo=apo)`:
@@ -818,7 +924,7 @@ everything stays in logs: the inner product over the 4 dims is `norm.logpdf(...)
 every likelihood function (`component_likelihood`, `gmm_negative_loglikelihood`, `nll_flat`, `component_responsibilities`, `component_membership_probability`, `membership_probability`) takes an optional `x_err`: an `(N, K)` array of per-star 1 sd uncertainties, in the same column order as `keys`. each star's variance in component j becomes `sigma_jk^2 + e_ik^2` (a gaussian convolved with a gaussian error is a gaussian with the variances added), so **the fitted sigmas are intrinsic, error-deconvolved widths**. it's the same idea as `mle_sigma` (Vedant's 1D version), and the 1D one-component case reproduces `mle_sigma` exactly. it's also extreme deconvolution (Bovy, Hogg & Roweis 2011) with diagonal errors.
 - `nll_flat(theta, x_data, min_components=2, x_err=None)`. `x_err` comes after `min_components` so `args=(x_data,)` / `(x_data, 1)` work without errors. with errors: `args=(x_data, 2, x_err)` / `(x_data, 1, x_err)`.
 - `x_err=None` is the error-free likelihood, and noiseless cases use it.
-- **`sigma_binary`**: every likelihood function above also takes an optional, *fixed* (not fit) binary-orbital-motion dispersion, added in quadrature like `x_err`: `sigma_jk^2 + e_ik^2 + sb_ik^2`. it's anything that broadcasts to (N, K) in `keys` order; build it with `gmm.binary_excess_array(sigma_binary, keys, N, apply_to=mask)` (that number in the v_gsr column for the `mask` stars, 0 elsewhere). `nll_flat(theta, x_data, min_components, x_err, sigma_binary)`, so `args=(x_data, 1, x_err, sb)`. `None` (default) leaves the likelihood unchanged. pass the same `sigma_binary` to the membership functions as to the fit. only used by the repeat-RV experiment (`single_component_comparisons_mockobs.py`, see its section; table `desi_noise_nominal_repeatfracscan.fits`): sigma_binary is estimated from the repeat stars (a fraction f_repeat of the 679-star nominal DESI sample, 0.2 nominal ~ Nibauer+26's 35/160) and applied to the rest. `estimate_sigma_binary(v_pri, v_com, sel, method=...)` there has two estimators: `'rms_dv'` (default) = sqrt(mean(dv^2)) with dv = v with binary motion - v CoM, and `'var_diff'` = sqrt(var(v with binary motion) - var(v CoM)), clipped at 0. `var_diff` can hit 0 through its 2 cov(v_CoM + noise, dv) cross term (log, 4 Nov). the table's `SBMETHOD` header says which was used.
+- **`sigma_binary`**: every likelihood function above also takes an optional, *fixed* (not fit) binary-orbital-motion dispersion, added in quadrature like `x_err`: `sigma_jk^2 + e_ik^2 + sb_ik^2`. it's anything that broadcasts to (N, K) in `keys` order; build it with `gmm.binary_excess_array(sigma_binary, keys, N, apply_to=mask)` (that number in the v_gsr column for the `mask` stars, 0 elsewhere). `nll_flat(theta, x_data, min_components, x_err, sigma_binary)`, so `args=(x_data, 1, x_err, sb)`. `None` (default) leaves the likelihood unchanged. pass the same `sigma_binary` to the membership functions as to the fit. **nothing uses it at the moment**: the repeat-RV experiment now fits sigma_binary as a free parameter with its own multi-epoch likelihood in `single_component_comparisons_mockobs.py` (see its section).
 - `gmm.measurement_errors(noise_dict, noise, distances, keys)` builds the full-length array: phi2 = 0 (Gaia position errors are ~1e-5 deg, and they aren't saved); v_phi1 = v_phi2 = `pm_err_gaia` converted to km/s with the CoM distance (same as the noise draw, no distance error); v_gsr = `rverr_<noise>`. `gmm.py` main and `results.py` (`observed_errors` -> `p_cocoon_from_table(x_data, row, x_err)`) both call it, so p_cocoon in the demo panels and Figure 1 uses the same errors as the fit. checked: noise draw / error has std 1.00 +- 0.02 in each velocity dimension.
 - **`x_err` is always the 1 sd uncertainty, never the sampled noise.** for the sims the saved noise draw only goes into `x_data` (and the sanity-plot scatter), and `x_err` comes from the error columns (`rverr_<noise>`, `pm_err_gaia`). for the real Jarvis+26 data nothing is added to `x_data`, and `x_err` is the pickle's `errors` dict. (checked both; see the log, 15 Oct.)
 - **memberships need `x_err` too.** with the table's intrinsic sigmas and no `x_err`, every noisy star looks too far off-track and gets pushed into the cocoon.

@@ -1614,6 +1614,45 @@ def get_orbital_params(paths, times, n, rng=None):
     
     return params_all, phi1_vals
 
+def get_orbital_params_from_binaries(binaries, v_sys_vals, rng=None):
+    """
+    binaries    : binaries petar object.
+    v_sys_vals  : systemic velocities; should have the same # values as objects in binaries.
+    """
+    ###### collect everything we need
+    a_vals = binaries.semi*u.pc
+    Mtot_vals = binaries.mass*u.Msun
+    P_vals = calc_P(a_vals, Mtot_vals)
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    inclinations = draw_inclinations(len(a_vals), rng)
+
+    K_vals = np.array([calc_amplitude(binary, i) for binary, i in zip(binaries, inclinations)]) * u.m/u.s
+
+    e_vals = binaries.ecc
+
+    # phi1_vals = binary_coords['phi1'] # degrees ** dont need now
+    # v0_vals = (binary_coords['vr']*u.km/u.s).to(u.m/u.s) # extract systemic velocities.
+    v0_vals = (v_sys_vals*u.km/u.s).to(u.m/u.s)
+
+
+    ### draw arguments of periapsis and mean anomaly phase offsets ?? 
+
+    w_vals = rng.uniform(low=0, high=2*np.pi, size=len(a_vals))
+    phi0_vals = rng.uniform(low=0, high=1, size=len(a_vals))
+    
+    params_all = np.array([v0_vals.to(u.km/u.s).value, 
+                           K_vals.to(u.km/u.s).value,
+                           w_vals,
+                           phi0_vals,
+                           e_vals,
+                           P_vals.to(u.day).value]
+                          ).T
+    
+    return params_all# , phi1_vals
+
 def solve_kepler(M, e, tol=1e-10, max_iter=100):
     """
     Vectorized Kepler solver using Newton-Raphson with safety.
@@ -1671,13 +1710,15 @@ def radial_velocity(t, params):
     K : RV semiamplitude (not a quantity, but in km/s)
     w : arg of periapsis
     e : eccentricity
-    phi_0 : mean anomaly phase offset
+    phi_0 : mean anomaly phase offset, as a FRACTION of the orbit in [0, 1) (that's how
+            get_orbital_params[_from_binaries] draw it). until 15 Nov 2026 it was subtracted in radians
+            (M = 2 pi t/P - phi_0), which put every binary within 1 rad of periapsis at t = 0.
     P : period (in same units as t)
     """
     v0, K, w, phi_0, e, P = params
 
 
-    M = 2 * np.pi * t / P - phi_0
+    M = 2 * np.pi * (t / P - phi_0)
     E = solve_kepler(M % (2 * np.pi), e)
     nu = true_anomaly(E, e)
     vr = v0 + K * (np.cos(nu + w) + e * np.cos(w))
@@ -1685,7 +1726,7 @@ def radial_velocity(t, params):
     ### returns radial velocity in whatever units vr and v0 are in!
     return vr
 
-def get_obstimes(N_obsm, N, rng=None):
+def get_obstimes(N, rng=None):
     dt_min = 30
     dt_max = 3*360
 
@@ -2221,6 +2262,11 @@ def intrinsic_stream_data_v3(path, i, core, apo, init_displacement,
     ### number of single and binary stars are stored at the top of the data dictionary. 
     data_dict['nsingles'] = nsingles
     data_dict['nbinaries'] = nbinaries
+    ### the raw petar objects from data.<file_index>.single / .binary (core frame, petar units: pc, pc/Myr, Msun),
+    #   in the same order as the [singles, binaries] rows of the CoM/luminous subdicts, so e.g. binaries.semi,
+    #   binaries.ecc line up with rows nsingles: of those. (~1 MB per 2000 binaries; needs petar to unpickle.)
+    data_dict['singles'] = singles
+    data_dict['binaries'] = binaries
 
     all_coords, single_coords, binary_coords = streamframe_data
     all_IDs = all_particles.id
