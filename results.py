@@ -404,6 +404,8 @@ jarvis_fit_style = dict(color='k', ls='--', lw=2, zorder=1)
 # axs[1,2].axhline(t_jarvis_fit['S_ts'][-1], **jarvis_fit_style)
 
 plt.subplots_adjust(wspace=0.2, hspace=0.2)
+### "with binary orbits" curves ('gd1' version): open markers. white face (not 'none') so the dotted line doesn't show through.
+open_marker = dict(markerfacecolor='w', markeredgewidth=2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
     if width_used=="angle": 
         width_factor = 1.0
@@ -445,7 +447,7 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
                     # label = orbit+r'; $e=%.2f$'%eccentricities[reordered][ii],
                     label='Main grid/binaries',
                     marker='o', color=ccc[ii], markersize=10,
-                    ls=':', zorder=0)
+                    ls=':', zorder=0, **open_marker)
 
 
     ### wide component ! ! !
@@ -459,8 +461,8 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     axs[0,2].plot(x, vgsr_dispersions_this_orbit, marker='o', color=ccc[ii], markersize=10, ls='-' if orbit!='pa5' else '--', zorder=0)
 
     if not varied_orbits:
-        axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
-        axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+        axs[0,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
+        axs[0,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
     # axs[0,2].set_yscale('log')
 
     ### thin component ! ! !
@@ -479,15 +481,15 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
     # axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
     # axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color='k', markersize=10, ls='-')
     if not varied_orbits:
-        axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
-        axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+        axs[1,1].plot(x2, phi2_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
+        axs[1,2].plot(x2, vgsr_dispersions_this_orbit2, marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
 
     ### one-component fit ! ! !
     if not varied_orbits:
         axs[2,1].plot(x, tt['S_1comp'][:,0][selection], marker='o', color=ccc[ii], markersize=10, ls='-' if orbit!='pa5' else '--', zorder=0)
         axs[2,2].plot(x, tt['S_1comp'][:,-1][selection], marker='o', color=ccc[ii], markersize=10, ls='-' if orbit!='pa5' else '--', zorder=0)
-        axs[2,1].plot(x2, tt2['S_1comp'][:,0][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
-        axs[2,2].plot(x2, tt2['S_1comp'][:,-1][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0)
+        axs[2,1].plot(x2, tt2['S_1comp'][:,0][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
+        axs[2,2].plot(x2, tt2['S_1comp'][:,-1][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
 
 legend_kwargs = dict(loc='center', bbox_to_anchor=[-0.75, 0.5]) #<-- same spot for both versions
 if varied_orbits:
@@ -1377,9 +1379,11 @@ ax.scatter(phot['BP_RP'], phot['mG'], c='0.8',
 
 
 ax.invert_yaxis()
+ax.set_ylim(25, 11)
+ax.set_xlim(0, 2)
 ax.set_xlabel(r'$G_{B_P} - G_{R_P}$')
 ax.set_ylabel(r'$G$')
-ax.legend(loc='lower left', fontsize=15)
+ax.legend(loc='center right', markerscale=2, fontsize=15)
 plt.savefig("plots/matching_catalog_mags.pdf", dpi=300, bbox_inches='tight')
 # %%
 t_jarvis = Table.read(repo_path+"/data/jarvis26_Table7.fits", format='fits')

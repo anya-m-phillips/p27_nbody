@@ -3,9 +3,10 @@
 #  with sigma_binary from two-epoch RVs: fit or estimated.      #
 #   (moved out of the last cell of gmm.py, 15 Nov)              #
 #--------------------------------------------------------------#
-# Assume you observe every star that passes the nominal DESI selection (gmm.py's desi case: the
-# N_jarvis = 679 brightest in catalog G, rverr < 10, good Gaia PMs; a binary is one source), and a
-# random fraction f_repeat of them get a SECOND RV epoch, ~1 yr after the first. what intrinsic stream
+# Assume you observe every star that passes the nominal selection of a survey (`survey` in the settings
+# cell, = gmm.py's noise case: 'desi' = the N_jarvis = 679 brightest in catalog G, rverr < 10; 'via' /
+# 'via10hr' = rverr < 5 with the Via 1 hr / 10 hr errors; good Gaia PMs either way; a binary is one source),
+# and a random fraction f_repeat of them get a SECOND RV epoch, ~1 yr after the first. what intrinsic stream
 # dispersion do you get out of a single-component fit, with sigma_binary either a free parameter
 # (sb_mode = 'fit', Nibauer+26-like) or estimated from the repeats' epoch-to-epoch dv and added in
 # quadrature (sb_mode = 'dv')? see the settings cell.
@@ -16,7 +17,7 @@
 # the mock RVs (load_mock_sample, multi_epoch=True): each binary gets a Keplerian RV curve from its
 #   petar orbit (semi, ecc, masses; random inclination, periapsis argument and phase), about its
 #   NOISELESS CoM v_gsr; singles sit at their CoM v_gsr. two epochs, Delta t ~ N(1 yr, 2 months);
-#   each epoch gets a fresh DESI noise draw with the star's rverr_desi.
+#   each epoch gets a fresh noise draw with the star's rverr_<survey>.
 #
 # the likelihood (nll_multiepoch): star i's epochs v_ik are one draw from the stream (shared by its
 #   epochs) plus, per epoch, binary motion and noise:
@@ -35,9 +36,9 @@
 #    no longer written; see log.md.)
 #
 # outputs:
-#   data/gmm_tables/desi_noise_nominal_multiepoch_scan_<tag>.fits  one row per (rvir, f_repeat);
-#        <tag> = fit_shared / fit_indep / dv_deconvolved / dv_raw, from sb_mode + shared_stream / sb_dv_method
-#   plots/gd1_desi_nominal_multiepoch_scan_<tag>.pdf               sigma_v_gsr vs f_repeat
+#   data/gmm_tables/<survey>_noise_nominal_multiepoch_scan_<tag>.fits  one row per (rvir, f_repeat);
+#        <tag> = fit_shared / fit_indep / dv_deconvolved / dv_raw / ..., from sb_mode + shared_stream / sb_dv_method
+#   plots/gd1_<survey>_nominal_multiepoch_scan_<tag>.pdf               sigma_v_gsr vs f_repeat
 #   plots/jarvis_comparison_single_component[_with_errs].pdf       (moved here from results.py, 15 Nov)
 #
 # the cells below the experiment only read tables, so once the scan table exists they can be
@@ -75,16 +76,23 @@ f_repeats = np.round(np.arange(f_repeat_nominal, 1.0 + 1e-9, 0.1), 2) # 0.2, 0.3
 
 n_draws = 10        # random choices of the repeat stars, to see how much the choice matters
 
+### which survey: RV errors + RV selection, exactly as gmm.py's noise case of the same name (load_mock_sample)
+survey = 'via'         #<-- 'desi':    rverr_desi (Jarvis+26 V_ERRs by rank); the N_jarvis = 679 brightest in catalog G, rverr < 10.
+                        #    'via':     rverr_via (viamock, 1 hr / 1 exposure); rverr < 5 (~1578 GD-1 stars, the whole catalog).
+                        #    'via10hr': rverr_via10hr (10 hr / 10 exposures); rverr < 5. same stars as 'via' (see readme).
+                        #    both: good Gaia PMs (pm_err < 0.5 mas/yr), catalog-matched, binaries case (primaries trim).
+survey_label = {'desi': 'DESI', 'via': 'Via', 'via10hr': 'Via 10 hr'}[survey]
+
 ### the mock second epoch (load_mock_sample)
 multi_epoch = True     #<-- True: two mock epochs on Keplerian RV curves (load_mock_sample). False: one observed epoch,
-                        #    the sim's instantaneous primary v_gsr + the saved DESI noise draw; only sb_mode='dv'
+                        #    the sim's instantaneous primary v_gsr + the saved noise draw; only sb_mode='dv'
                         #    works then, with dv = observed epoch - true CoM v (estimate_sigma_binary_com).
-dt_mean_yr = 1.0       # time between the two epochs ~ N(dt_mean_yr, dt_sd_yr) [yr]
+dt_mean_yr = 5.0       # time between the two epochs ~ N(dt_mean_yr, dt_sd_yr) [yr]
 dt_sd_yr = 2./12.
 missing_epoch_err = 1e4 # km/s: the "error" on the epoch a non-repeat star doesn't have, so it drops out
 
 ### which sigma_binary measurement the scan makes
-sb_mode = 'flag'         #<-- 'fit': Nibauer+26-like. sigma_binary is a FREE parameter of the two-epoch likelihood
+sb_mode = 'avg'         #<-- 'fit': Nibauer+26-like. sigma_binary is a FREE parameter of the two-epoch likelihood
                         #           (fit_multiepoch), fit jointly with sigma_stream. uses shared_stream.
                         #    'dv':  sigma_binary ESTIMATED from the repeats' epoch-to-epoch dv
                         #           (estimate_sigma_binary_dv), then the old way: one gaussian on epoch 0 with
@@ -96,7 +104,7 @@ sb_mode = 'flag'         #<-- 'fit': Nibauer+26-like. sigma_binary is a FREE par
                          #           rest are fit with one gaussian (unflagged repeats: their two-epoch mean if flag_average,
                          #           else epoch 0; non-repeats: epoch 0, they can't be flagged). needs multi_epoch=True.
 
-shared_stream = False    #<-- (sb_mode='fit') True: the stream term is shared by a star's epochs (C_i has
+shared_stream = True    #<-- (sb_mode='fit') True: the stream term is shared by a star's epochs (C_i has
                         #    sigma_stream^2 off the diagonal). False: every epoch independent,
                         #    prod_k N(v_ik | mu, err_ik^2 + sigma_binary^2 + sigma_stream^2) (the Nibauer+26 form;
                         #    sigma_binary and sigma_stream are then degenerate).
@@ -119,7 +127,11 @@ elif sb_mode in ('avg', 'flag'):
     scan_tag = 'avg' if sb_mode == 'avg' else 'flag_' + ('avg' if flag_average else 'ep0')
 else:
     raise ValueError("sb_mode must be 'fit', 'dv', 'avg' or 'flag', got %r" % (sb_mode,))
-scan_name = "desi_noise_nominal_multiepoch_scan_" + scan_tag #<-- one table per measurement, so they don't overwrite each other
+# the epoch baseline goes in the file name (two-epoch modes only; with multi_epoch=False there's no second epoch,
+#   so dt does nothing). e.g. dt_mean_yr = 1, dt_sd_yr = 2/12 -> '_dt1yr_sd0.17yr'; the exact values are in the
+#   DTMEANYR / DTSDYR header keys.
+dt_tag = ('_dt%gyr_sd%gyr' % (round(dt_mean_yr, 2), round(dt_sd_yr, 2))) if multi_epoch else ''
+scan_name = survey + "_noise_nominal_multiepoch_scan_" + scan_tag + dt_tag #<-- one table per survey x measurement x baseline, so they don't overwrite each other
 # one diagonal gaussian is separable, so fitting v_phi1/v_phi2 as well wouldn't change these two
 exp_keys = ['phi2', 'v_gsr']
 i_phi2, i_vgsr = exp_keys.index('phi2'), exp_keys.index('v_gsr')
@@ -325,22 +337,22 @@ def load_present_day_binaries(dd, rvir, orbit='gd1', stellar_pop='hm', copies=ra
     raise FileNotFoundError("no %s %s rvir %.2f copy has binaries matching the pickle" % (orbit, stellar_pop, rvir))
 
 
-def load_mock_sample(rvir, multi_epoch=multi_epoch, rng=None,
+def load_mock_sample(rvir, survey=survey, multi_epoch=multi_epoch, rng=None,
                      dt_mean_yr=dt_mean_yr, dt_sd_yr=dt_sd_yr):
     """
-    GD-1, DESI noise, binaries case (primary RVs): every system gmm.py's desi case would fit
-    (include_binaries=True). returns a dict of everything the experiment needs, all length N_obs.
-    always: v_com (true CoM v_gsr), v_pri (the sim's instantaneous primary v_gsr), v_noise (the saved
-    DESI noise draw), x_err, phi2, mG, is_binary. with multi_epoch=False the scan's one observed epoch
-    is v_pri + v_noise.
+    GD-1, `survey` noise ('desi', 'via' or 'via10hr'), binaries case (primary RVs): every system gmm.py's
+    case with noise=survey would fit (include_binaries=True). returns a dict of everything the experiment
+    needs, all length N_obs. always: v_com (true CoM v_gsr), v_pri (the sim's instantaneous primary v_gsr),
+    v_noise (the saved noise draw for that survey), x_err, phi2, mG, is_binary. with multi_epoch=False the
+    scan's one observed epoch is v_pri + v_noise.
 
     multi_epoch=True also builds two mock RV epochs per star (see the top of the file):
         t_obs         (N_obs, 2) [day]: 0 and Delta t ~ N(dt_mean_yr, dt_sd_yr) yr
         v_epochs_true (N_obs, 2) noiseless: singles at their CoM v_gsr; binaries on a Keplerian RV curve
                       about their CoM v_gsr (paf.get_orbital_params_from_binaries + paf.get_rvs)
-        v_epochs_noise(N_obs, 2) fresh DESI draws, N(0, rverr_desi) per epoch (NOT the saved draw)
+        v_epochs_noise(N_obs, 2) fresh draws, N(0, rverr_<survey>) per epoch (NOT the saved draw)
         v_epochs_obs  = v_epochs_true + v_epochs_noise
-        rverr         (N_obs,) rverr_desi [km/s]
+        rverr         (N_obs,) rverr_<survey> [km/s]
     the random inclinations/phases, Delta t and noise all come from `rng`.
     (the selection is still the primaries one, i.e. made with the sim's instantaneous primary v_gsr.)
     """
@@ -359,20 +371,28 @@ def load_mock_sample(rvir, multi_epoch=multi_epoch, rng=None,
     mG = dd['catalog_photometry_primaries']['mG']
     nd = dd['noise_catalog_photometry_primaries']
 
-    ### the nominal DESI selection, exactly as gmm.py's `use` for noise='desi':
-    #   cut & matched & good_pm & (N_jarvis brightest in catalog mG, NaNs last) & rverr < 10 & nonrem.
+    ### the nominal selection, exactly as gmm.py's `use` for noise=survey:
+    #   cut & matched & good_pm & good_RV & nonrem, with good_RV =
+    #     'desi':           (N_jarvis brightest in catalog mG, NaNs last) & rverr_desi < 10
+    #     'via', 'via10hr': rverr_<survey> < 5 (NaN rverr, i.e. NaN log_Teff, fails it)
     #   matched_p is inside cut_for_catalog_photometry_primaries (unbound & trim_new_primaries
     #   & nonrem & |v_gsr| < 30), so the cut/nonrem terms are already implied.
+    if survey not in ('desi', 'via', 'via10hr'):
+        raise ValueError("survey must be 'desi', 'via' or 'via10hr', got %r" % (survey,))
+    rverr_all = nd['rverr_'+survey]
     good_pm = nd['pm_err_gaia']*(u.microarcsecond/u.yr).to(u.mas/u.yr) < 0.5
-    top_N_jarvis = np.zeros(N_all, dtype=bool)
-    top_N_jarvis[np.argsort(mG)[:N_jarvis]] = True #<-- argsort puts NaNs last
-    good_RV = top_N_jarvis & (nd['rverr_desi'] < 10.)
+    if survey == 'desi':
+        top_N_jarvis = np.zeros(N_all, dtype=bool)
+        top_N_jarvis[np.argsort(mG)[:N_jarvis]] = True #<-- argsort puts NaNs last
+        good_RV = top_N_jarvis & (rverr_all < 10.)
+    else:
+        good_RV = rverr_all < 5.
     use = cut_p & matched_p & good_pm & good_RV & dd['nonrem']
     idx = np.flatnonzero(use)
     idx = idx[np.argsort(mG[idx])] #<-- brightest first (order doesn't matter to the fits)
-    x_err = measurement_errors(nd, 'desi', distances, exp_keys)[idx]
+    x_err = measurement_errors(nd, survey, distances, exp_keys)[idx]
     if not np.all(np.isfinite(x_err)):
-        raise ValueError("rvir %.2f: non-finite DESI errors in the nominal DESI sample" % rvir)
+        raise ValueError("rvir %.2f: non-finite %s errors in the nominal %s sample" % (rvir, survey, survey))
 
     sample = {
         'mG': mG[idx],
@@ -382,7 +402,7 @@ def load_mock_sample(rvir, multi_epoch=multi_epoch, rng=None,
         'phi2_obs': sc_pri['phi2'][idx] + nd['phi2'][idx],
         'v_com': sc_com['v_gsr'][idx],    # true, no noise
         'v_pri': sc_pri['v_gsr'][idx],    # true, no noise, with binary motion (the sim's instantaneous one)
-        'v_noise': nd['v_gsr_desi'][idx], # the saved DESI noise draw
+        'v_noise': nd['v_gsr_'+survey][idx], # the saved noise draw for this survey
     }
     if not multi_epoch:
         return sample
@@ -402,7 +422,7 @@ def load_mock_sample(rvir, multi_epoch=multi_epoch, rng=None,
 
     v_epochs_true = np.repeat(sample['v_com'][:, None], 2, axis=1)
     v_epochs_true[b] = paf.get_rvs(orb_params[idx[b] - ns], t_obs[b], verbose=False) #<-- binary row j of the pickle is binaries[j - nsingles]
-    rverr = nd['rverr_desi'][idx]
+    rverr = rverr_all[idx]
     v_epochs_noise = rng.normal(0., 1., size=v_epochs_true.shape) * rverr[:, None]
 
     sample.update({
@@ -416,16 +436,16 @@ def load_mock_sample(rvir, multi_epoch=multi_epoch, rng=None,
     return sample
 
 # %%
-run_scan = False #<-- False: skip the scan; the plot cells below just read the table of the current settings
+run_scan = True #<-- False: skip the scan; the plot cells below just read the table of the current settings
 
 if run_scan:
     rng_exp = np.random.default_rng(seed=1)
     scan_rows = [] #<-- one dict per (rvir, f_repeat)
 
     for rvir in rvirs:
-        s = load_mock_sample(rvir, multi_epoch=multi_epoch, rng=rng_exp)
+        s = load_mock_sample(rvir, survey=survey, multi_epoch=multi_epoch, rng=rng_exp)
         bin_s, x_err = s['is_binary'], s['x_err']
-        N_obs = len(bin_s) #<-- unique sources (a binary is one source); 679 if every top-N_jarvis star passes
+        N_obs = len(bin_s) #<-- unique sources (a binary is one source); desi: 679 if every top-N_jarvis star passes
         all_epochs = np.ones(N_obs, dtype=bool)
         if multi_epoch:
             rverr = s['rverr']
@@ -433,7 +453,7 @@ if run_scan:
             v_com_obs0 = s['v_com'] + s['v_epochs_noise'][:, 0] # CoM v + epoch 0's noise
             dv_bin = s['v_epochs_true'] - s['v_com'][:, None]   #<-- binary orbital motion per epoch (0 for singles)
         else:
-            rverr = x_err[:, i_vgsr]                            # rverr_desi
+            rverr = x_err[:, i_vgsr]                            # rverr_<survey>
             v_obs = (s['v_pri'] + s['v_noise'])[:, None]        # (N, 1): the one observed epoch, sim primary v + saved noise
             v_com_obs0 = s['v_com'] + s['v_noise']              # CoM v + the same noise
             dv_bin = (s['v_pri'] - s['v_com'])[:, None]         #<-- the sim's instantaneous binary motion (0 for singles)
@@ -479,11 +499,13 @@ if run_scan:
         ### one permutation per draw, shared by every f_repeat -> nested repeat samples
         perms = np.array([rng_exp.permutation(N_obs) for _ in range(n_draws)])
 
-        print("\nGD-1 rvir0 = %.2f pc: %i in the nominal DESI sample (mG %.1f-%.1f), %i binaries (f_bin %.2f), median DESI rverr %.2f km/s"
-                % (rvir, N_obs, s['mG'].min(), s['mG'].max(), bin_s.sum(), bin_s.mean(), np.median(rverr)))
+        print("\nGD-1 rvir0 = %.2f pc: %i in the nominal %s sample (mG %.1f-%.1f), %i binaries (f_bin %.2f), median %s rverr %.2f km/s"
+                % (rvir, N_obs, survey_label, s['mG'].min(), s['mG'].max(), bin_s.sum(), bin_s.mean(),
+                   survey_label, np.median(rverr)))
         print("  sigma_phi2 = %.3f deg  (noiseless CoM: %.3f)" % (sig_phi2, sig_true[i_phi2]))
-        print("  sigma_v_gsr [km/s]: truth (noiseless CoM) %.2f | DESI 1 epoch, binaries in %.2f | DESI, CoM (%s) %.2f"
-                % (sig_true[i_vgsr], ss_none, {'fit': '2 epochs', 'dv': 'epoch 0'}.get(sb_mode, '2-epoch mean'), ss_all))
+        print("  sigma_v_gsr [km/s]: truth (noiseless CoM) %.2f | %s 1 epoch, binaries in %.2f | %s, CoM (%s) %.2f"
+                % (sig_true[i_vgsr], survey_label, ss_none, survey_label,
+                   {'fit': '2 epochs', 'dv': 'epoch 0'}.get(sb_mode, '2-epoch mean'), ss_all))
         print("  rms binary motion per epoch %.2f km/s; epoch-to-epoch part %.2f km/s" % (sb_rms, sb_rms_diff))
         print("  old way, epoch 0, sigma_binary = true rms at epoch 0 (%.2f): sigma_v_gsr %.2f" % (sb_oracle, sig_oracle[i_vgsr]))
         print("  sb_mode = %r (%s)" % (sb_mode, scan_tag))
@@ -573,9 +595,9 @@ if run_scan:
                 'f_bin': bin_s.mean(),                       # binary fraction among the N_obs
                 'n_bin_repeat_mean': np.mean(n_bin_repeat),  # binaries landing in the repeat sample, on average
                 'S_true': sig_true,                          # noiseless, CoM RVs
-                'S_none': sig_none,                          # DESI, epoch 0 only, binary motion in, sigma_binary = 0
-                'S_all': sig_all,                            # DESI, CoM v, sigma_binary = 0 (see the references comment)
-                'S_phi2': sig_phi2,                          # same in every DESI case (only v_gsr changes)
+                'S_none': sig_none,                          # survey noise, epoch 0 only, binary motion in, sigma_binary = 0
+                'S_all': sig_all,                            # survey noise, CoM v, sigma_binary = 0 (see the references comment)
+                'S_phi2': sig_phi2,                          # same in every sb_mode for a given survey (only v_gsr changes)
                 'S_vgsr': ss50,                              # the stream sigma_v_gsr: median over draws
                 'S_vgsr_p16': ss16,
                 'S_vgsr_p84': ss84,
@@ -592,7 +614,8 @@ if run_scan:
     t_scan = Table(rows=scan_rows)
     t_scan.meta['KEYS'] = ','.join(exp_keys) #<-- order of the S_true/S_none/S_all columns
     t_scan.meta['NESTED'] = True #<-- repeat samples nested across f_repeat within a draw
-    t_scan.meta['SAMPLE'] = 'desi nominal (gmm.py desi, binaries case)'
+    t_scan.meta['SURVEY'] = survey
+    t_scan.meta['SAMPLE'] = '%s nominal (gmm.py %s, binaries case)' % (survey, survey)
     t_scan.meta['DTMEANYR'] = dt_mean_yr
     t_scan.meta['DTSDYR'] = dt_sd_yr
     t_scan.meta['MISSERR'] = missing_epoch_err
@@ -612,8 +635,8 @@ if run_scan:
 # %%
 ### sigma_v_gsr vs f_repeat, one square panel per rvir0, for the table of the current sb_mode settings.
 #   solid + band = the sb_mode measurement (median, 16-84% over draws); 'fit' also: dashed = the same
-#   fit with sigma_binary = 0. horizontal lines = truth (noiseless CoM), DESI one epoch with binary
-#   motion, DESI at CoM v, the old way with the true rms sigma_binary.
+#   fit with sigma_binary = 0. horizontal lines = truth (noiseless CoM), `survey` one epoch with binary
+#   motion, `survey` at CoM v, the old way with the true rms sigma_binary.
 t_scan = Table.read(table_path+scan_name+".fits", format='fits')
 mode_label = {'fit_shared': '2 epochs, $\\sigma_{\\rm binary}$ free',
               'fit_indep': '2 epochs (independent), $\\sigma_{\\rm binary}$ free',
@@ -639,8 +662,8 @@ for ax, rvir in zip(axs.flat, rvirs):
     ax.axhline(t['S_vgsr_sboracle'][0], color='C2', lw=1, ls=':', label='1 epoch + true rms $\\sigma_{\\rm binary}$')
     ax.axhline(t['S_true'][0][i_vgsr], color='k', lw=1.5, label='truth (noiseless CoM)')
     ax.axhline(t['S_all'][0][i_vgsr], color='k', lw=1, ls=':',
-               label='DESI, CoM (%s)' % ('2 epochs' if t_scan.meta['SBMODE'] == 'fit' else 'epoch 0'))
-    ax.axhline(t['S_none'][0][i_vgsr], color='0.5', lw=1, ls='-.', label='DESI, 1 epoch, binaries in')
+               label='%s, CoM (%s)' % (survey_label, '2 epochs' if t_scan.meta['SBMODE'] == 'fit' else 'epoch 0'))
+    ax.axhline(t['S_none'][0][i_vgsr], color='0.5', lw=1, ls='-.', label='%s, 1 epoch, binaries in' % survey_label)
     ax.set_title("$r_{\\rm vir,0}$ = %.2f pc ($N$ = %i)" % (rvir, t['N_obs'][0]), fontsize=18)
     ax.set_ylim(0, 1.35*ymax) #<-- headroom for the legend
 for ax in axs[-1]:
@@ -648,7 +671,7 @@ for ax in axs[-1]:
 for ax in axs[:, 0]:
     ax.set_ylabel("single-component $\\sigma_{v_{\\rm gsr}}$ [km/s]")
 axs[0, 0].legend(fontsize=12, loc='upper right')
-# fig.savefig(plot_path+"gd1_desi_nominal_multiepoch_scan_%s.pdf" % scan_tag)
+# fig.savefig(plot_path+"gd1_%s_nominal_multiepoch_scan_%s%s.pdf" % (survey, scan_tag, dt_tag))
 
 # %%
 ### sigma_binary vs f_repeat (median, 16-84% over draws), fitted ('fit') or estimated from dv ('dv'),
@@ -667,15 +690,15 @@ ax.set_ylabel("$\\sigma_{\\rm binary}$ (%s) [km/s]" % ('fitted' if t_scan.meta['
 ax.legend(fontsize=12)
 # %%
 #-------------------------------------------------------#
-#   A FINAL FIG THAT JUST HAS THE JARVIS BOX FOR THE THIN STREAM AND THE SINGLE COMPONENT FITS WITH DESI NOISE
-#   (moved here from results.py, 15 Nov). GD-1, desi_noise_binaries table, S_1comp = one gaussian fit
-#   to the DESI-selected stars (the 679 brightest), with binary orbital motion in the RVs. joined in
-#   rvir0 order, marker size = rvir0.
-show_CoM = True #<-- also draw desi_noise_CoM's S_1comp (same selection idea, CoM RVs, i.e. no binary motion)
+#   A FINAL FIG THAT JUST HAS THE JARVIS BOX FOR THE THIN STREAM AND THE SINGLE COMPONENT FITS WITH `survey` NOISE
+#   (moved here from results.py, 15 Nov). GD-1, <survey>_noise_binaries table, S_1comp = one gaussian fit
+#   to the survey-selected stars (desi: the 679 brightest), with binary orbital motion in the RVs. joined in
+#   rvir0 order, marker size = rvir0. (there's no via10hr gmm.py table, so survey='via10hr' fails here.)
+show_CoM = True #<-- also draw <survey>_noise_CoM's S_1comp (same selection idea, CoM RVs, i.e. no binary motion)
 add_errbars = False
 show_noiseless_thin = True #<-- also draw the THIN component (S_ts) of the noiseless two-component fit, for comparison
-noiseless_thin_case = "noiseless_CoM" #<-- or "noiseless_binaries" (thin sigma_vgsr ~0.05 km/s higher)
-f_repeat_plot = 1.#f_repeat_nominal #<-- which f_repeat of the repeat scan to draw as "analogous to Nibauer+26"
+noiseless_thin_case = "via_noise_CoM" #<-- or "noiseless_binaries" (thin sigma_vgsr ~0.05 km/s higher)
+f_repeat_plot = 1.0#f_repeat_nominal #<-- which f_repeat of the repeat scan to draw as "analogous to Nibauer+26"
 
 ### jarvis+26 published thin stream (as hardcoded at the top of results.py's summary figure)
 jarvis_svgsr_ts = 2.49
@@ -708,7 +731,7 @@ def gd1_color_from_results():
 
 gd1_color = gd1_color_from_results()
 
-t_1c = Table.read(table_path+"desi_noise_binaries.fits", format='fits')
+t_1c = Table.read(table_path+"%s_noise_binaries.fits" % survey, format='fits')
 t_1c = t_1c[t_1c['orbit']=='gd1']
 t_1c = t_1c[np.argsort(t_1c['Rvir0'])]
 
@@ -728,7 +751,7 @@ ax.scatter(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], marker='o',
            color='none', edgecolor='k', lw=1.5, zorder=4, alpha=0.5)#,
         #    label='DESI-like noise, with binaries;\nsingle component')
 
-# the multi-epoch experiment (above): DESI noise, the nominal DESI sample, a fraction f_repeat_plot of
+# the multi-epoch experiment (above): `survey` noise, its nominal sample, a fraction f_repeat_plot of
 #   them at random with a second RV epoch; S_vgsr from the table of the current sb_mode settings (scan_name).
 #   y = median over the random choices of the repeats, error bar = 16-84%.
 rep_series = 'S_vgsr'
@@ -748,7 +771,7 @@ ax.scatter(t_rep['S_phi2'], t_rep[rep_series], marker='o',
                 #  % (t_rep['N_obs'][0], t_rep['N_repeat'][0]))
 
 if show_CoM:
-    t_1c_com = Table.read(table_path+"desi_noise_CoM.fits", format='fits')
+    t_1c_com = Table.read(table_path+"%s_noise_CoM.fits" % survey, format='fits')
     t_1c_com = t_1c_com[t_1c_com['orbit']=='gd1']
     t_1c_com = t_1c_com[np.argsort(t_1c_com['Rvir0'])]
     ax.plot(t_1c_com['S_1comp'][:,0], t_1c_com['S_1comp'][:,-1], color='k', ls=':', lw=1, zorder=3, alpha=0.5)
@@ -789,8 +812,11 @@ def annotate_leftmost(xs, ys, text, text_dy=0.0, text_x=0.3, color='k', rank=0, 
 
 annotate_leftmost(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1],
                   'including all\nbinary orbits', text_dy=-0.4, text_x=0.3, color='0.5')
+
+
 annotate_leftmost(t_rep['S_phi2'], t_rep[rep_series],
-                  'analogous binary\naccounting\nto Nibauer+26',
+                #   'analogous binary\naccounting\nto Nibauer+26',
+                'observational\nbinary treatment',
                   text_dy=0.4,
                   color=gd1_color)
 if show_CoM:
@@ -832,6 +858,6 @@ ax.annotate('GD-1 thin stream\nfrom Jarvis+26',
 fname = plot_path+"jarvis_comparison_single_component"
 if add_errbars==True:
     fname+="_with_errs"
-# plt.savefig(fname+".pdf",
-#             dpi=300, bbox_inches='tight')
-# %%
+plt.savefig(fname+".pdf",
+            dpi=300, bbox_inches='tight')
+ # %%
