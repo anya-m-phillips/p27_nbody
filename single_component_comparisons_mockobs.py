@@ -92,7 +92,7 @@ dt_sd_yr = 2./12.
 missing_epoch_err = 1e4 # km/s: the "error" on the epoch a non-repeat star doesn't have, so it drops out
 
 ### which sigma_binary measurement the scan makes
-sb_mode = 'avg'         #<-- 'fit': Nibauer+26-like. sigma_binary is a FREE parameter of the two-epoch likelihood
+sb_mode = 'flag'         #<-- 'fit': Nibauer+26-like. sigma_binary is a FREE parameter of the two-epoch likelihood
                         #           (fit_multiepoch), fit jointly with sigma_stream. uses shared_stream.
                         #    'dv':  sigma_binary ESTIMATED from the repeats' epoch-to-epoch dv
                         #           (estimate_sigma_binary_dv), then the old way: one gaussian on epoch 0 with
@@ -436,7 +436,7 @@ def load_mock_sample(rvir, survey=survey, multi_epoch=multi_epoch, rng=None,
     return sample
 
 # %%
-run_scan = True #<-- False: skip the scan; the plot cells below just read the table of the current settings
+run_scan = False #<-- False: skip the scan; the plot cells below just read the table of the current settings
 
 if run_scan:
     rng_exp = np.random.default_rng(seed=1)
