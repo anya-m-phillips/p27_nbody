@@ -1,3 +1,6 @@
 /data/particle_sprays/*
+/memos/**/*.aux
+/memos/**/*.log
+/memos/**/*.out
 .ipynb_checkpoints/*y
 y

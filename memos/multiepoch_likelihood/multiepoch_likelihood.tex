@@ -1,0 +1,263 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\bv}{\mathbf{v}}
+\newcommand{\br}{\mathbf{r}}
+\newcommand{\bw}{\mathbf{w}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Var}{\mathrm{Var}}
+
+\title{The multi-epoch likelihood in \texttt{multiepoch\_nll\_per\_star}}
+\author{memo for \texttt{single\_component\_comparisons\_mockobs.py}}
+\date{15 November 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Summary}
+Each star's epochs are modeled as one draw from a multivariate gaussian.
+The shared-stream model and the independent-epoch model have the \emph{same diagonal} covariance entries.
+They differ only in the off-diagonal entries: $\sigma_s^2$ in the shared model, $0$ in the independent one.
+The code doesn't build or invert a covariance matrix per star.
+Because the matrix is ``diagonal plus a constant'', its inverse and determinant have closed forms
+(Sherman--Morrison and the matrix determinant lemma).
+The log likelihood then reduces to a few sums over epochs, which vectorize over all stars at once.
+This memo derives those closed forms.
+
+\section{The model}
+Take one star, observed at epochs $k = 1, \dots, n$ (the code uses $n=2$).
+The measured line-of-sight velocity is
+\begin{equation}
+  v_k = \mu + s + b_k + e_k ,
+\end{equation}
+where
+\begin{itemize}
+  \item $\mu$ is the stream track (a parameter);
+  \item $s \sim \mathcal{N}(0, \sigma_s^2)$ is the star's offset from the track, drawn \textbf{once} per star (no $k$ subscript);
+  \item $b_k \sim \mathcal{N}(0, \sigma_b^2)$ is the binary orbital motion, drawn fresh at each epoch;
+  \item $e_k \sim \mathcal{N}(0, \epsilon_k^2)$ is the measurement noise, drawn fresh at each epoch ($\epsilon_k$ = \texttt{v\_err}).
+\end{itemize}
+All of $s, b_1, \dots, b_n, e_1, \dots, e_n$ are mutually independent with mean zero.
+In the independent-epoch model, $s$ is replaced by $s_k$, a fresh draw at each epoch.
+
+Throughout, define
+\begin{equation}
+  d_k \equiv \epsilon_k^2 + \sigma_b^2, \qquad r_k \equiv v_k - \mu .
+\end{equation}
+Bold symbols are length-$n$ column vectors over epochs, and $\one = (1, \dots, 1)^T$.
+
+\section{The covariance matrix}
+$v_k$ is a sum of gaussians, so the vector $\bv$ is multivariate gaussian with mean $\mu\one$.
+Its covariance matrix has entries $C_{kl} = \Cov(v_k, v_l) = \E[(v_k - \mu)(v_l - \mu)]$.
+Write $v_k - \mu = s + b_k + e_k$ and multiply out:
+\begin{equation}
+  C_{kl} = \E\big[(s + b_k + e_k)(s + b_l + e_l)\big].
+\end{equation}
+For independent, mean-zero $X$ and $Y$, $\E[XY] = \E[X]\,\E[Y] = 0$.
+So every cross term vanishes, and only terms that pair a variable with \emph{itself} survive:
+\begin{itemize}
+  \item $k = l$: $s\cdot s$, $b_k\cdot b_k$ and $e_k \cdot e_k$ survive, giving $C_{kk} = \sigma_s^2 + \sigma_b^2 + \epsilon_k^2 = \sigma_s^2 + d_k$.
+  \item $k \neq l$: $b_k$ and $b_l$ are different draws, as are $e_k$ and $e_l$. Only $s\cdot s$ survives, giving $C_{kl} = \sigma_s^2$.
+\end{itemize}
+So
+\begin{equation}
+  C = D + \sigma_s^2\, \one\one^T, \qquad D = \mathrm{diag}(d_1, \dots, d_n).
+  \label{eq:C}
+\end{equation}
+$\one\one^T$ is the $n\times n$ matrix of all ones.
+For $n=2$:
+\begin{equation}
+  C_{\rm shared} = \begin{pmatrix} \sigma_s^2 + d_1 & \sigma_s^2 \\ \sigma_s^2 & \sigma_s^2 + d_2 \end{pmatrix},
+  \qquad
+  C_{\rm indep} = \begin{pmatrix} \sigma_s^2 + d_1 & 0 \\ 0 & \sigma_s^2 + d_2 \end{pmatrix}.
+\end{equation}
+In the independent model $\E[s_k s_l] = 0$ for $k \neq l$, so the off-diagonal terms are zero.
+
+\section{The log likelihood}
+The multivariate gaussian density gives
+\begin{equation}
+  -\ln p(\bv) = \frac{1}{2}\left[\, \br^T C^{-1} \br + \ln\det C + n \ln 2\pi \,\right],
+  \qquad \br = \bv - \mu\one .
+  \label{eq:mvn}
+\end{equation}
+Stars are independent, so the total is $-\ln\mathcal{L} = \sum_i -\ln p(\bv_i)$, with a different $C_i$ for each star
+(the errors $\epsilon_{ik}$ differ).
+Up to here this is just the textbook formula.
+The rest of the memo evaluates $\br^T C^{-1}\br$ and $\ln\det C$ for the matrix in Eq.~\eqref{eq:C}
+without numerically inverting anything.
+
+\section{Evaluating it fast}
+Define the vector $\bw = D^{-1}\one$, i.e.\ $w_k = 1/d_k$, and the two scalars
+\begin{equation}
+  A \equiv \one^T D^{-1} \one = \sum_k \frac{1}{d_k},
+  \qquad
+  B \equiv \one^T D^{-1} \br = \sum_k \frac{r_k}{d_k}.
+\end{equation}
+$A$ is the star's total precision, and $B$ is its precision-weighted summed residual.
+
+\subsection{The inverse (Sherman--Morrison)}
+For an invertible $D$ and vectors $\mathbf{u}$, $\mathbf{x}$,
+$(D + \mathbf{u}\mathbf{x}^T)^{-1} = D^{-1} - \dfrac{D^{-1}\mathbf{u}\,\mathbf{x}^T D^{-1}}{1 + \mathbf{x}^T D^{-1}\mathbf{u}}$.
+With $\mathbf{u} = \sigma_s^2\one$ and $\mathbf{x} = \one$ this gives
+\begin{equation}
+  C^{-1} = D^{-1} - \frac{\sigma_s^2}{1 + \sigma_s^2 A}\, \bw\bw^T .
+  \label{eq:Cinv}
+\end{equation}
+\textit{Check}, by multiplying out and using $D\bw = \one$ and $\one^T\bw = A$:
+\begin{align*}
+  C\,C^{-1}
+  &= \big(D + \sigma_s^2\one\one^T\big)\left(D^{-1} - \frac{\sigma_s^2}{1+\sigma_s^2 A}\bw\bw^T\right) \\
+  &= I + \sigma_s^2\one\bw^T - \frac{\sigma_s^2}{1+\sigma_s^2 A}\one\bw^T - \frac{\sigma_s^4 A}{1+\sigma_s^2 A}\one\bw^T \\
+  &= I + \sigma_s^2\one\bw^T\left[1 - \frac{1 + \sigma_s^2 A}{1+\sigma_s^2 A}\right] = I .
+\end{align*}
+Sandwiching Eq.~\eqref{eq:Cinv} between $\br^T$ and $\br$, and using $\bw^T\br = B$:
+\begin{equation}
+  \br^T C^{-1}\br = \sum_k \frac{r_k^2}{d_k} - \frac{\sigma_s^2 B^2}{1 + \sigma_s^2 A}.
+  \label{eq:chi2}
+\end{equation}
+
+\subsection{The determinant (matrix determinant lemma)}
+Factor out $D$:
+\begin{equation*}
+  \det C = \det\!\big(D(I + \sigma_s^2\bw\one^T)\big) = \det D \,\cdot\, \det(I + \sigma_s^2\bw\one^T).
+\end{equation*}
+For vectors $\mathbf{x}$, $\mathbf{y}$, the matrix $I + \mathbf{x}\mathbf{y}^T$ has eigenvalue $1 + \mathbf{y}^T\mathbf{x}$
+(eigenvector $\mathbf{x}$).
+Every vector orthogonal to $\mathbf{y}$ is also an eigenvector, with eigenvalue $1$.
+So $\det(I + \mathbf{x}\mathbf{y}^T) = 1 + \mathbf{y}^T\mathbf{x}$.
+Here $\mathbf{y}^T\mathbf{x} = \sigma_s^2\one^T\bw = \sigma_s^2 A$, so
+\begin{equation}
+  \ln\det C = \sum_k \ln d_k + \ln(1 + \sigma_s^2 A).
+  \label{eq:logdet}
+\end{equation}
+
+\subsection{Result}
+Putting Eqs.~\eqref{eq:chi2} and \eqref{eq:logdet} into Eq.~\eqref{eq:mvn}:
+\begin{equation}
+  \boxed{\;
+  -\ln p(\bv) = \frac{1}{2}\left[
+    \sum_k \frac{r_k^2}{d_k} - \frac{\sigma_s^2 B^2}{1 + \sigma_s^2 A}
+    + \sum_k \ln d_k + \ln(1 + \sigma_s^2 A)
+    + n\ln 2\pi \right]\;}
+  \label{eq:result}
+\end{equation}
+with $r_k = v_k - \mu$, $d_k = \epsilon_k^2 + \sigma_b^2$, $A = \sum_k 1/d_k$ and $B = \sum_k r_k/d_k$.
+This is exact, not an approximation, and holds for any $n$.
+Checked numerically against \texttt{scipy.stats.multivariate\_normal} for $n = 1, 2, 3, 5$
+(random $\mu, \sigma_s, \sigma_b, \epsilon_k$): the largest difference was $3\times10^{-12}$.
+
+\paragraph{Why bother?}
+For $n=2$ you could invert the $2\times 2$ matrix by hand.
+The point is that Eq.~\eqref{eq:result} is only sums along the epoch axis.
+So it vectorizes over all $N$ stars at once (arrays of shape $(N, n)$), for any $n$,
+with no per-star matrix construction and no \texttt{np.linalg} calls.
+
+\subsection{Mapping to the code}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+code & math \\
+\midrule
+\texttt{s2} & $\sigma_s^2$ \\
+\texttt{d} & $d_k = \epsilon_k^2 + \sigma_b^2$ \\
+\texttt{r} & $r_k = v_k - \mu$ \\
+\texttt{A}, \texttt{B} & $A$, $B$ \\
+\texttt{denom} & $1 + \sigma_s^2 A$ \\
+\texttt{chi2} & $\br^T C^{-1}\br$, Eq.~\eqref{eq:chi2} \\
+\texttt{logdet} & $\ln\det C$, Eq.~\eqref{eq:logdet} \\
+return value & Eq.~\eqref{eq:result} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{The two-epoch case written out}
+For $n=2$ the inverse can be written directly, which shows what the off-diagonal term does.
+With $C = \begin{pmatrix} a & c \\ c & b \end{pmatrix}$, $a = \sigma_s^2 + d_1$, $b = \sigma_s^2 + d_2$, $c = \sigma_s^2$:
+\begin{equation*}
+  \det C = ab - c^2 = d_1 d_2 + \sigma_s^2(d_1 + d_2) = d_1 d_2\,(1 + \sigma_s^2 A),
+\end{equation*}
+which agrees with Eq.~\eqref{eq:logdet}. Then
+\begin{equation}
+  \br^T C^{-1}\br = \frac{b r_1^2 - 2c\,r_1 r_2 + a r_2^2}{\det C}
+  = \frac{1}{1 + \sigma_s^2 A}\left[\frac{r_1^2}{d_1} + \frac{r_2^2}{d_2} + \sigma_s^2\frac{(r_1 - r_2)^2}{d_1 d_2}\right],
+  \label{eq:twoepoch}
+\end{equation}
+which agrees with Eq.~\eqref{eq:chi2}.
+To check this, multiply Eq.~\eqref{eq:chi2} by $1 + \sigma_s^2A$ and expand $B^2$.
+
+Eq.~\eqref{eq:twoepoch} shows what $\sigma_s$ is constrained by:
+\begin{itemize}
+  \item \textbf{A star off the track by the same amount at both epochs} ($r_1 = r_2 = r$, equal $d$):
+        $\br^TC^{-1}\br = r^2/(\sigma_s^2 + d/2)$.
+        This is the epoch mean judged against its own variance, $\sigma_s^2 + d/2$.
+        A large $\sigma_s$ makes a consistent offset cheap.
+  \item \textbf{Epochs that disagree} ($r_1 \neq r_2$): the $(r_1 - r_2)^2$ term is penalized with $d_k$ only.
+        As $\sigma_s\to\infty$, $\br^TC^{-1}\br \to (r_1 - r_2)^2/(d_1 + d_2)$.
+        So a disagreement between epochs can only be absorbed by $d_k$, i.e.\ by $\sigma_b$ or the noise, never by $\sigma_s$.
+\end{itemize}
+This is why the shared model can separate $\sigma_s$ from $\sigma_b$:
+offsets that are consistent between epochs inform $\sigma_s$, and differences between epochs inform $\sigma_b$.
+
+\section{Special cases}
+\paragraph{Independent epochs (\texttt{shared\_stream=False}).}
+$C = \mathrm{diag}(d_k + \sigma_s^2)$.
+This is Eq.~\eqref{eq:C} with $d_k \to d_k + \sigma_s^2$ and the rank-one term set to zero.
+The code does exactly that (\texttt{d, s2 = d + s2, 0.0}).
+Eq.~\eqref{eq:result} then reduces to a product of 1D gaussians,
+\begin{equation*}
+  -\ln p = \frac{1}{2}\sum_k\left[\frac{r_k^2}{\epsilon_k^2 + \sigma_b^2 + \sigma_s^2} + \ln(\epsilon_k^2 + \sigma_b^2 + \sigma_s^2) + \ln 2\pi\right].
+\end{equation*}
+Here $\sigma_s$ and $\sigma_b$ appear only as $\sigma_s^2 + \sigma_b^2$, so they are exactly degenerate.
+
+\paragraph{One epoch.}
+$A = 1/d$ and $B = r/d$, so Eq.~\eqref{eq:chi2} gives $r^2/(d + \sigma_s^2)$ and Eq.~\eqref{eq:logdet} gives $\ln(d + \sigma_s^2)$:
+a 1D gaussian with variance $\epsilon^2 + \sigma_b^2 + \sigma_s^2$.
+
+\paragraph{A missing epoch.}
+The code gives it $\epsilon_k = 10^4$ km/s (\texttt{missing\_epoch\_err}), so $1/d_k \approx 10^{-8}$.
+That epoch drops out of $A$ and $B$, and the star reduces to the one-epoch case.
+Its $\ln d_k \approx \ln 10^8$ is a constant that doesn't depend on the parameters
+(up to $\sigma_b^2/10^8$).
+
+\section{Another route: integrating out the offset}
+The same result follows without any matrix algebra, and this route makes the role of ``shared'' explicit.
+Given $s$, the epochs are independent: $v_k \mid s \sim \mathcal{N}(\mu + s, d_k)$.
+$s$ is unknown, so integrate over its distribution:
+\begin{equation}
+  p(\bv) = \int_{-\infty}^{\infty} \left[\prod_{k=1}^{n}\mathcal{N}(v_k \mid \mu + s, d_k)\right]\mathcal{N}(s\mid 0, \sigma_s^2)\, ds .
+\end{equation}
+One integration variable appears in every epoch's factor; that is what ``shared'' means.
+In the independent model each epoch has its own $s_k$, so the integral splits into $n$ separate ones,
+each of which just adds $\sigma_s^2$ to $d_k$.
+
+The exponent is
+\begin{equation*}
+  -\frac{1}{2}\left[\sum_k\frac{(r_k - s)^2}{d_k} + \frac{s^2}{\sigma_s^2}\right]
+  = -\frac{1}{2}\left[\sum_k\frac{r_k^2}{d_k} - 2sB + s^2 P\right], \qquad P \equiv A + \frac{1}{\sigma_s^2}.
+\end{equation*}
+Complete the square, $s^2P - 2sB = P(s - B/P)^2 - B^2/P$, and use
+$\int e^{-P(s-c)^2/2}\,ds = \sqrt{2\pi/P}$.
+The normalizing prefactors are $\prod_k(2\pi d_k)^{-1/2}$ and $(2\pi\sigma_s^2)^{-1/2}$. Then
+\begin{equation*}
+  p(\bv) = \prod_k (2\pi d_k)^{-1/2}\;\frac{1}{\sqrt{1 + \sigma_s^2 A}}\;
+  \exp\!\left(-\frac{1}{2}\left[\sum_k \frac{r_k^2}{d_k} - \frac{\sigma_s^2B^2}{1 + \sigma_s^2 A}\right]\right),
+\end{equation*}
+using $\sigma_s^2 P = 1 + \sigma_s^2 A$ and $B^2/P = \sigma_s^2 B^2/(1 + \sigma_s^2 A)$.
+Taking $-\ln$ gives Eq.~\eqref{eq:result}.
+
+\section{Caveat}
+The algebra is exact for the model as stated.
+But the model assumes every star's binary motion is $\mathcal{N}(0, \sigma_b^2)$ with one shared $\sigma_b$.
+The real binary motion is heavy-tailed: most stars are singles with $b_k = 0$, and a few binaries move by tens of km/s.
+That mis-specification is why $\sigma_s \to 0$ in the \texttt{fit\_shared} scan
+(see the readme section on \texttt{single\_component\_comparisons\_mockobs.py}).
+A per-star mixture (binary with probability $f_b$) would replace $p(\bv)$ by
+$f_b\, p(\bv \mid \sigma_b) + (1 - f_b)\, p(\bv \mid \sigma_b = 0)$.
+Each term is Eq.~\eqref{eq:result}.
+
+\end{document}
