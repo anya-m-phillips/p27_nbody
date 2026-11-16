@@ -2,7 +2,7 @@
 a one-off diagnostic, not part of the pipeline: profile likelihood in the
 thin-stream sigma_vgsr for the desi_noise_CoM GD-1 fit, with x_err.
 
-    python claude_profile_desi.py 0.75      # rvir0; ~a few minutes
+    python claude_diagnostics/claude_profile_desi.py 0.75      # rvir0; ~a few minutes
 
 rebuilds gmm.py's desi selection (catalog-matched, top 679 in mG, rverr < 10)
 from the pickle, then prints:

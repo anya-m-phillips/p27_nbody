@@ -10,8 +10,8 @@
 #      keeps, so selection is separated from noise.
 #
 # usage:
-#   python claude_binary_selection_experiment.py                  # gd1, rvir0 = 0.75
-#   python claude_binary_selection_experiment.py --orbit pa5 --rvir 3
+#   python claude_diagnostics/claude_binary_selection_experiment.py                  # gd1, rvir0 = 0.75
+#   python claude_diagnostics/claude_binary_selection_experiment.py --orbit pa5 --rvir 3
 import sys
 repo_path = "/n/home02/amphillips/p27_nbody"
 sys.path.append(repo_path)
