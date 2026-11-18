@@ -30,7 +30,8 @@ noise.py             (imported as noise)     -- isochrone photometry + survey er
                         +---> single_component_comparisons_mockobs.py -> data/gmm_tables/<survey>_noise_nominal_multiepoch_scan_<tag>[_dt<mean>yr_sd<sd>yr].fits,
                         |         plots/gd1_<survey>_nominal_multiepoch_scan_<tag>[_dt...].pdf, plots/jarvis_comparison_single_component.pdf
                         |         (pickles + <survey>_noise_* / noiseless_CoM tables; two-epoch RVs, sigma_binary fit.
-                        |          needs the petar binaries: from the pickle, or the present-day data.<k>.binary on holystore)
+                        |          needs the petar binaries: from the pickle, or the present-day data.<k>.binary on holystore;
+                        |          last cell: for_jake/rvir0<X>_<desi|via>.fits, three-epoch mock catalogs for Nibauer)
                         |
                      results.py  -> plots/summary_*.pdf etc.
                         |
@@ -236,6 +237,10 @@ the live ones, collected here. details are in each script's section below.
   - `desi_noise_nominal_repeatfracscan`: the previous version of that experiment; no longer read or written.
   - superseded, not read or written by anything: `desi_noise_brightest160_repeat34`, `desi_noise_brightest160_repeatscan`.
 - `data_dicts/`: empty. the pickles actually live on scratch (see logistics).
+- `for_jake_truth/`: per-star truth for the mock catalogs in `/for_jake` (see "mock catalogs for Jake Nibauer" under `single_component_comparisons_mockobs.py`). not for sending.
+
+## `/for_jake`
+`rvir0<X>_<desi|via>.fits`: the three-epoch mock GD-1 RV catalogs sent to Jake Nibauer, from the last cell of `single_component_comparisons_mockobs.py` (see its "mock catalogs for Jake Nibauer" subsection).
 - `particle_sprays/`: the gala particle sprays from `particle_spray.py`, `spray_<orbit>_hm_0.75_<copy>.h5` (~30-45 MB each). **in `.gitignore`** because they're large, so they only exist where they were generated -- rerun `sbatch particle_spray.slurm` to rebuild them. `logs/` holds the slurm logs (`out.<array index>`) and has to exist before submitting.
 
 ## `/scripts`
@@ -542,6 +547,13 @@ each combination writes its own table, `<survey>_noise_nominal_multiepoch_scan_<
 - `flag` is the only method so far that doesn't go to 0, and at f_repeat = 1 it gets within ~0.2-0.8 km/s of the truth. but it's still well above the truth at f_repeat ≤ 0.5 (every unflagged non-repeat binary is still in the sample), and the test only catches 18-24% of the binaries (DESI errors ~3 km/s, p < 0.1), while removing ~8-11% of the singles (the expected 10% false-positive rate).
 - **`flag_ep0` is biased low; use `flag_avg`.** the flag keeps stars whose two epochs agree, and for a single star the epoch-0 noise is correlated with the epoch difference (n_0 = mean - diff/2), so the kept stars' epoch-0 noise is smaller than rverr says (by ~20% in variance for a cut at p = 0.1) and the fit over-subtracts it. the two-epoch mean is independent of the difference (equal errors), so `flag_avg` has no such bias. `flag_ep0`'s lower numbers at f_repeat = 1 are that bias, not a better measurement.
 - (the previous version of the experiment, perfect CoM correction for the repeats + an estimated sigma_binary in quadrature, is in the log, 15 Nov; its table `desi_noise_nominal_repeatfracscan.fits` is still on disk but nothing reads or writes it.)
+
+### mock catalogs for Jake Nibauer (last cell)
+`jake_catalog` + the loop under `### assemble catalogs for jake ###`: three-epoch mock GD-1 RV catalogs to send to Jake Nibauer, so he can run his own measurement on the sims. needs only the imports/settings and function cells (not the scan or plot cells); ~40 s.
+- output: `for_jake/rvir0<X>_<desi|via>.fits` (`%g`, so `rvir00.75_desi.fits`, `rvir01.5_via.fits`, ...), one per rvir0 x survey. the truth for each (`is_binary`, `phi2_true`, `v_com`, noiseless `v_true_k`, `orb_params`, `mG`) is `data/for_jake_truth/<same>_truth.fits`, **not for sending**.
+- stars: the binaries case's catalog-matched stars (`cut_for_catalog_photometry_primaries` & matched): progenitor (2 rtid), remnants, the 1-99 percentile trim and the |v_gsr,pri| < 30 km/s cut are applied; **no error-based cuts**. `via` = all of them, 1578 = the BPW25 catalog; `desi` = the 679 brightest in catalog G (the Jarvis V_ERRs), a subset of the via stars. one via star per rvir0 has a NaN Via error (NaN `log_Teff`), so NaN `vr_k` and `vr_k_err`.
+- epochs: t_0 = 0, t_1 ~ N(1 yr, 2 months), t_2 ~ N(5 yr, 6 months) (`jake_epochs_yr`). singles at their noiseless CoM v_gsr, binaries on Keplerian curves about it (as `load_mock_sample`; orbits drawn once per rvir0 and shared by both surveys); each epoch gets a fresh N(0, rverr_<survey>) draw, same error every epoch. seed `default_rng([jake_seed = 2026, rvir_index])`.
+- columns: `phi1`, `phi2` [deg] with the saved Gaia position noise draw (`_err` = pygaia total position uncertainty / sqrt 2), `vr_0..2` + `_err` [km/s], `t_0..2` [yr], `phi2_track` [deg], `vr_track` [km/s]. **`phi2` and `vr_k` are residuals about our track** (as gmm.py fits); add the `_track` columns for absolute GD1Koposov10 phi2 / reflex-corrected v_gsr. phi1 is absolute. header: `RVIR0`, `SURVEY`, `NEPOCH`, `SEED`, `T<k>MEAN`/`T<k>SD`, `COMMENTS`. rows ordered by phi1.
 
 ## `/claude_diagnostics`
 one-off diagnostic scripts, not part of the pipeline: nothing imports them, and they don't write anything. run them from the repo root (`python claude_diagnostics/<script>.py`). the two that use the repo put it on `sys.path` by absolute path, so they work from anywhere.

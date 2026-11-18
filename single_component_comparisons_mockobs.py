@@ -861,3 +861,136 @@ if add_errbars==True:
 plt.savefig(fname+".pdf",
             dpi=300, bbox_inches='tight')
  # %%
+### assemble catalogs for jake ###
+# mock GD-1 RV catalogs for Jake Nibauer to run his own dispersion measurement on: one file per
+#   rvir0 x survey, for_jake/rvir0<X>_<desi|via>.fits. needs only the imports/settings cell and the
+#   function cell above (not the scan or the plot cells).
+#
+# which stars: the catalog-matched stars of the binaries case (cut_for_catalog_photometry_primaries &
+#   matched_to_catalog_photometry_primaries), i.e. the progenitor (2 rtid) and remnants removed, and the
+#   1-99 percentile trim + |v_gsr,primary| < 30 km/s outlier cuts applied. NO error-based quality cuts
+#   (no pm_err, no rverr cut; Jake does those):
+#     'via':  every matched star = the length of the Bonaca & Price-Whelan catalog (1578 for GD-1). the
+#             stars whose Via error is NaN (log_Teff outside the colour-Teff fit, 1 for GD-1) are kept,
+#             with NaN vr_k and vr_k_err.
+#     'desi': the N_jarvis = 679 brightest of those in catalog G, the stars that get the Jarvis+26 V_ERRs.
+#             so the DESI stars are a subset of the Via stars.
+# three RV epochs per star at t_0 = 0, t_1 ~ N(1 yr, 2 months), t_2 ~ N(5 yr, 6 months). singles sit at their
+#   CoM v_gsr; binaries move on a Keplerian RV curve about it (paf.get_orbital_params_from_binaries +
+#   paf.get_rvs, as in load_mock_sample). every epoch gets a fresh noise draw N(0, rverr_<survey>); the error
+#   is the same for all three epochs. the binary orbits (inclination, periapsis argument, phase) are drawn once
+#   per rvir0 and shared by the two surveys; epoch times and noise are drawn per survey.
+# positions: phi1 and the luminous component's phi2, plus the saved Gaia DR3 position noise draw
+#   (noise_catalog_photometry_primaries), with err = pygaia's total position uncertainty / sqrt 2, as in
+#   final_datasets.survey_noise.
+# phi2 and vr_k are RESIDUALS about our stream track (orbit + degree-5 polynomial straightening, as fit by
+#   gmm.py); phi2_track / vr_track are that track at each star's phi1, so phi2 + phi2_track and
+#   vr_k + vr_track are the absolute GD1Koposov10 phi2 and v_gsr (reflex-corrected) of the system's CoM track.
+#   phi1 is absolute.
+# the truth (is_binary, noiseless CoM and per-epoch v_gsr, orbital params) goes to data/for_jake_truth/, which
+#   is not for sending.
+from pygaia.errors.astrometric import total_position_uncertainty
+
+jake_path = repo_path+"/for_jake/"
+jake_truth_path = repo_path+"/data/for_jake_truth/"
+jake_surveys = ['desi', 'via']
+jake_epochs_yr = [(0., 0.), (1., 2./12.), (5., 6./12.)] #<-- (mean, sd) of each epoch's time after epoch 0 [yr]
+jake_seed = 2026
+
+def jake_catalog(dd, survey, orb_params_all, rng):
+    """
+    one mock catalog (see the cell comment). dd = the gd1 pickle; orb_params_all = Keplerian params for
+    every binary in the snapshot, row j = binary j (paf.get_orbital_params_from_binaries).
+    returns (catalog Table, truth Table), both ordered by phi1.
+    """
+    sc_com, sc_pri = dd['sc_straighter'], dd['sc_straighter_primaries']
+    coords_obs = dd['coords_obs']
+    N_all, ns = len(sc_com['phi1']), dd['nsingles']
+    is_binary = np.arange(N_all) >= ns
+
+    cut_p = dd['cut_for_catalog_photometry_primaries']
+    matched_p = np.zeros(N_all, dtype=bool)
+    matched_p[cut_p] = dd['matched_to_catalog_photometry_primaries']
+    mG = dd['catalog_photometry_primaries']['mG']
+    nd = dd['noise_catalog_photometry_primaries']
+
+    idx = np.flatnonzero(matched_p)
+    if survey == 'desi':
+        idx = idx[np.argsort(mG[idx])[:N_jarvis]] #<-- the N_jarvis brightest = the ones with Jarvis V_ERRs
+        if not np.all(np.isfinite(nd['rverr_desi'][idx])):
+            raise ValueError("non-finite DESI errors among the %i brightest matched stars" % N_jarvis)
+    elif survey != 'via':
+        raise ValueError("survey must be 'desi' or 'via', got %r" % (survey,))
+    idx = idx[np.argsort(sc_com['phi1'][idx])]
+    N = len(idx)
+    b = is_binary[idx]
+
+    rverr = nd['rverr_'+survey][idx]
+    pos_err = ((total_position_uncertainty(mG[idx], 'dr3') / np.sqrt(2)) * u.microarcsecond).to(u.deg).value
+
+    # epoch times [yr] and noiseless velocities (residuals about the track)
+    t_yr = np.column_stack([rng.normal(m, s, size=N) if s > 0 else np.full(N, m) for m, s in jake_epochs_yr])
+    v_com = sc_com['v_gsr'][idx]
+    v_true = np.repeat(v_com[:, None], len(jake_epochs_yr), axis=1)
+    v_true[b] = paf.get_rvs(orb_params_all[idx[b] - ns], t_yr[b]*365.25, verbose=False) #<-- days, as P is
+    v_obs = v_true + rng.normal(0., 1., size=v_true.shape) * rverr[:, None]
+
+    # track at each star's phi1 = absolute (CoM) - residual
+    phi2_track = coords_obs.phi2.deg[idx] - sc_com['phi2'][idx]
+    vr_track = coords_obs.radial_velocity.to(u.km/u.s).value[idx] - sc_com['v_gsr'][idx]
+
+    cat = Table()
+    cat['phi1'] = (sc_com['phi1'][idx] + nd['phi1'][idx]) * u.deg
+    cat['phi1_err'] = pos_err * u.deg
+    cat['phi2'] = (sc_pri['phi2'][idx] + nd['phi2'][idx]) * u.deg
+    cat['phi2_err'] = pos_err * u.deg
+    for k in range(len(jake_epochs_yr)):
+        cat['vr_%i' % k] = v_obs[:, k] * u.km/u.s
+        cat['vr_%i_err' % k] = rverr * u.km/u.s
+    for k in range(len(jake_epochs_yr)):
+        cat['t_%i' % k] = t_yr[:, k] * u.yr
+    cat['phi2_track'] = phi2_track * u.deg
+    cat['vr_track'] = vr_track * u.km/u.s
+
+    truth = Table()
+    truth['phi1'] = cat['phi1']
+    truth['is_binary'] = b
+    truth['phi2_true'] = sc_pri['phi2'][idx] * u.deg
+    truth['v_com'] = v_com * u.km/u.s
+    for k in range(len(jake_epochs_yr)):
+        truth['v_true_%i' % k] = v_true[:, k] * u.km/u.s
+    op = np.full((N, 6), np.nan)
+    op[b] = orb_params_all[idx[b] - ns]
+    truth['orb_params'] = op #<-- [v0, K, w, phi0, e, P (day)], NaN for singles
+    truth['mG'] = mG[idx]
+    return cat, truth
+
+os.makedirs(jake_truth_path, exist_ok=True)
+for i_r, rvir in enumerate(rvirs):
+    with open(datapath+"gd1_%.2f.pickle"%rvir, 'rb') as handle:
+        dd = pickle.load(handle)
+    rng_jake = np.random.default_rng(seed=[jake_seed, i_r]) #<-- one stream per rvir0, so files don't depend on run order
+    ns = dd['nsingles']
+    orb_params_all = paf.get_orbital_params_from_binaries(load_present_day_binaries(dd, rvir),
+                                                          dd['sc_straighter']['v_gsr'][ns:], rng=rng_jake)
+    for survey_j in jake_surveys:
+        cat, truth = jake_catalog(dd, survey_j, orb_params_all, rng_jake)
+        for t in (cat, truth):
+            t.meta.update({'STREAM': 'GD-1 (mock)', 'RVIR0': rvir, 'SURVEY': survey_j, 'NEPOCH': len(jake_epochs_yr),
+                           'SEED': jake_seed})
+        for k, (m, s) in enumerate(jake_epochs_yr):
+            cat.meta['T%iMEAN' % k], cat.meta['T%iSD' % k] = m, s
+        cat.meta['COMMENTS'] = ['phi2, vr_k: residuals about the stream track; add phi2_track, vr_track for absolute',
+                                'phi1, phi2 in the GD1Koposov10 frame; vr = reflex-corrected v_gsr',
+                                'noise included; no error-based quality cuts']
+        fname = "rvir0%g_%s" % (rvir, survey_j)
+        cat.write(jake_path+fname+".fits", overwrite=True)
+        truth.write(jake_truth_path+fname+"_truth.fits", overwrite=True)
+        print("%s: N = %i, binaries %i, NaN vr_0 %i" % (fname, len(cat), truth['is_binary'].sum(),
+                                                         np.sum(~np.isfinite(cat['vr_0']))))
+
+# %%
+t = Table.read('for_jake/rvir03_via.fits', format='fits')
+# %%
+# fig, ax = plt.subplots(figsize=[8,3])
+# ax.scatter(t['phi1'], t['vr_2'])
