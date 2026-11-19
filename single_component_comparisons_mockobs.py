@@ -155,11 +155,13 @@ def fit_one_component(x, xe, sb=None):
 #---------------------------------------------------------------------#
 #   multi-epoch likelihood: sigma_binary as a free parameter            #
 #---------------------------------------------------------------------#
-def multiepoch_nll_per_star(v, v_err, mu, sigma_stream, sigma_binary, shared_stream=True):
+def multiepoch_nll_per_star(v, v_err, mu, sigma_stream, sigma_binary, shared_stream=True, xp=np):
     """
     -ln L for each star's epochs, (N,).
     v, v_err : (N, n_epochs) measured v_gsr and 1 sd errors [km/s]; a missing epoch is any finite v
                with v_err = missing_epoch_err (it then contributes ~nothing).
+    xp : the array module, np (default) or jax.numpy (so the NUTS cell can differentiate it; needs x64,
+         since missing_epoch_err^2 = 1e8).
 
     shared_stream=True (default):
         v_i ~ MVN(mu 1, C_i),  C_i = D_i + sigma_stream^2 1 1^T,  D_i = diag(v_err_ik^2 + sigma_binary^2)
@@ -173,17 +175,17 @@ def multiepoch_nll_per_star(v, v_err, mu, sigma_stream, sigma_binary, shared_str
         prod_k N(v_ik | mu, err_ik^2 + sigma_binary^2 + sigma_stream^2), every epoch independent.
         sigma_binary and sigma_stream only enter as a sum of squares, so they're degenerate.
     """
-    v, v_err = np.atleast_2d(v), np.atleast_2d(v_err)
+    v, v_err = xp.atleast_2d(v), xp.atleast_2d(v_err)
     s2 = sigma_stream**2
     d = v_err**2 + sigma_binary**2
     if not shared_stream:
         d, s2 = d + s2, 0.0
     r = v - mu
-    A = np.sum(1.0/d, axis=1)
-    B = np.sum(r/d, axis=1)
+    A = xp.sum(1.0/d, axis=1)
+    B = xp.sum(r/d, axis=1)
     denom = 1.0 + s2*A
-    logdet = np.sum(np.log(d), axis=1) + np.log(denom)
-    chi2 = np.sum(r**2/d, axis=1) - s2*B**2/denom
+    logdet = xp.sum(xp.log(d), axis=1) + xp.log(denom)
+    chi2 = xp.sum(r**2/d, axis=1) - s2*B**2/denom
     return 0.5*(chi2 + logdet + v.shape[1]*np.log(2*np.pi))
 
 
@@ -990,7 +992,314 @@ for i_r, rvir in enumerate(rvirs):
                                                          np.sum(~np.isfinite(cat['vr_0']))))
 
 # %%
-t = Table.read('for_jake/rvir03_via.fits', format='fits')
+### check that input table looks good.
+# t = Table.read('for_jake/rvir03_via.fits', format='fits')
 # %%
-# fig, ax = plt.subplots(figsize=[8,3])
-# ax.scatter(t['phi1'], t['vr_2'])
+### NUTS on Jake's catalogs: sigma_binary and sigma_stream (v_gsr), Nibauer+26 priors ###
+# posteriors for the stream's v_gsr dispersion and a global sigma_binary from the mock catalogs in for_jake/
+#   (the cell above), sampled with numpyro's NUTS as Nibauer+26 do. no phi2 / stream width.
+# the sample: per rvir0 x survey, the nuts_n_obs = 160 brightest stars in catalog G (mG from the truth file;
+#   Nibauer+26: 160 GD-1 stars) with finite errors, of which nuts_n_repeat = 35 random ones have a second epoch
+#   (Nibauer+26: 35). the same 35 stars for both baselines and both surveys (one rng per rvir0).
+# the baselines: every star has vr_0; a repeat star's second epoch is vr_1 (~1 yr later) or vr_2 (~5 yr later).
+#   one table row each.
+# the likelihood: multiepoch_nll_per_star (with xp = jax.numpy), on the (N, 2) arrays from epoch_arrays,
+#   i.e. exactly the ML fits' likelihood. nuts_shared_stream = True is the shared stream term; False is the
+#   independent-epoch form of Nibauer+26's Eq. 1 (sigma_binary and sigma_stream degenerate, see the readme).
+# the priors: sigma_stream ~ HalfNormal(10 km/s), sigma_binary ~ HalfNormal(10 km/s) TRUNCATED at sb_cap, the
+#   repeats' epoch-to-epoch scatter: 'std' = std(dv)/sqrt 2 (dv = second epoch - vr_0; the per-epoch scatter a
+#   difference of two epochs implies, noise included, so an upper bound on the binary term), or 'max' =
+#   max |dv|/sqrt 2 (the largest single star's). mu ~ N(0, 10 km/s) (velocities are residuals about the track;
+#   Nibauer+26's zero-point prior).
+# the truth columns (from data/for_jake_truth/): S_true = std of the noiseless CoM v_gsr over the sample;
+#   sigma_binary_rms = rms of the true binary motion (v_true_k - v_com) over the sample at both epochs used.
+# outputs: data/gmm_tables/jake_nuts_N<n_obs>_rep<n_repeat>_<shared|indep>_cap<std|max>.fits (one row per
+#   survey x rvir0 x baseline) and plots/gd1_desi_jake_nuts_<same tag>.pdf. needs the imports/settings and
+#   function cells and the for_jake/ files (not the scan); ~1 min.
+import jax
+import numpyro
+import numpyro.distributions as dist
+from numpyro.infer import MCMC, NUTS
+from numpyro.diagnostics import summary as numpyro_summary
+numpyro.enable_x64() #<-- missing epochs have err^2 = missing_epoch_err^2 = 1e8: float32 isn't enough
+jnp = jax.numpy
+
+jake_path = repo_path+"/for_jake/"
+jake_truth_path = repo_path+"/data/for_jake_truth/"
+
+nuts_n_obs = 160          # the brightest N stars (Nibauer+26: 160)
+nuts_n_repeat = 35        # of which this many (random) have a second epoch (Nibauer+26: 35)
+nuts_baselines = {'1yr': 1, '5yr': 2} #<-- name -> which of Jake's epochs is the repeats' second one
+nuts_surveys = ['desi', 'via']
+nuts_prior_scale = 10.    # km/s, half-normal scale on sigma_stream and sigma_binary (Nibauer+26)
+nuts_mu_prior_scale = 10. # km/s, N(0, .) on mu
+nuts_shared_stream = True # True: shared stream term; False: Nibauer+26's Eq. 1 (independent epochs)
+nuts_sb_cap = 'std'       # 'std': sigma_binary <= std(dv)/sqrt 2 over the repeats; 'max': <= max |dv|/sqrt 2
+nuts_seed = 7
+nuts_mcmc_kwargs = dict(num_warmup=1000, num_samples=2000, num_chains=4, chain_method='sequential',
+                        progress_bar=False)
+nuts_tag = "N%i_rep%i_%s_cap%s" % (nuts_n_obs, nuts_n_repeat, 'shared' if nuts_shared_stream else 'indep',
+                                   nuts_sb_cap)
+
+def jake_nuts_sample(rvir, survey, n_obs, n_repeat, rng):
+    """
+    the brightest n_obs stars (finite errors and velocities) of Jake's catalog for (rvir, survey), and a random
+    n_repeat of them flagged as repeats. returns (cat, truth, repeat), rows in catalog order.
+    """
+    fname = "rvir0%g_%s" % (rvir, survey)
+    cat = Table.read(jake_path+fname+".fits")
+    truth = Table.read(jake_truth_path+fname+"_truth.fits")
+    if not np.array_equal(np.asarray(cat['phi1']), np.asarray(truth['phi1'])):
+        raise ValueError(fname+": catalog and truth rows don't line up")
+    v3 = np.column_stack([np.asarray(cat['vr_%i' % k]) for k in range(cat.meta['NEPOCH'])])
+    ok = np.isfinite(np.asarray(cat['vr_0_err'])) & np.all(np.isfinite(v3), axis=1)
+    idx = np.flatnonzero(ok)
+    idx = np.sort(idx[np.argsort(np.asarray(truth['mG'])[idx])[:n_obs]])
+    repeat = np.zeros(len(idx), dtype=bool)
+    repeat[rng.choice(len(idx), size=n_repeat, replace=False)] = True
+    return cat[idx], truth[idx], repeat
+
+def sigma_binary_cap(v_epochs, repeat, how='std'):
+    """upper bound on sigma_binary from the repeats' dv = v_1 - v_0 (observed): std(dv)/sqrt 2 or max|dv|/sqrt 2."""
+    dv = v_epochs[repeat, 1] - v_epochs[repeat, 0]
+    if how == 'std':
+        return np.std(dv, ddof=1)/np.sqrt(2)
+    if how == 'max':
+        return np.max(np.abs(dv))/np.sqrt(2)
+    raise ValueError("how must be 'std' or 'max', got %r" % (how,))
+
+def nuts_model(v, v_err, sb_cap, shared_stream=True):
+    """numpyro model: Nibauer+26's half-normal priors, sigma_binary truncated at sb_cap; the multi-epoch likelihood."""
+    mu = numpyro.sample('mu', dist.Normal(0., nuts_mu_prior_scale))
+    sigma_stream = numpyro.sample('sigma_stream', dist.HalfNormal(nuts_prior_scale))
+    sigma_binary = numpyro.sample('sigma_binary', dist.TruncatedNormal(0., nuts_prior_scale, low=0., high=sb_cap))
+    numpyro.factor('lnL', -jnp.sum(multiepoch_nll_per_star(v, v_err, mu, sigma_stream, sigma_binary,
+                                                            shared_stream=shared_stream, xp=jnp)))
+
+# nuts_rows, nuts_samples = [], {}
+# for i_r, rvir in enumerate(rvirs):
+#     for survey_n in nuts_surveys:
+#         rng_nuts = np.random.default_rng(seed=[nuts_seed, i_r]) #<-- same repeats for both surveys and baselines
+#         cat, truth, repeat = jake_nuts_sample(rvir, survey_n, nuts_n_obs, nuts_n_repeat, rng_nuts)
+#         rverr = np.asarray(cat['vr_0_err'])
+#         is_bin = np.asarray(truth['is_binary'])
+#         v_com = np.asarray(truth['v_com'])
+#         for bl, k2 in nuts_baselines.items():
+#             v_epochs = np.column_stack([np.asarray(cat['vr_0']), np.asarray(cat['vr_%i' % k2])])
+#             v, v_err = epoch_arrays(v_epochs, rverr, repeat)
+#             sb_cap = sigma_binary_cap(v_epochs, repeat, nuts_sb_cap)
+#             mcmc = MCMC(NUTS(nuts_model), **nuts_mcmc_kwargs)
+#             mcmc.run(jax.random.PRNGKey(nuts_seed), #<-- FITS columns are big-endian (>f8), which jax refuses
+#                      v=jnp.asarray(v.astype(np.float64)), v_err=jnp.asarray(v_err.astype(np.float64)), sb_cap=sb_cap,
+#                      shared_stream=nuts_shared_stream)
+#             s = {key: np.asarray(val) for key, val in mcmc.get_samples().items()}
+#             nuts_samples[(survey_n, rvir, bl)] = s
+#             diag = numpyro_summary(mcmc.get_samples(group_by_chain=True))
+#             n_div = int(np.sum(mcmc.get_extra_fields()['diverging']))
+#             # truth: noiseless CoM dispersion, and the rms true binary motion at the two epochs used
+#             v_true2 = np.column_stack([np.asarray(truth['v_true_0']), np.asarray(truth['v_true_%i' % k2])])
+#             row = {'survey': survey_n, 'Rvir0': rvir, 'baseline': bl, 'epoch2': k2,
+#                    'dt_mean_yr': cat.meta['T%iMEAN' % k2], 'dt_sd_yr': cat.meta['T%iSD' % k2],
+#                    'N_obs': len(cat), 'N_repeat': int(repeat.sum()), 'n_bin': int(is_bin.sum()),
+#                    'n_bin_repeat': int((is_bin & repeat).sum()), 'sb_cap': sb_cap,
+#                    'S_true': np.std(v_com), 'sigma_binary_rms': np.sqrt(np.mean((v_true2 - v_com[:, None])**2))}
+#             for p in ['sigma_stream', 'sigma_binary', 'mu']:
+#                 p16, p50, p84 = np.percentile(s[p], [16, 50, 84])
+#                 row.update({p: p50, p+'_p16': p16, p+'_p84': p84, p+'_err': 0.5*(p84 - p16),
+#                             p+'_mean': np.mean(s[p]), p+'_std': np.std(s[p])})
+#             row['rhat_max'] = max(float(np.max(d['r_hat'])) for d in diag.values())
+#             row['n_divergent'] = n_div
+#             nuts_rows.append(row)
+#             print("%-4s rvir0 %4g %s: sigma_stream %.2f [%.2f, %.2f] (true %.2f) | sigma_binary %.2f [%.2f, %.2f]"
+#                   " (cap %.2f, true rms %.2f) | r_hat %.3f, %i divergent"
+#                   % (survey_n, rvir, bl, row['sigma_stream'], row['sigma_stream_p16'], row['sigma_stream_p84'],
+#                      row['S_true'], row['sigma_binary'], row['sigma_binary_p16'], row['sigma_binary_p84'],
+#                      sb_cap, row['sigma_binary_rms'], row['rhat_max'], n_div))
+
+# nuts_table = Table(rows=nuts_rows)
+# nuts_table.meta.update({'STREAM': 'GD-1 (mock)', 'SOURCE': 'for_jake/ catalogs', 'NOBS': nuts_n_obs,
+#                         'NREPEAT': nuts_n_repeat, 'PRIOR': nuts_prior_scale, 'MUPRIOR': nuts_mu_prior_scale,
+#                         'SBCAP': nuts_sb_cap, 'LIKELIHD': 'shared' if nuts_shared_stream else 'indep',
+#                         'SEED': nuts_seed, 'NWARMUP': nuts_mcmc_kwargs['num_warmup'],
+#                         'NSAMPLE': nuts_mcmc_kwargs['num_samples'], 'NCHAIN': nuts_mcmc_kwargs['num_chains']})
+# nuts_table.write(table_path+"jake_nuts_"+nuts_tag+".fits", overwrite=True)
+
+# %%
+### summary plot: DESI-like, sigma_binary and sigma_stream vs rvir0, 1 yr vs 5 yr (median, 16-84%) ###
+
+nuts_table = Table.read(table_path+"jake_nuts_"+nuts_tag+".fits", format='fits')
+nuts_plot_survey = 'via'
+nuts_style = {'1yr': dict(color='#E84855', marker='o', dx=0.93), '5yr': dict(color='#2B59C3', marker='s', dx=1.07)}
+tp = nuts_table[nuts_table['survey'] == nuts_plot_survey]
+fig, axs = plt.subplots(1, 2, figsize=(15, 7.5))
+for ax, p, truth_col, ylabel in [(axs[0], 'sigma_binary', 'sigma_binary_rms', r'$\sigma_{\rm binary}$ [km/s]'),
+                                 (axs[1], 'sigma_stream', 'S_true', r'$\sigma_{v_r,\,\rm stream}$ [km/s]')]:
+    for bl, st in nuts_style.items():
+        tb = tp[tp['baseline'] == bl]
+        x = np.asarray(tb['Rvir0'])*st['dx']
+        y = np.asarray(tb[p])
+        ax.errorbar(x, y, yerr=[y - tb[p+'_p16'], tb[p+'_p84'] - y], color=st['color'], marker=st['marker'],
+                    ms=9, lw=2, capsize=0, ls='none',
+                    label='NUTS, %s baseline' % bl.replace('yr', ' yr'))
+        if p == 'sigma_binary':  # the true binary rms depends on which epochs are used
+            ax.plot(x, tb[truth_col], color=st['color'], marker='x', ms=10, mew=2, ls='none',
+                    label='true rms binary motion (%s)' % bl.replace('yr', ' yr'))
+    if p == 'sigma_stream':
+        tb = tp[tp['baseline'] == '1yr']
+        ax.plot(tb['Rvir0'], tb[truth_col], color='k', marker='x', ms=10, mew=2, ls='none',
+                label='truth (noiseless CoM)')
+    ax.set_xscale('log')
+    ax.set_xticks(rvirs)
+    ax.set_xticklabels(['%g' % r for r in rvirs])
+    ax.minorticks_off()
+    ax.set_xlabel(r'$r_{\rm vir,0}$ [pc]')
+    ax.set_ylabel(ylabel)
+    ax.set_ylim(bottom=0)
+    ax.legend(fontsize=13, loc='upper left' if p == 'sigma_binary' else 'upper right')
+axs[0].set_title('%s-like, %i stars, %i repeats' % ({'desi': 'DESI', 'via': 'Via'}[nuts_plot_survey],
+                                                     nuts_n_obs, nuts_n_repeat), fontsize=15)
+plt.tight_layout()
+plt.savefig(plot_path+"gd1_%s_jake_nuts_%s.pdf" % (nuts_plot_survey, nuts_tag), dpi=300, bbox_inches='tight')
+# %%
+### NUTS over random draws of the 35 repeat stars ###
+# the single-draw posteriors above are tight, but which binaries land among the 35 repeats moves them by more
+#   than their width. so: the same NUTS fit (same 160 stars, priors, cap, likelihood) for nuts_n_draws random
+#   choices of the repeats, per rvir0, for nuts_draw_surveys x nuts_draw_baselines only.
+# draws come from the same per-rvir0 rng as the single-draw cell, so draw 0 is that cell's choice of repeats
+#   (and with jax key nuts_seed + 0 it reproduces that cell's row exactly); draw d uses jax key nuts_seed + d.
+# pooled = all draws' posterior samples concatenated with equal weight, i.e. the posterior marginalized over the
+#   choice of repeat stars.
+# outputs: data/gmm_tables/jake_nuts_<nuts_tag>_ndraw<n>.fits (one row per survey x rvir0 x baseline x draw) and
+#   ..._ndraw<n>_pooled.fits (one row per survey x rvir0 x baseline). needs the single-draw cell's definitions
+#   (run it with its loop commented out); ~1.5 min per 10 fits.
+nuts_n_draws = 10
+nuts_draw_surveys = ['desi']
+nuts_draw_baselines = {'5yr': 2}
+nuts_draw_tag = nuts_tag + "_ndraw%i" % nuts_n_draws
+
+def nuts_fit_row(cat, truth, repeat, k2, key_seed):
+    """one NUTS fit (nuts_model) with the repeats' second epoch = vr_<k2>. returns (row dict, samples dict)."""
+    rverr = np.asarray(cat['vr_0_err'])
+    is_bin = np.asarray(truth['is_binary'])
+    v_com = np.asarray(truth['v_com'])
+    v_epochs = np.column_stack([np.asarray(cat['vr_0']), np.asarray(cat['vr_%i' % k2])])
+    v, v_err = epoch_arrays(v_epochs, rverr, repeat)
+    sb_cap = sigma_binary_cap(v_epochs, repeat, nuts_sb_cap)
+    mcmc = MCMC(NUTS(nuts_model), **nuts_mcmc_kwargs)
+    mcmc.run(jax.random.PRNGKey(key_seed), #<-- FITS columns are big-endian (>f8), which jax refuses
+             v=jnp.asarray(v.astype(np.float64)), v_err=jnp.asarray(v_err.astype(np.float64)), sb_cap=sb_cap,
+             shared_stream=nuts_shared_stream)
+    s = {key: np.asarray(val) for key, val in mcmc.get_samples().items()}
+    diag = numpyro_summary(mcmc.get_samples(group_by_chain=True))
+    v_true2 = np.column_stack([np.asarray(truth['v_true_0']), np.asarray(truth['v_true_%i' % k2])])
+    row = {'epoch2': k2, 'dt_mean_yr': cat.meta['T%iMEAN' % k2], 'dt_sd_yr': cat.meta['T%iSD' % k2],
+           'N_obs': len(cat), 'N_repeat': int(repeat.sum()), 'n_bin': int(is_bin.sum()),
+           'n_bin_repeat': int((is_bin & repeat).sum()), 'sb_cap': sb_cap,
+           'S_true': np.std(v_com), 'sigma_binary_rms': np.sqrt(np.mean((v_true2 - v_com[:, None])**2))}
+    for p in ['sigma_stream', 'sigma_binary', 'mu']:
+        p16, p50, p84 = np.percentile(s[p], [16, 50, 84])
+        row.update({p: p50, p+'_p16': p16, p+'_p84': p84, p+'_err': 0.5*(p84 - p16),
+                    p+'_mean': np.mean(s[p]), p+'_std': np.std(s[p])})
+    row['rhat_max'] = max(float(np.max(d['r_hat'])) for d in diag.values())
+    row['n_divergent'] = int(np.sum(mcmc.get_extra_fields()['diverging']))
+    return row, s
+
+nuts_draw_rows, nuts_pooled_rows = [], []
+for i_r, rvir in enumerate(rvirs):
+    for survey_n in nuts_draw_surveys:
+        rng_nuts = np.random.default_rng(seed=[nuts_seed, i_r]) #<-- as in the single-draw cell: draw 0 = its repeats
+        cat, truth, repeat0 = jake_nuts_sample(rvir, survey_n, nuts_n_obs, nuts_n_repeat, rng_nuts)
+        repeats = [repeat0]
+        for _ in range(nuts_n_draws - 1):
+            r = np.zeros(len(cat), dtype=bool)
+            r[rng_nuts.choice(len(cat), size=nuts_n_repeat, replace=False)] = True
+            repeats.append(r)
+        for bl, k2 in nuts_draw_baselines.items():
+            draw_samples = []
+            for i_d, repeat in enumerate(repeats):
+                row, s = nuts_fit_row(cat, truth, repeat, k2, nuts_seed + i_d)
+                row = {'survey': survey_n, 'Rvir0': rvir, 'baseline': bl, 'draw': i_d, **row}
+                nuts_draw_rows.append(row)
+                draw_samples.append(s)
+                print("%-4s rvir0 %4g %s draw %i: sigma_stream %.2f [%.2f, %.2f] (true %.2f) | sigma_binary %.2f"
+                      " [%.2f, %.2f] (cap %.2f, true rms %.2f) | %2i binaries in repeats | r_hat %.3f, %i div"
+                      % (survey_n, rvir, bl, i_d, row['sigma_stream'], row['sigma_stream_p16'],
+                         row['sigma_stream_p84'], row['S_true'], row['sigma_binary'], row['sigma_binary_p16'],
+                         row['sigma_binary_p84'], row['sb_cap'], row['sigma_binary_rms'], row['n_bin_repeat'],
+                         row['rhat_max'], row['n_divergent']))
+            # pooled over draws, and the spread of the per-draw medians
+            rows_d = nuts_draw_rows[-nuts_n_draws:]
+            prow = {'survey': survey_n, 'Rvir0': rvir, 'baseline': bl, 'epoch2': k2, 'n_draws': nuts_n_draws,
+                    'N_obs': len(cat), 'N_repeat': nuts_n_repeat, 'n_bin': rows_d[0]['n_bin'],
+                    'n_bin_repeat_min': min(r['n_bin_repeat'] for r in rows_d),
+                    'n_bin_repeat_max': max(r['n_bin_repeat'] for r in rows_d),
+                    'S_true': rows_d[0]['S_true'], 'sigma_binary_rms': rows_d[0]['sigma_binary_rms']}
+            for p in ['sigma_stream', 'sigma_binary', 'mu']:
+                pooled = np.concatenate([s[p] for s in draw_samples])
+                p16, p50, p84 = np.percentile(pooled, [16, 50, 84])
+                m16, m50, m84 = np.percentile([r[p] for r in rows_d], [16, 50, 84])
+                prow.update({p: p50, p+'_p16': p16, p+'_p84': p84, p+'_err': 0.5*(p84 - p16),
+                             p+'_draw_med': m50, p+'_draw_p16': m16, p+'_draw_p84': m84})
+            prow['rhat_max'] = max(r['rhat_max'] for r in rows_d)
+            prow['n_divergent'] = sum(r['n_divergent'] for r in rows_d)
+            nuts_pooled_rows.append(prow)
+            print("  POOLED: sigma_stream %.2f [%.2f, %.2f] | sigma_binary %.2f [%.2f, %.2f]"
+                  % (prow['sigma_stream'], prow['sigma_stream_p16'], prow['sigma_stream_p84'],
+                     prow['sigma_binary'], prow['sigma_binary_p16'], prow['sigma_binary_p84']))
+
+nuts_draw_meta = {'STREAM': 'GD-1 (mock)', 'SOURCE': 'for_jake/ catalogs', 'NOBS': nuts_n_obs,
+                  'NREPEAT': nuts_n_repeat, 'NDRAWS': nuts_n_draws, 'PRIOR': nuts_prior_scale,
+                  'MUPRIOR': nuts_mu_prior_scale, 'SBCAP': nuts_sb_cap,
+                  'LIKELIHD': 'shared' if nuts_shared_stream else 'indep', 'SEED': nuts_seed,
+                  'NWARMUP': nuts_mcmc_kwargs['num_warmup'], 'NSAMPLE': nuts_mcmc_kwargs['num_samples'],
+                  'NCHAIN': nuts_mcmc_kwargs['num_chains']}
+for rows_, sfx_ in [(nuts_draw_rows, ''), (nuts_pooled_rows, '_pooled')]:
+    t_ = Table(rows=rows_)
+    t_.meta.update(nuts_draw_meta)
+    t_.write(table_path+"jake_nuts_"+nuts_draw_tag+sfx_+".fits", overwrite=True)
+
+# %%
+### summary plot over the draws: sigma_binary and sigma_stream vs rvir0 ###
+# small faint points: each draw's posterior median and 16-84%, spread out in x to the left of the tick;
+#   big square: pooled over draws (median, 16-84%); cross: the truth, at the pooled point's x.
+nuts_draw_table = Table.read(table_path+"jake_nuts_"+nuts_draw_tag+".fits", format='fits')
+nuts_pooled_table = Table.read(table_path+"jake_nuts_"+nuts_draw_tag+"_pooled.fits", format='fits')
+nuts_draw_plot_survey, nuts_draw_plot_baseline = 'desi', '5yr'
+nuts_draw_color = '#2B59C3'
+td = nuts_draw_table[(nuts_draw_table['survey'] == nuts_draw_plot_survey)
+                     & (nuts_draw_table['baseline'] == nuts_draw_plot_baseline)]
+tpool = nuts_pooled_table[(nuts_pooled_table['survey'] == nuts_draw_plot_survey)
+                          & (nuts_pooled_table['baseline'] == nuts_draw_plot_baseline)]
+draw_dlogx = np.linspace(-0.11, -0.03, nuts_n_draws) #<-- log10 x offsets of the draws
+pool_dlogx = 0.04
+fig, axs = plt.subplots(1, 2, figsize=(15, 7.5))
+for ax, p, truth_col, ylabel, truth_label in [
+        (axs[0], 'sigma_binary', 'sigma_binary_rms', r'$\sigma_{\rm binary}$ [km/s]', 'true rms binary motion'),
+        (axs[1], 'sigma_stream', 'S_true', r'$\sigma_{v_r,\,\rm stream}$ [km/s]', 'truth (noiseless CoM)')]:
+    for i_r, rvir in enumerate(rvirs):
+        tr = td[td['Rvir0'] == rvir]
+        tr = tr[np.argsort(tr['draw'])]
+        x = rvir*10**draw_dlogx[:len(tr)]
+        y = np.asarray(tr[p])
+        ax.errorbar(x, y, yerr=[y - tr[p+'_p16'], tr[p+'_p84'] - y], color=nuts_draw_color, alpha=0.45,
+                    marker='o', ms=5, lw=1.2, capsize=0, ls='none', label='single draw of repeats' if i_r == 0 else None)
+    xp_ = np.asarray(tpool['Rvir0'])*10**pool_dlogx
+    y = np.asarray(tpool[p])
+    ax.errorbar(xp_, y, yerr=[y - tpool[p+'_p16'], tpool[p+'_p84'] - y], color=nuts_draw_color, marker='s',
+                ms=10, lw=2.5, capsize=0, ls='none', label='pooled over %i draws' % nuts_n_draws)
+    ax.plot(xp_, tpool[truth_col], color='k', marker='x', ms=11, mew=2.5, ls='none', label=truth_label)
+    ax.set_xscale('log')
+    ax.set_xticks(rvirs)
+    ax.set_xticklabels(['%g' % r for r in rvirs])
+    ax.minorticks_off()
+    ax.set_xlabel(r'$r_{\rm vir,0}$ [pc]')
+    ax.set_ylabel(ylabel)
+    ax.set_ylim(bottom=0)
+    ax.legend(fontsize=13, loc='upper right')
+axs[0].set_title('%s-like, %i stars, %i repeats (%s baseline)'
+                 % ({'desi': 'DESI', 'via': 'Via'}[nuts_draw_plot_survey], nuts_n_obs, nuts_n_repeat,
+                    nuts_draw_plot_baseline.replace('yr', ' yr')), fontsize=15)
+plt.tight_layout()
+plt.savefig(plot_path+"gd1_%s_jake_nuts_%s_%s.pdf" % (nuts_draw_plot_survey, nuts_draw_tag, nuts_draw_plot_baseline),
+            dpi=300, bbox_inches='tight')
+# %%
