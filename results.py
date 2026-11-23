@@ -539,6 +539,9 @@ if not varied_orbits:
     axs[2,0].remove()
 
 
+# axs[1,1].set_ylim(0, 0.2)
+# axs[1,2].set_ylim(0, 0.5)
+
 #   ADD A DATA POINT FOR THE FIT WITH DESI-LIKE NOISE AND DOWN-SAMPLING
 files = [
     'desi_noise_binaries.fits',

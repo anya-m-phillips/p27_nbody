@@ -701,7 +701,7 @@ add_errbars = False
 show_noiseless_thin = True #<-- also draw the THIN component (S_ts) of the noiseless two-component fit, for comparison
 noiseless_thin_case = "via_noise_CoM" #<-- or "noiseless_binaries" (thin sigma_vgsr ~0.05 km/s higher)
 f_repeat_plot = 1.0#f_repeat_nominal #<-- which f_repeat of the repeat scan to draw as "analogous to Nibauer+26"
-show_nibauer = True #<-- also draw the NUTS sigma_stream with Nibauer+26's Eq. 1 (independent epochs, shared=False),
+show_nibauer = False #<-- also draw the NUTS sigma_stream with Nibauer+26's Eq. 1 (independent epochs, shared=False),
                     #    pooled over random draws of the repeat stars (the "NUTS over random draws" cell below)
 nibauer_table = "jake_nuts_N160_rep35_indep_capstd_ndraw10_pooled" #<-- the pooled table (one row per survey x rvir0 x baseline)
 nibauer_survey, nibauer_baseline = 'desi', '5yr' #<-- the only ones in that table so far
@@ -757,7 +757,7 @@ ax.add_patch(Rectangle((jarvis_sphi2_ts-jarvis_sphi2_ts_err, jarvis_svgsr_ts-jar
 # ax.plot(t_jarvis_fit['S_ts'][0], t_jarvis_fit['S_ts'][-1], marker='x', ls='--', color='k', markersize=10,
 #         lw=1, zorder=6, label='This model fit to Jarvis+26 data')
 
-# DESI-like noise, with binaries, one component: open grey circles, as they were on the panel above
+# noise, with binaries, one component: open grey circles, as they were on the panel above
 ax.plot(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], color='k', ls=':', lw=1, zorder=3, alpha=0.5)
 ax.scatter(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], marker='o',
            s=size_from_rvir(t_1c['Rvir0']),
@@ -767,19 +767,19 @@ ax.scatter(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1], marker='o',
 # the multi-epoch experiment (above): `survey` noise, its nominal sample, a fraction f_repeat_plot of
 #   them at random with a second RV epoch; S_vgsr from the table of the current sb_mode settings (scan_name).
 #   y = median over the random choices of the repeats, error bar = 16-84%.
-rep_series = 'S_vgsr'
-t_rep = Table.read(table_path+scan_name+".fits", format='fits')
-t_rep = t_rep[np.isclose(t_rep['f_repeat'], f_repeat_plot)]
-t_rep = t_rep[np.argsort(t_rep['Rvir0'])]
-if add_errbars==True:
-    ax.errorbar(t_rep['S_phi2'], t_rep[rep_series],
-                yerr=[t_rep[rep_series] - t_rep[rep_series+'_p16'],
-                t_rep[rep_series+'_p84'] - t_rep[rep_series]],
-                fmt='none', ecolor=gd1_color, elinewidth=1.5, capsize=3, zorder=3)
-ax.plot(t_rep['S_phi2'], t_rep[rep_series], color=gd1_color, ls='-', lw=1, zorder=3)
-ax.scatter(t_rep['S_phi2'], t_rep[rep_series], marker='o',
-           s=size_from_rvir(t_rep['Rvir0']),
-           color=gd1_color, edgecolor='k', lw=1.5, zorder=4)#,
+# rep_series = 'S_vgsr'
+# t_rep = Table.read(table_path+scan_name+".fits", format='fits')
+# t_rep = t_rep[np.isclose(t_rep['f_repeat'], f_repeat_plot)]
+# t_rep = t_rep[np.argsort(t_rep['Rvir0'])]
+# if add_errbars==True:
+#     ax.errorbar(t_rep['S_phi2'], t_rep[rep_series],
+#                 yerr=[t_rep[rep_series] - t_rep[rep_series+'_p16'],
+#                 t_rep[rep_series+'_p84'] - t_rep[rep_series]],
+#                 fmt='none', ecolor=gd1_color, elinewidth=1.5, capsize=3, zorder=3)
+# ax.plot(t_rep['S_phi2'], t_rep[rep_series], color=gd1_color, ls='-', lw=1, zorder=3)
+# ax.scatter(t_rep['S_phi2'], t_rep[rep_series], marker='o',
+#            s=size_from_rvir(t_rep['Rvir0']),
+#            color=gd1_color, edgecolor='k', lw=1.5, zorder=4)#,
         #    label="Analogous measurement to Nibauer+26")#'DESI-like noise, %i brightest,\n%i repeats + $\\sigma_{\\rm binary}$;\nsingle component'
                 #  % (t_rep['N_obs'][0], t_rep['N_repeat'][0]))
 
@@ -855,11 +855,11 @@ annotate_leftmost(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1],
                   'including all\nbinary orbits', text_dy=-0.4, text_x=0.3, color='0.5')
 
 
-annotate_leftmost(t_rep['S_phi2'], t_rep[rep_series],
-                #   'analogous binary\naccounting\nto Nibauer+26',
-                'Rejecting\nvariables',
-                  text_dy=0.4,
-                  color=gd1_color)
+# annotate_leftmost(t_rep['S_phi2'], t_rep[rep_series],
+#                 #   'analogous binary\naccounting\nto Nibauer+26',
+#                 'Rejecting\nvariables',
+#                   text_dy=0.4,
+#                   color=gd1_color)
 if show_CoM:
     annotate_leftmost(t_1c_com['S_1comp'][:,0],
                       t_1c_com['S_1comp'][:,-1],
@@ -871,10 +871,10 @@ if show_noiseless_thin:
                       text_dy=0.25, text_x=0.36, color=gd1_color) #<-- text_x was 0.3 (the default)
 if show_nibauer:
     if nibauer_focus:
-        annotate_leftmost(nib_x, nib_y, 'Nibauer+26 method\n(NUTS, indep. epochs)',
+        annotate_leftmost(nib_x, nib_y, 'Nibauer+26 method',
                           offset_pts=(50, 100), color=gd1_color) #<-- hand-tuned: well above + right of the one point
     else:
-        annotate_leftmost(nib_x, nib_y, 'Nibauer+26 method\n(NUTS, indep. epochs)',
+        annotate_leftmost(nib_x, nib_y, 'Nibauer+26 method',
                           rank=2, offset_pts=(25, 5), color=gd1_color) #<-- hand-tuned: right of the 3rd (highest) point
 
 # marker-size key
@@ -898,8 +898,8 @@ ax.set_ylim(bottom=0)
 #            labelspacing=1.2)
 # (legend replaced by an annotation on the jarvis box, arrow to its bottom right corner)
 ax.annotate('GD-1 thin stream\nfrom Jarvis+26',
-            xy=(jarvis_sphi2_ts+jarvis_sphi2_ts_err, jarvis_svgsr_ts-jarvis_svgsr_ts_err), xycoords='data',
-            xytext=(30, -30), textcoords='offset points', #<-- text position relative to the corner [points]
+            xy=(jarvis_sphi2_ts+jarvis_sphi2_ts_err, jarvis_svgsr_ts), xycoords='data',
+            xytext=(30, 30), textcoords='offset points', #<-- text position relative to the corner [points]
             ha='left', va='top', fontsize=13, zorder=7,
             arrowprops=dict(arrowstyle='->', color='0.7', lw=1, shrinkA=2, shrinkB=0))
 
@@ -1138,8 +1138,77 @@ ax_c.axis('off')
 # plt.savefig(plot_path+"gd1_%s_%s_rvir%g_%s_draw%i_joint.pdf" % (nibauer_survey,
 #             nibauer_focus_table.replace('_pooled', ''), nibauer_focus_rvir, nibauer_baseline, k1),
 #             dpi=300, bbox_inches='tight')
+# %%
+#### THE ABOVE PLOT AGAIN, BUT WHERE ALL STARS HAVE MULTIPLE EPOCHS ###
+# the joint + marginal posterior of one NUTS fit in which EVERY star of the Via catalog at rvir0 = 3 pc (1577
+#   stars, not 160) has two epochs, vr_0 and the ~5 yr vr_2. reads the .npz written by the "NUTS with EVERY star
+#   repeated" cell at the end of the file (run that first; same likelihood / cap settings, set by hand below since
+#   that cell comes later in the file). needs hpd_levels, gaussian_filter, n_bins_joint, contour_smooth and
+#   gd1_color from the cells above.
+# show_truth_allrep: the truths (noiseless CoM dispersion, rms true binary motion; black dashed) and the true total
+#   width (grey dashed arc), which the single-draw plot above has commented out.
+allrep_file = repo_path+"/data/nuts_samples/jake_nuts_allrepeat_indep_capstd_via_rvir3_5yr.npz"
+show_truth_allrep = False
 
- # %%
+samp_ar = np.load(allrep_file)
+ss1, sb1 = samp_ar['sigma_stream'][0], samp_ar['sigma_binary'][0]
+S_true1, sb_rms1, sb_cap1 = samp_ar['S_true'][0], samp_ar['sigma_binary_rms'][0], samp_ar['sb_cap'][0]
+
+lim_1 = 1.05*max(np.percentile(np.concatenate([ss1, sb1]), 99.5), np.hypot(S_true1, sb_rms1) if show_truth_allrep else 0)
+edges1 = np.linspace(0, lim_1, n_bins_joint + 1)
+centers1 = 0.5*(edges1[1:] + edges1[:-1])
+
+fig = plt.figure(figsize=(9, 9))
+gs = fig.add_gridspec(2, 2, width_ratios=[4, 1], height_ratios=[1, 4], wspace=0.04, hspace=0.04)
+ax_j = fig.add_subplot(gs[1, 0])
+ax_x = fig.add_subplot(gs[0, 0], sharex=ax_j)
+ax_y = fig.add_subplot(gs[1, 1], sharey=ax_j)
+
+H1, _, _ = np.histogram2d(sb1, ss1, bins=[edges1, edges1])
+ax_j.pcolormesh(edges1, edges1, H1.T, cmap='Greys', shading='flat', rasterized=True, zorder=0)
+H1s = gaussian_filter(H1, contour_smooth)
+l95, l68 = hpd_levels(H1s, [0.95, 0.68])
+for lev, a in [(l95, 0.15), (l68, 0.25)]:
+    ax_j.contourf(centers1, centers1, H1s.T, levels=[lev, 1.01*H1s.max()], colors=[gd1_color], alpha=a, zorder=1)
+ax_j.contour(centers1, centers1, H1s.T, levels=[l95, l68], colors=[gd1_color], linewidths=[1.5, 2.5], zorder=3)
+ax_j.plot([0, lim_1], [0, lim_1], color='k', ls=':', lw=1, zorder=1)
+if show_truth_allrep:
+    th = np.linspace(0, np.pi/2, 200)
+    ax_j.plot(np.hypot(S_true1, sb_rms1)*np.cos(th), np.hypot(S_true1, sb_rms1)*np.sin(th), color='0.4', ls='--',
+              lw=1, zorder=4)
+    ax_j.axhline(S_true1, color='k', ls='--', lw=1.2, zorder=4)
+    ax_j.axvline(sb_rms1, color='k', ls='--', lw=1.2, zorder=4)
+ax_j.set_xlim(0, lim_1)
+ax_j.set_ylim(0, lim_1)
+ax_j.set_xlabel(r'$\sigma_{\rm binary}$ [km/s]')
+ax_j.set_ylabel(r'$\sigma_{v_r,\,\rm stream}$ [km/s]')
+
+for ax_m, d1, truth_val, orient in [(ax_x, sb1, sb_rms1, 'vertical'), (ax_y, ss1, S_true1, 'horizontal')]:
+    ax_m.hist(d1, bins=edges1, density=True, orientation=orient, color=gd1_color, alpha=0.35, lw=0)
+    ax_m.hist(d1, bins=edges1, density=True, orientation=orient, histtype='step', color=gd1_color, lw=2)
+    p16, p50, p84 = np.percentile(d1, [16, 50, 84])
+    line = ax_m.axvline if orient == 'vertical' else ax_m.axhline
+    line(p50, color=gd1_color, ls='-', lw=1.5)
+    for q in (p16, p84):
+        line(q, color=gd1_color, ls=':', lw=1.5)
+    if show_truth_allrep:
+        line(truth_val, color='k', ls='--', lw=1.2)
+ax_x.set_ylim(bottom=0)
+ax_y.set_xlim(left=0)
+ax_x.tick_params(labelbottom=False, labelleft=False)
+ax_y.tick_params(labelleft=False, labelbottom=False)
+ss16, ss50, ss84 = np.percentile(ss1, [16, 50, 84])
+sb16, sb50, sb84 = np.percentile(sb1, [16, 50, 84])
+ax_x.set_title('Via-like, $r_{\\rm vir,0}$ = 3 pc, 5 yr, all %i stars repeated (%i binaries)\n'
+               % (samp_ar['N_obs'][0], samp_ar['n_bin'][0])
+               + r'$\sigma_{\rm stream} = %.2f^{+%.2f}_{-%.2f}$, $\sigma_{\rm binary} = %.2f^{+%.2f}_{-%.2f}$ km/s'
+               % (ss50, ss84 - ss50, ss50 - ss16, sb50, sb84 - sb50, sb50 - sb16), fontsize=13)
+ax_c = fig.add_subplot(gs[0, 1])
+ax_c.axis('off')
+# plt.savefig(plot_path+"gd1_%s_joint.pdf" % os.path.basename(allrep_file).replace('.npz', ''),
+#             dpi=300, bbox_inches='tight')
+
+# %%
 ### assemble catalogs for jake ###
 # mock GD-1 RV catalogs for Jake Nibauer to run his own dispersion measurement on: one file per
 #   rvir0 x survey, for_jake/rvir0<X>_<desi|via>.fits. needs only the imports/settings cell and the
@@ -1635,4 +1704,46 @@ axs[0].set_title('%s-like, %i stars, %i repeats (%s baseline)'
 plt.tight_layout()
 plt.savefig(plot_path+"gd1_%s_jake_nuts_%s_%s.pdf" % (nuts_draw_plot_survey, nuts_draw_tag, nuts_draw_plot_baseline),
             dpi=300, bbox_inches='tight')
+# %%
+### NUTS with EVERY star repeated: the whole Via catalog, two epochs each (vr_0 and the ~5 yr vr_2) ###
+# the same fit as the cells above (nuts_model: same priors, sigma_binary cap, nuts_shared_stream likelihood), but
+#   instead of 160 stars with 35 repeats: every star of Jake's catalog for (nuts_allrep_rvir, nuts_allrep_survey)
+#   with finite errors (jake_nuts_pool: 1577 of the 1578 for Via), ALL of them with a second epoch. there's
+#   nothing random about the sample, so it's one fit (jax key nuts_seed).
+# needs the single-draw and draws cells' definitions (jake_nuts_pool, nuts_fit_row, nuts_model, ...; run them
+#   with their loops commented out); ~1 min.
+# outputs: data/nuts_samples/jake_nuts_allrepeat_<shared|indep>_cap<std|max>_<survey>_rvir<X>_<baseline>.npz, the
+#   same format as the draws cell's .npz with one "draw" ((1, n_samples) arrays), read by the plot cell after the
+#   single-draw joint posterior (above, "THE ABOVE PLOT AGAIN ..."); and the one-row table
+#   data/gmm_tables/jake_nuts_allrepeat_<same tag>.fits (nuts_fit_row's columns).
+nuts_allrep_survey = 'via'
+nuts_allrep_rvir = 3
+nuts_allrep_baseline = ('5yr', 2) #<-- name, which of Jake's epochs is the second one
+nuts_allrep_name = "jake_nuts_allrepeat_%s_cap%s_%s_rvir%g_%s" % ('shared' if nuts_shared_stream else 'indep',
+                                                                  nuts_sb_cap, nuts_allrep_survey, nuts_allrep_rvir,
+                                                                  nuts_allrep_baseline[0])
+
+cat_all, truth_all = jake_nuts_pool(nuts_allrep_rvir, nuts_allrep_survey)
+repeat_all = np.ones(len(cat_all), dtype=bool)
+row_all, s_all = nuts_fit_row(cat_all, truth_all, repeat_all, nuts_allrep_baseline[1], nuts_seed)
+row_all = {'survey': nuts_allrep_survey, 'Rvir0': nuts_allrep_rvir, 'baseline': nuts_allrep_baseline[0], **row_all}
+print("%s rvir0 %g %s, %i stars all repeated (%i binaries): sigma_stream %.2f [%.2f, %.2f] (true %.2f) | "
+      "sigma_binary %.2f [%.2f, %.2f] (cap %.2f, true rms %.2f) | r_hat %.3f, %i div"
+      % (nuts_allrep_survey, nuts_allrep_rvir, nuts_allrep_baseline[0], row_all['N_obs'], row_all['n_bin'],
+         row_all['sigma_stream'], row_all['sigma_stream_p16'], row_all['sigma_stream_p84'], row_all['S_true'],
+         row_all['sigma_binary'], row_all['sigma_binary_p16'], row_all['sigma_binary_p84'], row_all['sb_cap'],
+         row_all['sigma_binary_rms'], row_all['rhat_max'], row_all['n_divergent']))
+
+os.makedirs(nuts_samples_path, exist_ok=True)
+np.savez_compressed(nuts_samples_path+nuts_allrep_name+".npz",
+                    **{p: s_all[p][None, :].astype(np.float32) for p in ['sigma_stream', 'sigma_binary', 'mu']},
+                    **{c: np.array([row_all[c]]) for c in ['S_true', 'sigma_binary_rms', 'sb_cap', 'n_bin',
+                                                            'n_bin_repeat', 'N_obs']})
+t_ = Table(rows=[row_all])
+t_.meta.update({'STREAM': 'GD-1 (mock)', 'SOURCE': 'for_jake/ catalogs', 'NOBS': row_all['N_obs'],
+                'NREPEAT': row_all['N_repeat'], 'PRIOR': nuts_prior_scale, 'MUPRIOR': nuts_mu_prior_scale,
+                'SBCAP': nuts_sb_cap, 'LIKELIHD': 'shared' if nuts_shared_stream else 'indep', 'SEED': nuts_seed,
+                'NWARMUP': nuts_mcmc_kwargs['num_warmup'], 'NSAMPLE': nuts_mcmc_kwargs['num_samples'],
+                'NCHAIN': nuts_mcmc_kwargs['num_chains']})
+t_.write(table_path+nuts_allrep_name+".fits", overwrite=True)
 # %%
