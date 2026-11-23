@@ -701,6 +701,17 @@ add_errbars = False
 show_noiseless_thin = True #<-- also draw the THIN component (S_ts) of the noiseless two-component fit, for comparison
 noiseless_thin_case = "via_noise_CoM" #<-- or "noiseless_binaries" (thin sigma_vgsr ~0.05 km/s higher)
 f_repeat_plot = 1.0#f_repeat_nominal #<-- which f_repeat of the repeat scan to draw as "analogous to Nibauer+26"
+show_nibauer = True #<-- also draw the NUTS sigma_stream with Nibauer+26's Eq. 1 (independent epochs, shared=False),
+                    #    pooled over random draws of the repeat stars (the "NUTS over random draws" cell below)
+nibauer_table = "jake_nuts_N160_rep35_indep_capstd_ndraw10_pooled" #<-- the pooled table (one row per survey x rvir0 x baseline)
+nibauer_survey, nibauer_baseline = 'desi', '5yr' #<-- the only ones in that table so far
+nibauer_err = 'pooled' #<-- error bar: 'pooled' = 16-84% of the posterior pooled over the draws;
+                       #    'draws' = 16-84% of the per-draw posterior medians (the spread from the draws only)
+nibauer_focus = True   #<-- True: draw ONLY the rvir0 = nibauer_focus_rvir point, from nibauer_focus_table (50 draws of
+                       #    both the 160 stars, from the full catalog, and the 35 repeats); False: every rvir0 from
+                       #    nibauer_table (10 draws of the repeats, 160 brightest)
+nibauer_focus_rvir = 3.
+nibauer_focus_table = "jake_nuts_N160_rep35_indep_capstd_ndraw50_varystars_pooled"
 
 ### jarvis+26 published thin stream (as hardcoded at the top of results.py's summary figure)
 jarvis_svgsr_ts = 2.49
@@ -794,6 +805,34 @@ if show_noiseless_thin:
                s=size_from_rvir(t_ts['Rvir0']),
                color='none', edgecolor=gd1_color, lw=1.5, zorder=4)
 
+# Nibauer+26's measurement (NUTS, independent epochs, 160 stars, 35 random repeats, pooled over draws). it has no
+#   stream width, so x = the binary-CoM single-component sigma_phi2 (<survey>_noise_CoM's S_1comp) at the same
+#   rvir0. y = pooled posterior median, error bar per nibauer_err. nibauer_focus: just the one rvir0, no line.
+if show_nibauer:
+    t_nib = Table.read(table_path+(nibauer_focus_table if nibauer_focus else nibauer_table)+".fits", format='fits')
+    t_nib = t_nib[(t_nib['survey'] == nibauer_survey) & (t_nib['baseline'] == nibauer_baseline)]
+    if nibauer_focus:
+        t_nib = t_nib[np.isclose(t_nib['Rvir0'], nibauer_focus_rvir)]
+        if len(t_nib) != 1:
+            raise ValueError("expected one rvir0 = %g row in %s, got %i" % (nibauer_focus_rvir, nibauer_focus_table, len(t_nib)))
+    t_nib = t_nib[np.argsort(t_nib['Rvir0'])]
+    t_nib_x = Table.read(table_path+"%s_noise_CoM.fits" % survey, format='fits')
+    t_nib_x = t_nib_x[t_nib_x['orbit']=='gd1']
+    nib_x = np.array([t_nib_x['S_1comp'][np.isclose(t_nib_x['Rvir0'], r), 0][0] for r in t_nib['Rvir0']])
+    nib_y = np.asarray(t_nib['sigma_stream'])
+    if nibauer_err == 'pooled':
+        nib_lo, nib_hi = np.asarray(t_nib['sigma_stream_p16']), np.asarray(t_nib['sigma_stream_p84'])
+    elif nibauer_err == 'draws':
+        nib_lo, nib_hi = np.asarray(t_nib['sigma_stream_draw_p16']), np.asarray(t_nib['sigma_stream_draw_p84'])
+    else:
+        raise ValueError("nibauer_err must be 'pooled' or 'draws', got %r" % (nibauer_err,))
+    ax.errorbar(nib_x, nib_y, yerr=[nib_y - nib_lo, nib_hi - nib_y],
+                fmt='none', ecolor=gd1_color, elinewidth=1.5, capsize=3, zorder=3)
+    if not nibauer_focus:
+        ax.plot(nib_x, nib_y, color=gd1_color, ls='-.', lw=1, zorder=3)
+    ax.scatter(nib_x, nib_y, marker='D', s=0.8*size_from_rvir(t_nib['Rvir0']),
+               color=gd1_color, edgecolor='k', lw=1.5, zorder=4)
+
 # annotations: text at the left edge of the panel, arrow to the leftmost (smallest sigma_phi2) point of each series.
 #   text_dy = vertical nudge of the text relative to that point [km/s], to move labels off each other / the data.
 #   rank = which point to point at, counting up in sigma_phi2 (0 = leftmost = most diffuse progenitor, 1 = second, ...).
@@ -818,7 +857,7 @@ annotate_leftmost(t_1c['S_1comp'][:,0], t_1c['S_1comp'][:,-1],
 
 annotate_leftmost(t_rep['S_phi2'], t_rep[rep_series],
                 #   'analogous binary\naccounting\nto Nibauer+26',
-                'observational\nbinary treatment',
+                'Rejecting\nvariables',
                   text_dy=0.4,
                   color=gd1_color)
 if show_CoM:
@@ -830,6 +869,13 @@ if show_noiseless_thin:
     annotate_leftmost(t_ts['S_ts'][:,0], t_ts['S_ts'][:,-1],
                       'thin component only' + (' (binaries)' if ts_is_bin else ''),
                       text_dy=0.25, text_x=0.36, color=gd1_color) #<-- text_x was 0.3 (the default)
+if show_nibauer:
+    if nibauer_focus:
+        annotate_leftmost(nib_x, nib_y, 'Nibauer+26 method\n(NUTS, indep. epochs)',
+                          offset_pts=(50, 100), color=gd1_color) #<-- hand-tuned: well above + right of the one point
+    else:
+        annotate_leftmost(nib_x, nib_y, 'Nibauer+26 method\n(NUTS, indep. epochs)',
+                          rank=2, offset_pts=(25, 5), color=gd1_color) #<-- hand-tuned: right of the 3rd (highest) point
 
 # marker-size key
 # for r in [0.75, 1.5, 3., 6.]:
@@ -862,6 +908,237 @@ if add_errbars==True:
     fname+="_with_errs"
 plt.savefig(fname+".pdf",
             dpi=300, bbox_inches='tight')
+
+# %%
+### per-draw NUTS medians: sigma_stream vs sigma_binary, one point per draw of the 160 stars + 35 repeats ###
+# the raw posterior samples weren't saved, so this is NOT the joint posterior: each point is one draw's marginal
+#   posterior medians, with that draw's marginal 16-84% as error bars in x and y (the within-draw correlation isn't
+#   known; with independent epochs each draw's posterior is a thin arc sigma_stream^2 + sigma_binary^2 ~ const).
+# big square: the pooled (all draws' samples concatenated) median and 16-84% in each sigma.
+# reads the per-draw and pooled tables of the Jarvis figure's nibauer_focus_table (run that cell first), for
+#   nibauer_survey / nibauer_baseline / nibauer_focus_rvir. points coloured by the number of binaries among the
+#   draw's 35 repeats. truth: the noiseless CoM dispersion of the draw's 160 stars (horizontal) and the rms true
+#   binary motion over them at the two epochs used (vertical); line = median over draws, band = their 16-84%.
+med_tab = Table.read(table_path+nibauer_focus_table.replace('_pooled', '')+".fits", format='fits')
+med_pool = Table.read(table_path+nibauer_focus_table+".fits", format='fits')
+sel_ = lambda t: t[(t['survey'] == nibauer_survey) & (t['baseline'] == nibauer_baseline)
+                   & np.isclose(t['Rvir0'], nibauer_focus_rvir)]
+med_tab, med_pool = sel_(med_tab), sel_(med_pool)[0]
+
+fig, ax = plt.subplots(figsize=(8, 8))
+sb, ss = np.asarray(med_tab['sigma_binary']), np.asarray(med_tab['sigma_stream'])
+ax.errorbar(sb, ss, xerr=[sb - med_tab['sigma_binary_p16'], med_tab['sigma_binary_p84'] - sb],
+            yerr=[ss - med_tab['sigma_stream_p16'], med_tab['sigma_stream_p84'] - ss],
+            fmt='none', ecolor='0.6', elinewidth=0.8, alpha=0.5, zorder=2)
+sc_ = ax.scatter(sb, ss, c=med_tab['n_bin_repeat'], cmap='viridis', s=45, edgecolor='k', lw=0.6, zorder=3)
+fig.colorbar(sc_, ax=ax, label='binaries among the %i repeats' % med_pool['N_repeat'], fraction=0.046, pad=0.03)
+
+# pooled
+ax.errorbar(med_pool['sigma_binary'], med_pool['sigma_stream'],
+            xerr=[[med_pool['sigma_binary'] - med_pool['sigma_binary_p16']],
+                  [med_pool['sigma_binary_p84'] - med_pool['sigma_binary']]],
+            yerr=[[med_pool['sigma_stream'] - med_pool['sigma_stream_p16']],
+                  [med_pool['sigma_stream_p84'] - med_pool['sigma_stream']]],
+            fmt='s', color=gd1_color, mec='k', ms=12, elinewidth=2.5, capsize=0, zorder=5,
+            label='pooled over %i draws' % len(med_tab))
+
+# truths: median over draws (line) and 16-84% over draws (band)
+for col, axline, axspan in [('S_true', ax.axhline, ax.axhspan), ('sigma_binary_rms', ax.axvline, ax.axvspan)]:
+    lo, mid, hi = np.percentile(med_tab[col], [16, 50, 84])
+    axspan(lo, hi, color='k', alpha=0.08, lw=0, zorder=0)
+    axline(mid, color='k', ls='--', lw=1.2, zorder=1,
+           label='truth (noiseless CoM)' if col == 'S_true' else 'true rms binary motion')
+
+lim = 1.05*max(np.max(med_tab['sigma_binary_p84']), np.max(med_tab['sigma_stream_p84']))
+ax.plot([0, lim], [0, lim], color='k', ls=':', lw=1, zorder=1, label='1:1')
+ax.set_xlim(0, lim)
+ax.set_ylim(0, lim)
+ax.set_xlabel(r'$\sigma_{\rm binary}$ [km/s] (per-draw posterior median)')
+ax.set_ylabel(r'$\sigma_{v_r,\,\rm stream}$ [km/s] (per-draw posterior median)')
+ax.set_title('%s-like, $r_{\\rm vir,0}$ = %g pc, %s baseline, %s epochs'
+             % ({'desi': 'DESI', 'via': 'Via'}[nibauer_survey], nibauer_focus_rvir,
+                nibauer_baseline.replace('yr', ' yr'), med_tab.meta['LIKELIHD']), fontsize=14)
+ax.legend(fontsize=11, loc='upper left')
+# plt.savefig(plot_path+"gd1_%s_%s_rvir%g_%s_medians.pdf" % (nibauer_survey, nibauer_focus_table.replace('_pooled', ''),
+#                                                           nibauer_focus_rvir, nibauer_baseline),
+#             dpi=300, bbox_inches='tight')
+
+# %%
+### joint and marginal posteriors of sigma_binary and sigma_stream, from the saved NUTS samples ###
+# reads data/nuts_samples/<per-draw table name>_<survey>_rvir<X>_<baseline>.npz, written by the "NUTS over random
+#   draws" cell (same nibauer_* settings as the two cells above; run the Jarvis cell first).
+# main panel: the POOLED joint posterior (every draw's samples, equal weight) as a 2D histogram, with its 68% and
+#   95% highest-density contours; optionally (show_draw_contours) each draw's own 68% contour, faint.
+# side panels: the marginals, all as unit-area densities (so a single draw's is taller than the pooled one).
+#   pooled = filled histogram with its median (solid) and 16-84% (dotted); each draw's own = faint step histograms.
+# truth (black dashed): the noiseless CoM dispersion of the 160 stars and the rms true binary motion over them,
+#   median over draws. 1:1 dotted. note sigma_binary's prior is truncated at each draw's own sb_cap.
+# the contours are drawn on 2D histograms smoothed by a gaussian of contour_smooth bins (the grey image isn't).
+show_draw_contours = True #<-- each draw's 68% contour in the joint panel
+n_bins_joint = 80
+contour_smooth = 2.5      #<-- [bins] gaussian smoothing before contouring
+marg_ymax = 2.5           #<-- marginal panels' density axis limit, in units of the pooled histogram's peak
+from scipy.ndimage import gaussian_filter
+
+samp_file = repo_path+"/data/nuts_samples/%s_%s_rvir%g_%s.npz" % (nibauer_focus_table.replace('_pooled', ''),
+                                                                  nibauer_survey, nibauer_focus_rvir, nibauer_baseline)
+samp = np.load(samp_file)
+ss_d, sb_d = samp['sigma_stream'], samp['sigma_binary'] #<-- (n_draws, n_samples)
+ss_all, sb_all = ss_d.ravel(), sb_d.ravel()
+n_draws_s = ss_d.shape[0]
+
+def hpd_levels(H, fracs):
+    """density thresholds of a 2D histogram enclosing the given fractions of its mass, highest density first."""
+    h = np.sort(H.ravel())[::-1]
+    c = np.cumsum(h) / h.sum()
+    return [h[min(np.searchsorted(c, f), len(h) - 1)] for f in fracs]
+
+lim_j = np.percentile(np.concatenate([ss_all, sb_all]), 99.5)
+edges = np.linspace(0, lim_j, n_bins_joint + 1)
+centers = 0.5*(edges[1:] + edges[:-1])
+
+fig = plt.figure(figsize=(9, 9))
+gs = fig.add_gridspec(2, 2, width_ratios=[4, 1], height_ratios=[1, 4], wspace=0.04, hspace=0.04)
+ax_j = fig.add_subplot(gs[1, 0])
+ax_x = fig.add_subplot(gs[0, 0], sharex=ax_j)
+ax_y = fig.add_subplot(gs[1, 1], sharey=ax_j)
+
+# joint: pooled 2D histogram + 68/95% contours (+ each draw's 68%)
+H, _, _ = np.histogram2d(sb_all, ss_all, bins=[edges, edges])
+ax_j.pcolormesh(edges, edges, H.T, cmap='Greys', shading='flat', rasterized=True, zorder=0)
+Hs = gaussian_filter(H, contour_smooth)
+l95, l68 = hpd_levels(Hs, [0.95, 0.68])
+for lev, a in [(l95, 0.15), (l68, 0.25)]: #<-- shade inside the 95% and 68% regions
+    ax_j.contourf(centers, centers, Hs.T, levels=[lev, 1.01*Hs.max()], colors=[gd1_color], alpha=a, zorder=1)
+ax_j.contour(centers, centers, Hs.T, levels=[l95, l68], colors=[gd1_color], linewidths=[1.5, 2.5], zorder=3)
+if show_draw_contours:
+    for k in range(n_draws_s):
+        Hk, _, _ = np.histogram2d(sb_d[k], ss_d[k], bins=[edges, edges])
+        Hk = gaussian_filter(Hk, contour_smooth)
+        ax_j.contour(centers, centers, Hk.T, levels=hpd_levels(Hk, [0.68]), colors=['C0'], linewidths=0.6,
+                     alpha=0.35, zorder=2)
+ax_j.plot([0, lim_j], [0, lim_j], color='k', ls=':', lw=1, zorder=1)
+S_true_med, sb_rms_med = np.median(samp['S_true']), np.median(samp['sigma_binary_rms'])
+ax_j.axhline(S_true_med, color='k', ls='--', lw=1.2, zorder=4)
+ax_j.axvline(sb_rms_med, color='k', ls='--', lw=1.2, zorder=4)
+ax_j.set_xlim(0, lim_j)
+ax_j.set_ylim(0, lim_j)
+ax_j.set_xlabel(r'$\sigma_{\rm binary}$ [km/s]')
+ax_j.set_ylabel(r'$\sigma_{v_r,\,\rm stream}$ [km/s]')
+
+# marginals
+for ax_m, d_draws, d_all, truth_val, orient in [(ax_x, sb_d, sb_all, sb_rms_med, 'vertical'),
+                                                 (ax_y, ss_d, ss_all, S_true_med, 'horizontal')]:
+    for k in range(n_draws_s):
+        ax_m.hist(d_draws[k], bins=edges, density=True, orientation=orient, histtype='step', color='C0', lw=0.6,
+                  alpha=0.35, zorder=1)
+    n_pool, _, _ = ax_m.hist(d_all, bins=edges, density=True, orientation=orient, color=gd1_color, alpha=0.35,
+                             lw=0, zorder=2)
+    ax_m.hist(d_all, bins=edges, density=True, orientation=orient, histtype='step', color=gd1_color, lw=2, zorder=3)
+    (ax_m.set_ylim if orient == 'vertical' else ax_m.set_xlim)(0, marg_ymax*np.max(n_pool))
+    p16, p50, p84 = np.percentile(d_all, [16, 50, 84])
+    line = ax_m.axvline if orient == 'vertical' else ax_m.axhline
+    line(p50, color=gd1_color, ls='-', lw=1.5)
+    for q in (p16, p84):
+        line(q, color=gd1_color, ls=':', lw=1.5)
+    line(truth_val, color='k', ls='--', lw=1.2)
+ax_x.tick_params(labelbottom=False, labelleft=False)
+ax_y.tick_params(labelleft=False, labelbottom=False)
+ss16, ss50, ss84 = np.percentile(ss_all, [16, 50, 84])
+sb16, sb50, sb84 = np.percentile(sb_all, [16, 50, 84])
+ax_x.set_title('%s-like, $r_{\\rm vir,0}$ = %g pc, %s, %i draws\n'
+               % ({'desi': 'DESI', 'via': 'Via'}[nibauer_survey], nibauer_focus_rvir,
+                  nibauer_baseline.replace('yr', ' yr'), n_draws_s)
+               + r'$\sigma_{\rm stream} = %.2f^{+%.2f}_{-%.2f}$, $\sigma_{\rm binary} = %.2f^{+%.2f}_{-%.2f}$ km/s'
+               % (ss50, ss84 - ss50, ss50 - ss16, sb50, sb84 - sb50, sb50 - sb16), fontsize=13)
+ax_c = fig.add_subplot(gs[0, 1]) # legend in the empty corner
+ax_c.axis('off')
+ax_c.legend(handles=[plt.Line2D([], [], color=gd1_color, lw=2.5, label='pooled\n(68, 95%)'),
+                     plt.Line2D([], [], color='C0', lw=1, alpha=0.6, label='single draws'),
+                     plt.Line2D([], [], color='k', ls='--', lw=1.2, label='truth')],
+            loc='center', fontsize=10, frameon=False)
+# plt.savefig(plot_path+"gd1_%s_%s_rvir%g_%s_joint.pdf" % (nibauer_survey, nibauer_focus_table.replace('_pooled', ''),
+#                                                         nibauer_focus_rvir, nibauer_baseline),
+#             dpi=300, bbox_inches='tight')
+
+# %%
+### joint and marginal posteriors for ONE draw of 160 stars / 35 repeats ###
+# the same plot as above for a single NUTS fit, i.e. what one Nibauer+26-like measurement gives. no new sampling:
+#   each draw in the .npz above is already its own fit, so this reads draw single_draw from samp (run the cell
+#   above first; it also defines hpd_levels, gaussian_filter, n_bins_joint, contour_smooth).
+# single_draw: an int (0 .. n_draws-1), or 'median' = the draw whose median total width
+#   sqrt(sigma_stream^2 + sigma_binary^2) is the median over draws (a typical draw; the totals range ~1-6 km/s).
+# truth (black dashed): THIS draw's noiseless CoM dispersion of its 160 stars and rms true binary motion; grey
+#   dashed arc: the true total width sqrt(S_true^2 + rms^2). red dash-dot in the top marginal: this draw's sb_cap
+#   (the truncation of sigma_binary's prior).
+single_draw = 16# 'median'
+
+r_draws = np.median(np.hypot(samp['sigma_stream'], samp['sigma_binary']), axis=1)
+k1 = int(np.argsort(r_draws)[len(r_draws)//2]) if single_draw == 'median' else int(single_draw)
+ss1, sb1 = samp['sigma_stream'][k1], samp['sigma_binary'][k1]
+S_true1, sb_rms1, sb_cap1 = samp['S_true'][k1], samp['sigma_binary_rms'][k1], samp['sb_cap'][k1]
+
+lim_1 = 1.05*max(np.percentile(np.concatenate([ss1, sb1]), 99.5), np.hypot(S_true1, sb_rms1))
+edges1 = np.linspace(0, lim_1, n_bins_joint + 1)
+centers1 = 0.5*(edges1[1:] + edges1[:-1])
+
+fig = plt.figure(figsize=(9, 9))
+gs = fig.add_gridspec(2, 2, width_ratios=[4, 1], height_ratios=[1, 4], wspace=0.04, hspace=0.04)
+ax_j = fig.add_subplot(gs[1, 0])
+ax_x = fig.add_subplot(gs[0, 0], sharex=ax_j)
+ax_y = fig.add_subplot(gs[1, 1], sharey=ax_j)
+
+H1, _, _ = np.histogram2d(sb1, ss1, bins=[edges1, edges1])
+ax_j.pcolormesh(edges1, edges1, H1.T, cmap='Greys', shading='flat', rasterized=True, zorder=0)
+H1s = gaussian_filter(H1, contour_smooth)
+l95, l68 = hpd_levels(H1s, [0.95, 0.68])
+for lev, a in [(l95, 0.15), (l68, 0.25)]:
+    ax_j.contourf(centers1, centers1, H1s.T, levels=[lev, 1.01*H1s.max()], colors=[gd1_color], alpha=a, zorder=1)
+ax_j.contour(centers1, centers1, H1s.T, levels=[l95, l68], colors=[gd1_color], linewidths=[1.5, 2.5], zorder=3)
+ax_j.plot([0, lim_1], [0, lim_1], color='k', ls=':', lw=1, zorder=1)
+th = np.linspace(0, np.pi/2, 200)
+# ax_j.plot(np.hypot(S_true1, sb_rms1)*np.cos(th), np.hypot(S_true1, sb_rms1)*np.sin(th), color='0.4', ls='--', lw=1,
+#           zorder=4)
+# ax_j.axhline(S_true1, color='k', ls='--', lw=1.2, zorder=4)
+# ax_j.axvline(sb_rms1, color='k', ls='--', lw=1.2, zorder=4)
+ax_j.set_xlim(0, lim_1)
+ax_j.set_ylim(0, lim_1)
+ax_j.set_xlabel(r'$\sigma_{\rm binary}$ [km/s]')
+ax_j.set_ylabel(r'$\sigma_{v_r,\,\rm stream}$ [km/s]')
+
+for ax_m, d1, truth_val, orient in [(ax_x, sb1, sb_rms1, 'vertical'), (ax_y, ss1, S_true1, 'horizontal')]:
+    ax_m.hist(d1, bins=edges1, density=True, orientation=orient, color=gd1_color, alpha=0.35, lw=0)
+    ax_m.hist(d1, bins=edges1, density=True, orientation=orient, histtype='step', color=gd1_color, lw=2)
+    p16, p50, p84 = np.percentile(d1, [16, 50, 84])
+    line = ax_m.axvline if orient == 'vertical' else ax_m.axhline
+    line(p50, color=gd1_color, ls='-', lw=1.5)
+    for q in (p16, p84):
+        line(q, color=gd1_color, ls=':', lw=1.5)
+    # line(truth_val, color='k', ls='--', lw=1.2)
+# if sb_cap1 < lim_1:
+#     ax_x.axvline(sb_cap1, color=gd1_color, ls='-.', lw=1.2)
+ax_x.set_ylim(bottom=0)
+ax_y.set_xlim(left=0)
+ax_x.tick_params(labelbottom=False, labelleft=False)
+ax_y.tick_params(labelleft=False, labelbottom=False)
+ss16, ss50, ss84 = np.percentile(ss1, [16, 50, 84])
+sb16, sb50, sb84 = np.percentile(sb1, [16, 50, 84])
+ax_x.set_title('%s-like, $r_{\\rm vir,0}$ = %g pc, %s, draw %i (%i binaries, %i in repeats)\n'
+               % ({'desi': 'DESI', 'via': 'Via'}[nibauer_survey], nibauer_focus_rvir,
+                  nibauer_baseline.replace('yr', ' yr'), k1, samp['n_bin'][k1], samp['n_bin_repeat'][k1])
+               + r'$\sigma_{\rm stream} = %.2f^{+%.2f}_{-%.2f}$, $\sigma_{\rm binary} = %.2f^{+%.2f}_{-%.2f}$ km/s'
+               % (ss50, ss84 - ss50, ss50 - ss16, sb50, sb84 - sb50, sb50 - sb16), fontsize=13)
+ax_c = fig.add_subplot(gs[0, 1])
+ax_c.axis('off')
+# ax_c.legend(handles=[plt.Line2D([], [], color=gd1_color, lw=2.5, label='posterior\n(68, 95%)'),
+#                      plt.Line2D([], [], color='k', ls='--', lw=1.2, label='truth'),
+#                      plt.Line2D([], [], color='0.4', ls='--', lw=1, label='true total'),
+#                      plt.Line2D([], [], color=gd1_color, ls='-.', lw=1.2, label=r'$\sigma_{\rm binary}$ cap')],
+#             loc='center', fontsize=10, frameon=False)
+# plt.savefig(plot_path+"gd1_%s_%s_rvir%g_%s_draw%i_joint.pdf" % (nibauer_survey,
+#             nibauer_focus_table.replace('_pooled', ''), nibauer_focus_rvir, nibauer_baseline, k1),
+#             dpi=300, bbox_inches='tight')
+
  # %%
 ### assemble catalogs for jake ###
 # mock GD-1 RV catalogs for Jake Nibauer to run his own dispersion measurement on: one file per
@@ -1033,7 +1310,7 @@ nuts_baselines = {'1yr': 1, '5yr': 2} #<-- name -> which of Jake's epochs is the
 nuts_surveys = ['desi', 'via']
 nuts_prior_scale = 10.    # km/s, half-normal scale on sigma_stream and sigma_binary (Nibauer+26)
 nuts_mu_prior_scale = 10. # km/s, N(0, .) on mu
-nuts_shared_stream = True # True: shared stream term; False: Nibauer+26's Eq. 1 (independent epochs)
+nuts_shared_stream = False # True: shared stream term; False: Nibauer+26's Eq. 1 (independent epochs)
 nuts_sb_cap = 'std'       # 'std': sigma_binary <= std(dv)/sqrt 2 over the repeats; 'max': <= max |dv|/sqrt 2
 nuts_seed = 7
 nuts_mcmc_kwargs = dict(num_warmup=1000, num_samples=2000, num_chains=4, chain_method='sequential',
@@ -1076,59 +1353,60 @@ def nuts_model(v, v_err, sb_cap, shared_stream=True):
     numpyro.factor('lnL', -jnp.sum(multiepoch_nll_per_star(v, v_err, mu, sigma_stream, sigma_binary,
                                                             shared_stream=shared_stream, xp=jnp)))
 
-# nuts_rows, nuts_samples = [], {}
-# for i_r, rvir in enumerate(rvirs):
-#     for survey_n in nuts_surveys:
-#         rng_nuts = np.random.default_rng(seed=[nuts_seed, i_r]) #<-- same repeats for both surveys and baselines
-#         cat, truth, repeat = jake_nuts_sample(rvir, survey_n, nuts_n_obs, nuts_n_repeat, rng_nuts)
-#         rverr = np.asarray(cat['vr_0_err'])
-#         is_bin = np.asarray(truth['is_binary'])
-#         v_com = np.asarray(truth['v_com'])
-#         for bl, k2 in nuts_baselines.items():
-#             v_epochs = np.column_stack([np.asarray(cat['vr_0']), np.asarray(cat['vr_%i' % k2])])
-#             v, v_err = epoch_arrays(v_epochs, rverr, repeat)
-#             sb_cap = sigma_binary_cap(v_epochs, repeat, nuts_sb_cap)
-#             mcmc = MCMC(NUTS(nuts_model), **nuts_mcmc_kwargs)
-#             mcmc.run(jax.random.PRNGKey(nuts_seed), #<-- FITS columns are big-endian (>f8), which jax refuses
-#                      v=jnp.asarray(v.astype(np.float64)), v_err=jnp.asarray(v_err.astype(np.float64)), sb_cap=sb_cap,
-#                      shared_stream=nuts_shared_stream)
-#             s = {key: np.asarray(val) for key, val in mcmc.get_samples().items()}
-#             nuts_samples[(survey_n, rvir, bl)] = s
-#             diag = numpyro_summary(mcmc.get_samples(group_by_chain=True))
-#             n_div = int(np.sum(mcmc.get_extra_fields()['diverging']))
-#             # truth: noiseless CoM dispersion, and the rms true binary motion at the two epochs used
-#             v_true2 = np.column_stack([np.asarray(truth['v_true_0']), np.asarray(truth['v_true_%i' % k2])])
-#             row = {'survey': survey_n, 'Rvir0': rvir, 'baseline': bl, 'epoch2': k2,
-#                    'dt_mean_yr': cat.meta['T%iMEAN' % k2], 'dt_sd_yr': cat.meta['T%iSD' % k2],
-#                    'N_obs': len(cat), 'N_repeat': int(repeat.sum()), 'n_bin': int(is_bin.sum()),
-#                    'n_bin_repeat': int((is_bin & repeat).sum()), 'sb_cap': sb_cap,
-#                    'S_true': np.std(v_com), 'sigma_binary_rms': np.sqrt(np.mean((v_true2 - v_com[:, None])**2))}
-#             for p in ['sigma_stream', 'sigma_binary', 'mu']:
-#                 p16, p50, p84 = np.percentile(s[p], [16, 50, 84])
-#                 row.update({p: p50, p+'_p16': p16, p+'_p84': p84, p+'_err': 0.5*(p84 - p16),
-#                             p+'_mean': np.mean(s[p]), p+'_std': np.std(s[p])})
-#             row['rhat_max'] = max(float(np.max(d['r_hat'])) for d in diag.values())
-#             row['n_divergent'] = n_div
-#             nuts_rows.append(row)
-#             print("%-4s rvir0 %4g %s: sigma_stream %.2f [%.2f, %.2f] (true %.2f) | sigma_binary %.2f [%.2f, %.2f]"
-#                   " (cap %.2f, true rms %.2f) | r_hat %.3f, %i divergent"
-#                   % (survey_n, rvir, bl, row['sigma_stream'], row['sigma_stream_p16'], row['sigma_stream_p84'],
-#                      row['S_true'], row['sigma_binary'], row['sigma_binary_p16'], row['sigma_binary_p84'],
-#                      sb_cap, row['sigma_binary_rms'], row['rhat_max'], n_div))
+print("running NUTS sampler")
+nuts_rows, nuts_samples = [], {}
+for i_r, rvir in tqdm(enumerate(rvirs)):
+    for survey_n in nuts_surveys:
+        rng_nuts = np.random.default_rng(seed=[nuts_seed, i_r]) #<-- same repeats for both surveys and baselines
+        cat, truth, repeat = jake_nuts_sample(rvir, survey_n, nuts_n_obs, nuts_n_repeat, rng_nuts)
+        rverr = np.asarray(cat['vr_0_err'])
+        is_bin = np.asarray(truth['is_binary'])
+        v_com = np.asarray(truth['v_com'])
+        for bl, k2 in nuts_baselines.items():
+            v_epochs = np.column_stack([np.asarray(cat['vr_0']), np.asarray(cat['vr_%i' % k2])])
+            v, v_err = epoch_arrays(v_epochs, rverr, repeat)
+            sb_cap = sigma_binary_cap(v_epochs, repeat, nuts_sb_cap)
+            mcmc = MCMC(NUTS(nuts_model), **nuts_mcmc_kwargs)
+            mcmc.run(jax.random.PRNGKey(nuts_seed), #<-- FITS columns are big-endian (>f8), which jax refuses
+                     v=jnp.asarray(v.astype(np.float64)), v_err=jnp.asarray(v_err.astype(np.float64)), sb_cap=sb_cap,
+                     shared_stream=nuts_shared_stream)
+            s = {key: np.asarray(val) for key, val in mcmc.get_samples().items()}
+            nuts_samples[(survey_n, rvir, bl)] = s
+            diag = numpyro_summary(mcmc.get_samples(group_by_chain=True))
+            n_div = int(np.sum(mcmc.get_extra_fields()['diverging']))
+            # truth: noiseless CoM dispersion, and the rms true binary motion at the two epochs used
+            v_true2 = np.column_stack([np.asarray(truth['v_true_0']), np.asarray(truth['v_true_%i' % k2])])
+            row = {'survey': survey_n, 'Rvir0': rvir, 'baseline': bl, 'epoch2': k2,
+                   'dt_mean_yr': cat.meta['T%iMEAN' % k2], 'dt_sd_yr': cat.meta['T%iSD' % k2],
+                   'N_obs': len(cat), 'N_repeat': int(repeat.sum()), 'n_bin': int(is_bin.sum()),
+                   'n_bin_repeat': int((is_bin & repeat).sum()), 'sb_cap': sb_cap,
+                   'S_true': np.std(v_com), 'sigma_binary_rms': np.sqrt(np.mean((v_true2 - v_com[:, None])**2))}
+            for p in ['sigma_stream', 'sigma_binary', 'mu']:
+                p16, p50, p84 = np.percentile(s[p], [16, 50, 84])
+                row.update({p: p50, p+'_p16': p16, p+'_p84': p84, p+'_err': 0.5*(p84 - p16),
+                            p+'_mean': np.mean(s[p]), p+'_std': np.std(s[p])})
+            row['rhat_max'] = max(float(np.max(d['r_hat'])) for d in diag.values())
+            row['n_divergent'] = n_div
+            nuts_rows.append(row)
+            print("%-4s rvir0 %4g %s: sigma_stream %.2f [%.2f, %.2f] (true %.2f) | sigma_binary %.2f [%.2f, %.2f]"
+                  " (cap %.2f, true rms %.2f) | r_hat %.3f, %i divergent"
+                  % (survey_n, rvir, bl, row['sigma_stream'], row['sigma_stream_p16'], row['sigma_stream_p84'],
+                     row['S_true'], row['sigma_binary'], row['sigma_binary_p16'], row['sigma_binary_p84'],
+                     sb_cap, row['sigma_binary_rms'], row['rhat_max'], n_div))
 
-# nuts_table = Table(rows=nuts_rows)
-# nuts_table.meta.update({'STREAM': 'GD-1 (mock)', 'SOURCE': 'for_jake/ catalogs', 'NOBS': nuts_n_obs,
-#                         'NREPEAT': nuts_n_repeat, 'PRIOR': nuts_prior_scale, 'MUPRIOR': nuts_mu_prior_scale,
-#                         'SBCAP': nuts_sb_cap, 'LIKELIHD': 'shared' if nuts_shared_stream else 'indep',
-#                         'SEED': nuts_seed, 'NWARMUP': nuts_mcmc_kwargs['num_warmup'],
-#                         'NSAMPLE': nuts_mcmc_kwargs['num_samples'], 'NCHAIN': nuts_mcmc_kwargs['num_chains']})
-# nuts_table.write(table_path+"jake_nuts_"+nuts_tag+".fits", overwrite=True)
+nuts_table = Table(rows=nuts_rows)
+nuts_table.meta.update({'STREAM': 'GD-1 (mock)', 'SOURCE': 'for_jake/ catalogs', 'NOBS': nuts_n_obs,
+                        'NREPEAT': nuts_n_repeat, 'PRIOR': nuts_prior_scale, 'MUPRIOR': nuts_mu_prior_scale,
+                        'SBCAP': nuts_sb_cap, 'LIKELIHD': 'shared' if nuts_shared_stream else 'indep',
+                        'SEED': nuts_seed, 'NWARMUP': nuts_mcmc_kwargs['num_warmup'],
+                        'NSAMPLE': nuts_mcmc_kwargs['num_samples'], 'NCHAIN': nuts_mcmc_kwargs['num_chains']})
+nuts_table.write(table_path+"jake_nuts_"+nuts_tag+".fits", overwrite=True)
 
 # %%
 ### summary plot: DESI-like, sigma_binary and sigma_stream vs rvir0, 1 yr vs 5 yr (median, 16-84%) ###
 
 nuts_table = Table.read(table_path+"jake_nuts_"+nuts_tag+".fits", format='fits')
-nuts_plot_survey = 'via'
+nuts_plot_survey = 'desi'
 nuts_style = {'1yr': dict(color='#E84855', marker='o', dx=0.93), '5yr': dict(color='#2B59C3', marker='s', dx=1.07)}
 tp = nuts_table[nuts_table['survey'] == nuts_plot_survey]
 fig, axs = plt.subplots(1, 2, figsize=(15, 7.5))
@@ -1161,21 +1439,45 @@ axs[0].set_title('%s-like, %i stars, %i repeats' % ({'desi': 'DESI', 'via': 'Via
 plt.tight_layout()
 plt.savefig(plot_path+"gd1_%s_jake_nuts_%s.pdf" % (nuts_plot_survey, nuts_tag), dpi=300, bbox_inches='tight')
 # %%
-### NUTS over random draws of the 35 repeat stars ###
+### NUTS over random draws of the 35 repeat stars (and, optionally, of the 160 stars) ###
 # the single-draw posteriors above are tight, but which binaries land among the 35 repeats moves them by more
-#   than their width. so: the same NUTS fit (same 160 stars, priors, cap, likelihood) for nuts_n_draws random
-#   choices of the repeats, per rvir0, for nuts_draw_surveys x nuts_draw_baselines only.
-# draws come from the same per-rvir0 rng as the single-draw cell, so draw 0 is that cell's choice of repeats
-#   (and with jax key nuts_seed + 0 it reproduces that cell's row exactly); draw d uses jax key nuts_seed + d.
+#   than their width. so: the same NUTS fit (same priors, cap, likelihood; always nuts_n_obs = 160 stars of which
+#   nuts_n_repeat = 35 are repeats) for nuts_n_draws random draws, per rvir0 in nuts_draw_rvirs, for
+#   nuts_draw_surveys x nuts_draw_baselines only.
+# nuts_draw_vary_stars = False: every draw has the same 160 BRIGHTEST stars and only the 35 repeats change. draws
+#   come from the same per-rvir0 rng as the single-draw cell, so draw 0 is that cell's choice of repeats (and with
+#   jax key nuts_seed + 0 it reproduces that cell's row exactly).
+# nuts_draw_vary_stars = True: each draw picks its 160 stars at random (uniformly, without replacement) from the
+#   FULL catalog of the survey (jake_nuts_pool: every star in Jake's catalog with finite errors, i.e. every
+#   star matched to a Bonaca & Price-Whelan catalog row that has an RV error for the survey: desi 679, the
+#   Jarvis-error stars; via 1577 of the 1578), then 35 of those 160 at random as the repeats.
+# draw d uses jax key nuts_seed + d.
 # pooled = all draws' posterior samples concatenated with equal weight, i.e. the posterior marginalized over the
-#   choice of repeat stars.
-# outputs: data/gmm_tables/jake_nuts_<nuts_tag>_ndraw<n>.fits (one row per survey x rvir0 x baseline x draw) and
-#   ..._ndraw<n>_pooled.fits (one row per survey x rvir0 x baseline). needs the single-draw cell's definitions
-#   (run it with its loop commented out); ~1.5 min per 10 fits.
-nuts_n_draws = 10
+#   draws (of the repeats, and of the 160 stars if they vary).
+# outputs: data/gmm_tables/jake_nuts_<nuts_draw_tag>.fits (one row per survey x rvir0 x baseline x draw) and
+#   ..._pooled.fits (one row per survey x rvir0 x baseline), nuts_draw_tag = <nuts_tag>_ndraw<n>[_varystars].
+#   needs the single-draw cell's definitions (run it with its loop commented out); ~1.5 min per 10 fits.
+nuts_n_draws = 50
+nuts_draw_rvirs = [3] #<-- rvir0 = 3 pc only: its one-component width best matches the GD-1 thin stream
 nuts_draw_surveys = ['desi']
 nuts_draw_baselines = {'5yr': 2}
-nuts_draw_tag = nuts_tag + "_ndraw%i" % nuts_n_draws
+nuts_draw_vary_stars = True #<-- True: redraw the 160 stars too, from the full catalog; False: always the 160 brightest
+nuts_draw_tag = nuts_tag + "_ndraw%i" % nuts_n_draws + ("_varystars" if nuts_draw_vary_stars else "")
+nuts_samples_path = repo_path+"/data/nuts_samples/" #<-- raw samples, one .npz per survey x rvir0 x baseline (gitignored)
+
+def jake_nuts_pool(rvir, survey):
+    """
+    every star of Jake's catalog for (rvir, survey) with finite errors and velocities (the pool the 160 are drawn
+    from when nuts_draw_vary_stars). returns (cat, truth), rows in catalog order.
+    """
+    fname = "rvir0%g_%s" % (rvir, survey)
+    cat = Table.read(jake_path+fname+".fits")
+    truth = Table.read(jake_truth_path+fname+"_truth.fits")
+    if not np.array_equal(np.asarray(cat['phi1']), np.asarray(truth['phi1'])):
+        raise ValueError(fname+": catalog and truth rows don't line up")
+    v3 = np.column_stack([np.asarray(cat['vr_%i' % k]) for k in range(cat.meta['NEPOCH'])])
+    ok = np.isfinite(np.asarray(cat['vr_0_err'])) & np.all(np.isfinite(v3), axis=1)
+    return cat[ok], truth[ok]
 
 def nuts_fit_row(cat, truth, repeat, k2, key_seed):
     """one NUTS fit (nuts_model) with the repeats' second epoch = vr_<k2>. returns (row dict, samples dict)."""
@@ -1206,17 +1508,33 @@ def nuts_fit_row(cat, truth, repeat, k2, key_seed):
 
 nuts_draw_rows, nuts_pooled_rows = [], []
 for i_r, rvir in enumerate(rvirs):
+    if rvir not in nuts_draw_rvirs:
+        continue
     for survey_n in nuts_draw_surveys:
         rng_nuts = np.random.default_rng(seed=[nuts_seed, i_r]) #<-- as in the single-draw cell: draw 0 = its repeats
-        cat, truth, repeat0 = jake_nuts_sample(rvir, survey_n, nuts_n_obs, nuts_n_repeat, rng_nuts)
-        repeats = [repeat0]
-        for _ in range(nuts_n_draws - 1):
-            r = np.zeros(len(cat), dtype=bool)
-            r[rng_nuts.choice(len(cat), size=nuts_n_repeat, replace=False)] = True
-            repeats.append(r)
+        # draws = list of (cat, truth, repeat), one per draw
+        if nuts_draw_vary_stars:
+            cat_pool, truth_pool = jake_nuts_pool(rvir, survey_n)
+            if len(cat_pool) < nuts_n_obs:
+                raise ValueError("pool of %i stars < nuts_n_obs = %i" % (len(cat_pool), nuts_n_obs))
+            S_true_pool = np.std(np.asarray(truth_pool['v_com']))
+            draws = []
+            for _ in range(nuts_n_draws):
+                sel = np.sort(rng_nuts.choice(len(cat_pool), size=nuts_n_obs, replace=False))
+                r = np.zeros(nuts_n_obs, dtype=bool)
+                r[rng_nuts.choice(nuts_n_obs, size=nuts_n_repeat, replace=False)] = True
+                draws.append((cat_pool[sel], truth_pool[sel], r))
+        else:
+            cat, truth, repeat0 = jake_nuts_sample(rvir, survey_n, nuts_n_obs, nuts_n_repeat, rng_nuts)
+            S_true_pool = np.std(np.asarray(truth['v_com']))
+            draws = [(cat, truth, repeat0)]
+            for _ in range(nuts_n_draws - 1):
+                r = np.zeros(len(cat), dtype=bool)
+                r[rng_nuts.choice(len(cat), size=nuts_n_repeat, replace=False)] = True
+                draws.append((cat, truth, r))
         for bl, k2 in nuts_draw_baselines.items():
             draw_samples = []
-            for i_d, repeat in enumerate(repeats):
+            for i_d, (cat, truth, repeat) in enumerate(draws):
                 row, s = nuts_fit_row(cat, truth, repeat, k2, nuts_seed + i_d)
                 row = {'survey': survey_n, 'Rvir0': rvir, 'baseline': bl, 'draw': i_d, **row}
                 nuts_draw_rows.append(row)
@@ -1229,11 +1547,16 @@ for i_r, rvir in enumerate(rvirs):
                          row['rhat_max'], row['n_divergent']))
             # pooled over draws, and the spread of the per-draw medians
             rows_d = nuts_draw_rows[-nuts_n_draws:]
+            # S_true, sigma_binary_rms: median over draws (constant over draws unless the stars vary);
+            #   S_true_pool: the noiseless CoM dispersion of the whole pool (= S_true if the stars don't vary)
             prow = {'survey': survey_n, 'Rvir0': rvir, 'baseline': bl, 'epoch2': k2, 'n_draws': nuts_n_draws,
-                    'N_obs': len(cat), 'N_repeat': nuts_n_repeat, 'n_bin': rows_d[0]['n_bin'],
+                    'vary_stars': nuts_draw_vary_stars, 'N_pool': len(cat_pool) if nuts_draw_vary_stars else len(cat),
+                    'N_obs': len(cat), 'N_repeat': nuts_n_repeat,
+                    'n_bin_min': min(r['n_bin'] for r in rows_d), 'n_bin_max': max(r['n_bin'] for r in rows_d),
                     'n_bin_repeat_min': min(r['n_bin_repeat'] for r in rows_d),
                     'n_bin_repeat_max': max(r['n_bin_repeat'] for r in rows_d),
-                    'S_true': rows_d[0]['S_true'], 'sigma_binary_rms': rows_d[0]['sigma_binary_rms']}
+                    'S_true': np.median([r['S_true'] for r in rows_d]), 'S_true_pool': S_true_pool,
+                    'sigma_binary_rms': np.median([r['sigma_binary_rms'] for r in rows_d])}
             for p in ['sigma_stream', 'sigma_binary', 'mu']:
                 pooled = np.concatenate([s[p] for s in draw_samples])
                 p16, p50, p84 = np.percentile(pooled, [16, 50, 84])
@@ -1243,6 +1566,14 @@ for i_r, rvir in enumerate(rvirs):
             prow['rhat_max'] = max(r['rhat_max'] for r in rows_d)
             prow['n_divergent'] = sum(r['n_divergent'] for r in rows_d)
             nuts_pooled_rows.append(prow)
+            # the raw posterior samples, (n_draws, n_samples) per parameter (float32), plus per-draw truths/counts.
+            #   data/nuts_samples/ is gitignored (~5 MB per file).
+            os.makedirs(nuts_samples_path, exist_ok=True)
+            np.savez_compressed(nuts_samples_path+"jake_nuts_%s_%s_rvir%g_%s.npz" % (nuts_draw_tag, survey_n, rvir, bl),
+                                **{p: np.stack([s[p] for s in draw_samples]).astype(np.float32)
+                                   for p in ['sigma_stream', 'sigma_binary', 'mu']},
+                                **{c: np.array([r[c] for r in rows_d])
+                                   for c in ['S_true', 'sigma_binary_rms', 'sb_cap', 'n_bin', 'n_bin_repeat']})
             print("  POOLED: sigma_stream %.2f [%.2f, %.2f] | sigma_binary %.2f [%.2f, %.2f]"
                   % (prow['sigma_stream'], prow['sigma_stream_p16'], prow['sigma_stream_p84'],
                      prow['sigma_binary'], prow['sigma_binary_p16'], prow['sigma_binary_p84']))
@@ -1276,13 +1607,15 @@ fig, axs = plt.subplots(1, 2, figsize=(15, 7.5))
 for ax, p, truth_col, ylabel, truth_label in [
         (axs[0], 'sigma_binary', 'sigma_binary_rms', r'$\sigma_{\rm binary}$ [km/s]', 'true rms binary motion'),
         (axs[1], 'sigma_stream', 'S_true', r'$\sigma_{v_r,\,\rm stream}$ [km/s]', 'truth (noiseless CoM)')]:
-    for i_r, rvir in enumerate(rvirs):
+    for i_r, rvir in enumerate(np.unique(td['Rvir0'])):
         tr = td[td['Rvir0'] == rvir]
         tr = tr[np.argsort(tr['draw'])]
         x = rvir*10**draw_dlogx[:len(tr)]
         y = np.asarray(tr[p])
-        ax.errorbar(x, y, yerr=[y - tr[p+'_p16'], tr[p+'_p84'] - y], color=nuts_draw_color, alpha=0.45,
-                    marker='o', ms=5, lw=1.2, capsize=0, ls='none', label='single draw of repeats' if i_r == 0 else None)
+        ax.errorbar(x, y, yerr=[y - tr[p+'_p16'], tr[p+'_p84'] - y], color=nuts_draw_color,
+                    alpha=0.45 if nuts_n_draws <= 10 else 0.25, marker='o', ms=5, lw=1.2, capsize=0, ls='none',
+                    label=('single draw of %s' % ('stars + repeats' if nuts_draw_vary_stars else 'repeats'))
+                    if i_r == 0 else None)
     xp_ = np.asarray(tpool['Rvir0'])*10**pool_dlogx
     y = np.asarray(tpool[p])
     ax.errorbar(xp_, y, yerr=[y - tpool[p+'_p16'], tpool[p+'_p84'] - y], color=nuts_draw_color, marker='s',

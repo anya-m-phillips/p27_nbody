@@ -1,4 +1,5 @@
 /data/particle_sprays/*
+/data/nuts_samples/*
 /memos/**/*.aux
 /memos/**/*.log
 /memos/**/*.out
