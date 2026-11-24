@@ -407,6 +407,8 @@ plt.subplots_adjust(wspace=0.2, hspace=0.2)
 ### "with binary orbits" curves ('gd1' version): open markers. white face (not 'none') so the dotted line doesn't show through.
 open_marker = dict(markerfacecolor='w', markeredgewidth=2)
 for ii, orbit in enumerate(tqdm(orbits[reordered])):
+    # if orbit=='pa5':
+    #     continue
     if width_used=="angle": 
         width_factor = 1.0
     if width_used=="physical":
@@ -490,6 +492,9 @@ for ii, orbit in enumerate(tqdm(orbits[reordered])):
         axs[2,2].plot(x, tt['S_1comp'][:,-1][selection], marker='o', color=ccc[ii], markersize=10, ls='-' if orbit!='pa5' else '--', zorder=0)
         axs[2,1].plot(x2, tt2['S_1comp'][:,0][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
         axs[2,2].plot(x2, tt2['S_1comp'][:,-1][selection2], marker='o', color=ccc[ii], markersize=10, ls=':', zorder=0, **open_marker)
+        # axs[2,1].plot(x, tt['S_ts'][:,0][selection], marker='o', color=ccc[ii], markersize=10, ls='--')
+        # axs[2,2].plot(x, tt['S_ts'][:,-1][selection], marker='o', color=ccc[ii], markersize=10, ls='--')
+
 
 legend_kwargs = dict(loc='center', bbox_to_anchor=[-0.75, 0.5]) #<-- same spot for both versions
 if varied_orbits:
